@@ -53,6 +53,39 @@ Chúc bạn nghe nhạc vui vẻ!"""
     assert res2["action"] == "click"
     assert res2["speech"] == "Tôi đang nhấn vào biểu tượng Spotify"
     assert res2["x_percent"] == 0.45
+
+    # Test case 3: Malformed / double markdown fence
+    raw3 = """```json
+{
+  "speech": "Đang sửa lại địa chỉ email",
+  "actions": [
+    {
+      "action": "click",
+      "x_percent": 0.472,
+      "y_percent": 0.468
+```json
+{
+  "speech": "Đang sửa lại email cho bạn",
+  "actions": [
+    {
+      "action": "click",
+      "x_percent": 0.47,
+      "y_percent": 0.47
+    },
+    {
+      "action": "press",
+      "key": "cmd+a"
+    },
+    {
+      "action": "type",
+      "text": "minh.ngntri@gmail.com"
+    }
+  ]
+}
+```"""
+    res3 = extract_json_payload(raw3)
+    assert len(res3["actions"]) == 3
+    assert res3["actions"][2]["text"] == "minh.ngntri@gmail.com"
     print("test_extract_json_payload: PASSED")
 
 def test_os_controller_to_pixel_coords():

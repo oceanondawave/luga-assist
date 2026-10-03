@@ -6,6 +6,7 @@ import re
 import json
 import uuid
 import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -31,7 +32,25 @@ from app.gemini_service import gemini_service
 from app.native_voice import NativeVoiceListener
 from app.sound_effects import sound_manager
 
-app = FastAPI(title="Luga Assist Local Server", version="1.0.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 1. Try restoring saved session from disk
+    await gemini_service.auto_init_from_disk()
+
+    # 2. Start Global Native Voice & Hotkey Listener (Zero browser needed!)
+    loop = asyncio.get_running_loop()
+
+    def handle_native_voice_command(cmd_text: str):
+        print(f"\n[Global Handler] Đã nhận lệnh từ Micro: \"{cmd_text}\"")
+        asyncio.run_coroutine_threadsafe(
+            process_user_command(cmd_text, DEFAULT_TTS_VOICE), loop
+        )
+
+    native_voice = NativeVoiceListener(on_command_callback=handle_native_voice_command)
+    native_voice.start_global_hotkeys()
+    yield
+
+app = FastAPI(title="Luga Assist Local Server", version="1.0.0", lifespan=lifespan)
 
 # Enable CORS for Chrome Extension and local WebUI
 app.add_middleware(
@@ -141,27 +160,36 @@ async def set_session(payload: SessionPayload):
 
 # Helper: Extract clean JSON from Gemini's response
 def extract_json_payload(text: str) -> Optional[Dict[str, Any]]:
-    """Extract JSON object from markdown blocks or raw text."""
+    """
+    Robust JSON extractor: scans text using json.JSONDecoder to find all valid JSON objects,
+    resilient against markdown truncation, multiple blocks, or conversational preambles.
+    """
     if not text:
         return None
 
-    # Try 1: Code fence ```json ... ```
-    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1))
-        except Exception:
-            pass
+    decoder = json.JSONDecoder()
+    pos = 0
+    candidates = []
 
-    # Try 2: Find outermost curly braces { ... }
-    first_brace = text.find("{")
-    last_brace = text.rfind("}")
-    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-        candidate = text[first_brace : last_brace + 1]
+    while pos < len(text):
+        idx = text.find("{", pos)
+        if idx == -1:
+            break
         try:
-            return json.loads(candidate)
+            obj, end_pos = decoder.raw_decode(text, idx)
+            if isinstance(obj, dict):
+                candidates.append(obj)
+            pos = end_pos
         except Exception:
-            pass
+            pos = idx + 1
+
+    # Prioritize candidates that contain "actions" or "action", preferring the last one (final decided answer)
+    for cand in reversed(candidates):
+        if "actions" in cand or "action" in cand:
+            return cand
+
+    if candidates:
+        return candidates[-1]
 
     return None
 
@@ -217,10 +245,12 @@ async def websocket_extension(ws: WebSocket):
         await hub.unregister_extension()
 
 
-# Master Pipeline Execution
+# Master Pipeline Execution: Autonomous Multi-Step Goal Loop
+MAX_AUTONOMOUS_STEPS = 5
+
 async def process_user_command(user_command: str, voice: str):
-    print(f"\n[Pipeline] New Voice Command: '{user_command}'")
-    # Ensure pulsing heartbeat cue is playing while AI is thinking and acting
+    print(f"\n[Pipeline] 🎯 Nhận mục tiêu mới: '{user_command}'")
+    # Start pulsing audio feedback for the user
     sound_manager.start_pulsing()
 
     # Step 1: Check Connection (Gemini Background Service or Extension)
@@ -239,134 +269,153 @@ async def process_user_command(user_command: str, voice: str):
         await tts_service.speak(error_msg)
         return
 
-    await hub.broadcast_webui({
-        "type": "ACTION_PROGRESS",
-        "message": "Đang chụp màn hình và phân tích...",
-    })
+    step = 0
+    while step < MAX_AUTONOMOUS_STEPS:
+        step += 1
+        is_first_step = (step == 1)
+        print(f"\n[Pipeline] 🔄 --- BƯỚC {step}/{MAX_AUTONOMOUS_STEPS} cho mục tiêu: '{user_command}' ---")
 
-    # Step 2: Screen Capture with Grid Overlay
-    screenshot_b64, screen_size = screen_capturer.capture(with_grid=True)
-    full_prompt = build_gemini_prompt(user_command)
-
-    raw_response = ""
-
-    # Step 3: Execute via Background Service (Priority 1) or Extension (Priority 2)
-    if gemini_service.is_ready:
-        print("[Pipeline] Thực thi trực tiếp qua Background Gemini Service...")
         await hub.broadcast_webui({
             "type": "ACTION_PROGRESS",
-            "message": "Gemini đang xử lý trực tiếp dưới nền...",
+            "message": f"Đang chụp màn hình và phân tích (Bước {step})...",
+            "step": step,
         })
-        try:
-            raw_response = await gemini_service.send_prompt(
-                prompt=full_prompt,
-                image_path=screen_capturer.screenshot_path
+
+        # Step 2: Screen Capture with Grid Overlay
+        screenshot_b64, screen_size = screen_capturer.capture(with_grid=True)
+
+        if is_first_step:
+            prompt = build_gemini_prompt(user_command)
+        else:
+            prompt = (
+                f"Màn hình đã được cập nhật sau bước trước.\n"
+                f"Mục tiêu ban đầu của người dùng: \"{user_command}\".\n"
+                f"Hãy quan sát màn hình mới này và thực hiện hành động tiếp theo để hoàn thành mục tiêu.\n"
+                f"Nếu yêu cầu của người dùng ĐÃ ĐƯỢC HOÀN TẤT 100%, hãy đặt \"done\": true.\n"
+                f"Nếu vẫn còn bước tiếp theo (ví dụ: cần điền tiếp hoặc gửi), hãy đặt \"done\": false.\n"
+                f"Chỉ xuất duy nhất một khối JSON hợp lệ theo đúng định dạng:"
             )
+
+        raw_response = ""
+
+        # Step 3: Execute via Background Service (Priority 1) or Extension (Priority 2)
+        if gemini_service.is_ready:
+            print(f"[Pipeline] [Bước {step}] Gửi tới Background Gemini Service...")
+            try:
+                raw_response = await gemini_service.send_prompt(
+                    prompt=prompt,
+                    image_path=screen_capturer.screenshot_path
+                )
+            except Exception as e:
+                sound_manager.play_error()
+                print(f"[Pipeline] Lỗi khi gọi gemini_service: {e}")
+                err_text = f"Lỗi khi xử lý với Gemini: {e}"
+                await hub.broadcast_webui({"type": "ERROR", "message": err_text, "user_command": user_command})
+                await tts_service.speak("Có lỗi xảy ra khi kết nối tới Gemini, vui lòng thử lại.")
+                return
+
+        elif hub.extension_client is not None:
+            print(f"[Pipeline] [Bước {step}] Gửi qua Extension WebSocket...")
+            task_id = str(uuid.uuid4())
+            loop = asyncio.get_running_loop()
+            future = loop.create_future()
+            hub.pending_tasks[task_id] = future
+            await hub.extension_client.send_json({
+                "type": "EXECUTE_COMMAND",
+                "id": task_id,
+                "prompt": prompt,
+                "imageBase64": screenshot_b64,
+            })
+
+            try:
+                result_payload = await asyncio.wait_for(future, timeout=45.0)
+                raw_response = result_payload.get("raw_text", "")
+            except asyncio.TimeoutError:
+                sound_manager.play_error()
+                hub.pending_tasks.pop(task_id, None)
+                timeout_msg = "Quá thời gian chờ phản hồi từ Gemini. Vui lòng thử lại câu lệnh."
+                await hub.broadcast_webui({"type": "ERROR", "message": timeout_msg, "user_command": user_command})
+                await tts_service.speak(timeout_msg)
+                return
+
+        print(f"[Pipeline] [Bước {step}] Phản hồi từ Gemini:\n{raw_response}")
+
+        # Step 4: Robust JSON Parse
+        action_data = extract_json_payload(raw_response)
+        if not action_data:
+            speech_text = raw_response.strip() or "Đã nhận lệnh nhưng chưa xác định được hành động tiếp theo."
+            action_data = {"speech": speech_text, "actions": [{"action": "none"}], "done": True}
+
+        speech_to_say = action_data.get("speech", "Đang thực hiện.")
+
+        # Extract sequence of actions
+        actions_list = action_data.get("actions", [])
+        if not actions_list and "action" in action_data:
+            actions_list = [action_data]
+
+        is_done = action_data.get("done", True)
+
+        # Smart heuristic: If step 1 only launched an app, but command requested actions afterwards
+        # e.g. "mở Outlook và gửi email..." -> opening the app is just step 1!
+        if is_first_step and len(actions_list) == 1 and actions_list[0].get("action") == "launch_app":
+            lower_cmd = user_command.lower()
+            if any(k in lower_cmd for k in [" và ", " rồi ", " sau đó ", " gửi ", " tìm ", " viết ", " soạn ", " nhập "]):
+                print("[Pipeline] 💡 Phát hiện lệnh liên hoàn sau khi mở app, tiếp tục chuỗi tự hành...")
+                is_done = False
+
+        # Step 5: Annotate Screenshot for Visual Verification
+        annotated_b64 = screen_capturer.annotate_actions(actions_list)
+
+        # Step 6: Speak Spoken Response to User Concurrently
+        speak_task = asyncio.create_task(tts_service.speak(speech_to_say))
+
+        # Step 7: Execute Action Sequence on OS
+        try:
+            if len(actions_list) > 1:
+                print(f"[Pipeline] ⚡ [Bước {step}] Đang thực thi chuỗi {len(actions_list)} hành động liên hoàn...")
+                action_result = os_controller.execute_action_sequence(actions_list)
+            elif len(actions_list) == 1:
+                action_result = os_controller.execute_action(actions_list[0])
+            else:
+                action_result = {"success": True, "action": "none", "details": "No action needed"}
         except Exception as e:
             sound_manager.play_error()
-            print(f"[Pipeline] Lỗi khi gọi gemini_service: {e}")
-            err_text = f"Lỗi khi xử lý với Gemini: {e}"
-            await hub.broadcast_webui({"type": "ERROR", "message": err_text, "user_command": user_command})
-            await tts_service.speak("Có lỗi xảy ra khi kết nối tới Gemini, vui lòng thử lại.")
-            return
+            print(f"[Pipeline] Lỗi khi thực thi hành động: {e}")
+            action_result = {"success": False, "action": "error", "details": str(e)}
+            await speak_task
+            break
 
-    elif hub.extension_client is not None:
-        print("[Pipeline] Thực thi qua Chrome Extension WebSocket...")
-        task_id = str(uuid.uuid4())
-        loop = asyncio.get_running_loop()
-        future = loop.create_future()
-        hub.pending_tasks[task_id] = future
-        await hub.extension_client.send_json({
-            "type": "EXECUTE_COMMAND",
-            "id": task_id,
-            "prompt": full_prompt,
-            "imageBase64": screenshot_b64,
-        })
+        print(f"[Pipeline] [Bước {step}] Kết quả: {action_result}")
 
+        # Step 8: Broadcast Step or Final Result to WebUI
         await hub.broadcast_webui({
-            "type": "ACTION_PROGRESS",
-            "message": "Gemini đang xử lý hình ảnh và câu lệnh...",
+            "type": "ACTION_COMPLETED" if is_done else "ACTION_STEP",
+            "user_command": user_command,
+            "speech": speech_to_say,
+            "action_result": action_result,
+            "annotated_image": annotated_b64,
+            "step": step,
+            "done": is_done,
         })
 
-        try:
-            result_payload = await asyncio.wait_for(future, timeout=45.0)
-            raw_response = result_payload.get("raw_text", "")
-        except asyncio.TimeoutError:
-            sound_manager.play_error()
-            hub.pending_tasks.pop(task_id, None)
-            timeout_msg = "Quá thời gian chờ phản hồi từ Gemini. Vui lòng thử lại câu lệnh."
-            await hub.broadcast_webui({"type": "ERROR", "message": timeout_msg, "user_command": user_command})
-            await tts_service.speak(timeout_msg)
-            return
+        # Wait for spoken audio to finish
+        await speak_task
 
-    print(f"[Pipeline] Phản hồi từ Gemini:\n{raw_response}")
+        # Check termination condition
+        if is_done or not actions_list or all(a.get("action") in ("none", "read_screen") for a in actions_list):
+            print(f"[Pipeline] ✅ Hoàn tất toàn bộ mục tiêu của người dùng sau {step} bước!")
+            break
 
-    # Step 5: Parse JSON Action (Supports both single action and multiple sequential actions)
-    action_data = extract_json_payload(raw_response)
-    if not action_data:
-        speech_text = raw_response.strip() or "Tôi đã nhận được lệnh nhưng chưa xác định được hành động."
-        action_data = {"speech": speech_text, "actions": [{"action": "none"}]}
+        # If more steps needed, wait briefly for new window/dialog to render
+        delay = 1.2 if any(a.get("action") == "launch_app" for a in actions_list) else 0.8
+        print(f"[Pipeline] ⏳ Đang tạm dừng {delay}s chờ giao diện mới mở ra để chụp màn hình tiếp theo...")
+        await asyncio.sleep(delay)
 
-    speech_to_say = action_data.get("speech", "Đang thực hiện yêu cầu của bạn.")
-
-    # Extract sequence of actions
-    actions_list = action_data.get("actions", [])
-    if not actions_list and "action" in action_data:
-        actions_list = [action_data]
-
-    # Step 6: Annotate Screenshot for Visual Verification with Step Badges (#1, #2, ...)
-    annotated_b64 = screen_capturer.annotate_actions(actions_list)
-
-    # Step 7: Speak Spoken Response to Visually Impaired User concurrently
-    speak_task = asyncio.create_task(tts_service.speak(speech_to_say))
-
-    # Step 8: Execute Action Sequence on OS
-    try:
-        if len(actions_list) > 1:
-            print(f"[Pipeline] ⚡ Đang thực thi chuỗi {len(actions_list)} hành động liên hoàn...")
-            action_result = os_controller.execute_action_sequence(actions_list)
-        elif len(actions_list) == 1:
-            action_result = os_controller.execute_action(actions_list[0])
-        else:
-            action_result = {"success": True, "action": "none", "details": "No action needed"}
-    except Exception as e:
-        sound_manager.play_error()
-        print(f"[Pipeline] Lỗi khi thực thi hành động: {e}")
-        action_result = {"success": False, "action": "error", "details": str(e)}
-
-    # Stop pulsing and play completion chime!
+    # All steps completed! Play completion chime
     sound_manager.play_done()
-    print(f"[Pipeline] Kết quả chuỗi hành động: {action_result}")
-
-    # Await voice completion
-    await speak_task
-
-    # Step 9: Broadcast Action Completed to WebUI
-    await hub.broadcast_webui({
-        "type": "ACTION_COMPLETED",
-        "user_command": user_command,
-        "speech": speech_to_say,
-        "action_result": action_result,
-        "annotated_image": annotated_b64,
-    })
+    print(f"\n[Pipeline] 🎉 HOÀN THÀNH TOÀN BỘ CHUỖI MỤC TIÊU!")
 
 
-@app.on_event("startup")
-async def on_startup():
-    # 1. Try restoring saved session from disk
-    await gemini_service.auto_init_from_disk()
-
-    # 2. Start Global Native Voice & Hotkey Listener (Zero browser needed!)
-    loop = asyncio.get_running_loop()
-
-    def handle_native_voice_command(cmd_text: str):
-        print(f"\n[Global Handler] Đã nhận lệnh từ Micro: \"{cmd_text}\"")
-        asyncio.run_coroutine_threadsafe(
-            process_user_command(cmd_text, DEFAULT_TTS_VOICE), loop
-        )
-
-    native_voice = NativeVoiceListener(on_command_callback=handle_native_voice_command)
-    native_voice.start_global_hotkeys()
 
 
 def start():
