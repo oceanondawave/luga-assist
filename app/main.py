@@ -28,6 +28,7 @@ from app.os_controller import os_controller
 from app.tts_service import tts_service
 from app.prompt_templates import build_gemini_prompt
 from app.gemini_service import gemini_service
+from app.native_voice import NativeVoiceListener
 
 app = FastAPI(title="Luga Assist Local Server", version="1.0.0")
 
@@ -335,18 +336,20 @@ async def process_user_command(user_command: str, voice: str):
 
 @app.on_event("startup")
 async def on_startup():
-    # Try restoring saved session from disk
+    # 1. Try restoring saved session from disk
     await gemini_service.auto_init_from_disk()
 
-    async def open_browser():
-        await asyncio.sleep(1.0)
-        url = f"http://{HOST}:{PORT}"
-        print(f"\n[Luga Assist] Tự động mở ứng dụng cho bạn tại: {url}\n")
-        try:
-            webbrowser.open(url)
-        except Exception as e:
-            print(f"[Luga Assist] Không thể tự động mở trình duyệt: {e}")
-    asyncio.create_task(open_browser())
+    # 2. Start Global Native Voice & Hotkey Listener (Zero browser needed!)
+    loop = asyncio.get_running_loop()
+
+    def handle_native_voice_command(cmd_text: str):
+        print(f"\n[Global Handler] Đã nhận lệnh từ Micro: \"{cmd_text}\"")
+        asyncio.run_coroutine_threadsafe(
+            process_user_command(cmd_text, DEFAULT_TTS_VOICE), loop
+        )
+
+    native_voice = NativeVoiceListener(on_command_callback=handle_native_voice_command)
+    native_voice.start_global_hotkeys()
 
 
 def start():

@@ -8,3 +8,7 @@ edge-tts>=6.1.10
 pydantic>=2.6.0
 python-multipart>=0.0.9
 requests>=2.31.0
+SpeechRecognition>=3.10.0
+sounddevice>=0.4.6
+pynput>=1.7.6
+numpy>=1.24.0
