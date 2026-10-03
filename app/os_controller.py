@@ -96,6 +96,11 @@ class OSController:
                     self._launch_app(app_name)
                     result["details"] = f"Launched application: {app_name}"
 
+            elif action == "wait":
+                delay = float(action_data.get("delay", 0.5))
+                time.sleep(delay)
+                result["details"] = f"Waited for {delay}s"
+
             elif action in ("none", "read_screen"):
                 result["details"] = "No mouse/keyboard action needed"
 
@@ -109,6 +114,41 @@ class OSController:
             print(f"[OSController] Action error: {e}")
 
         return result
+
+    def execute_action_sequence(self, actions_list: list) -> Dict[str, Any]:
+        """
+        Execute multiple actions sequentially in order.
+        Supports complex multi-step instructions (e.g. click search bar -> type text -> press enter).
+        """
+        if not actions_list:
+            return {"success": True, "action": "none", "details": "No actions to execute"}
+
+        results = []
+        overall_success = True
+
+        for i, act in enumerate(actions_list):
+            if not isinstance(act, dict):
+                continue
+
+            print(f"[OSController] Thực thi bước {i+1}/{len(actions_list)}: {act.get('action')}")
+            res = self.execute_action(act)
+            results.append(res)
+
+            if not res.get("success", False):
+                overall_success = False
+
+            # Pause between sequential steps
+            step_delay = float(act.get("delay", ACTION_SAFETY_PAUSE))
+            time.sleep(max(0.1, step_delay))
+
+        summary_details = " ➔ ".join([r.get("details", "") for r in results if r.get("details")])
+        return {
+            "success": overall_success,
+            "action": "sequence",
+            "count": len(actions_list),
+            "details": summary_details,
+            "results": results,
+        }
 
     def _paste_unicode_text(self, text: str):
         """

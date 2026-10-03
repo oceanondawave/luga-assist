@@ -70,10 +70,45 @@ def test_tts_generation():
     asyncio.run(run_tts())
     print("test_tts_generation: PASSED")
 
+def test_multi_action_sequence():
+    multi_json = """
+```json
+{
+  "speech": "Đang bấm ô tìm kiếm, gõ từ khóa và nhấn Enter",
+  "actions": [
+    {"action": "click", "x_percent": 0.8, "y_percent": 0.1},
+    {"action": "type", "text": "Spotify"},
+    {"action": "press", "key": "enter"},
+    {"action": "wait", "delay": 0.1}
+  ]
+}
+```
+"""
+    res = extract_json_payload(multi_json)
+    assert "actions" in res
+    assert len(res["actions"]) == 4
+    assert res["actions"][0]["action"] == "click"
+    assert res["actions"][1]["text"] == "Spotify"
+
+    # Test multi-action visual annotation
+    annotated = screen_capturer.annotate_actions(res["actions"])
+    assert annotated is not None
+    assert annotated.startswith("data:image/jpeg;base64,")
+
+    # Test multi-action execution with mock/noop
+    result = os_controller.execute_action_sequence([
+        {"action": "wait", "delay": 0.05},
+        {"action": "none"}
+    ])
+    assert result["success"] is True
+    assert result["count"] == 2
+    print("test_multi_action_sequence: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
     test_extract_json_payload()
     test_os_controller_to_pixel_coords()
     test_tts_generation()
-    print("\n🎉 ALL TESTS PASSED SUCCESSFULLY!")
+    test_multi_action_sequence()
+    print("\n🎉 ALL TESTS (INCLUDING MULTI-ACTION) PASSED SUCCESSFULLY!")

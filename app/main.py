@@ -295,33 +295,37 @@ async def process_user_command(user_command: str, voice: str):
 
     print(f"[Pipeline] Phản hồi từ Gemini:\n{raw_response}")
 
-    # Step 5: Parse JSON Action
+    # Step 5: Parse JSON Action (Supports both single action and multiple sequential actions)
     action_data = extract_json_payload(raw_response)
     if not action_data:
-        # Fallback: treat whole text as speech if Gemini replied in prose
         speech_text = raw_response.strip() or "Tôi đã nhận được lệnh nhưng chưa xác định được hành động."
-        action_data = {"speech": speech_text, "action": "none"}
+        action_data = {"speech": speech_text, "actions": [{"action": "none"}]}
 
     speech_to_say = action_data.get("speech", "Đang thực hiện yêu cầu của bạn.")
-    action_type = action_data.get("action", "none")
-    x_percent = action_data.get("x_percent")
-    y_percent = action_data.get("y_percent")
 
-    # Step 6: Annotate Screenshot for Visual Verification
-    annotated_b64 = None
-    if x_percent is not None and y_percent is not None:
-        annotated_b64 = screen_capturer.annotate_action(
-            float(x_percent), float(y_percent), action_type
-        )
+    # Extract sequence of actions
+    actions_list = action_data.get("actions", [])
+    if not actions_list and "action" in action_data:
+        actions_list = [action_data]
+
+    # Step 6: Annotate Screenshot for Visual Verification with Step Badges (#1, #2, ...)
+    annotated_b64 = screen_capturer.annotate_actions(actions_list)
 
     # Step 7: Speak Spoken Response to Visually Impaired User
     speak_task = asyncio.create_task(tts_service.speak(speech_to_say))
 
-    # Step 8: Execute Mouse/Keyboard Action on OS
-    action_result = os_controller.execute_action(action_data)
-    print(f"[Pipeline] Action execution result: {action_result}")
+    # Step 8: Execute Action Sequence on OS
+    if len(actions_list) > 1:
+        print(f"[Pipeline] ⚡ Đang thực thi chuỗi {len(actions_list)} hành động liên hoàn...")
+        action_result = os_controller.execute_action_sequence(actions_list)
+    elif len(actions_list) == 1:
+        action_result = os_controller.execute_action(actions_list[0])
+    else:
+        action_result = {"success": True, "action": "none", "details": "No action needed"}
 
-    # Await voice completion if needed
+    print(f"[Pipeline] Kết quả chuỗi hành động: {action_result}")
+
+    # Await voice completion
     await speak_task
 
     # Step 9: Broadcast Action Completed to WebUI

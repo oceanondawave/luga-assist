@@ -140,5 +140,60 @@ class ScreenCapturer:
             print(f"[ScreenCapturer] Error annotating action: {e}")
             return None
 
+    def annotate_actions(self, actions_list: list) -> Optional[str]:
+        """
+        Annotate multiple action locations sequentially on the screenshot
+        with numbered step badges (#1, #2, #3).
+        """
+        if not self.screenshot_path.exists() or not actions_list:
+            return None
+
+        try:
+            img = Image.open(self.screenshot_path).convert("RGB")
+            draw = ImageDraw.Draw(img)
+            w, h = img.size
+
+            points = []
+            step = 1
+
+            for act in actions_list:
+                if not isinstance(act, dict):
+                    continue
+
+                xp = act.get("x_percent")
+                yp = act.get("y_percent")
+                act_name = act.get("action", "").upper()
+
+                if xp is not None and yp is not None:
+                    px = int(w * float(xp))
+                    py = int(h * float(yp))
+                    points.append((px, py))
+
+                    radius = 22
+                    # Draw target ring
+                    draw.ellipse([(px - radius, py - radius), (px + radius, py + radius)], outline=(255, 50, 50), width=3)
+                    # Step badge
+                    badge_text = f"#{step} {act_name}"
+                    draw.rectangle([(px - 14, py - 14), (px + 14, py + 14)], fill=(255, 230, 0), outline=(0, 0, 0))
+                    draw.text((px - 8, py - 8), f"#{step}", fill=(0, 0, 0))
+                    # Action label
+                    draw.rectangle([(px + radius + 4, py - 10), (px + radius + 140, py + 12)], fill=(0, 0, 0))
+                    draw.text((px + radius + 8, py - 6), badge_text, fill=(255, 255, 255))
+                    step += 1
+
+            # Draw directional lines between sequence points if multiple
+            if len(points) > 1:
+                for i in range(len(points) - 1):
+                    draw.line([points[i], points[i + 1]], fill=(0, 255, 255), width=2)
+
+            img.save(self.annotated_path, format="JPEG", quality=85)
+
+            buffered = io.BytesIO()
+            img.save(buffered, format="JPEG", quality=85)
+            return f"data:image/jpeg;base64,{base64.b64encode(buffered.getvalue()).decode('utf-8')}"
+        except Exception as e:
+            print(f"[ScreenCapturer] Error annotating actions sequence: {e}")
+            return None
+
 # Singleton instance
 screen_capturer = ScreenCapturer()
