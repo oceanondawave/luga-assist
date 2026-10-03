@@ -42,11 +42,35 @@ class SoundManager:
 
         # Always generate crisp assistant rising chime for voice activation
         self._create_rising_chime(self.snd_start)
+        # Always generate soft, soothing pulse for processing cue
+        self._create_gentle_pulse(self.snd_pulse)
 
-        if not self.snd_pulse.exists():
-            self._create_tone(self.snd_pulse, [587.33], duration=0.04, volume=0.18)
+        if not self.snd_done.exists():
             self._create_tone(self.snd_done, [523.25, 659.25, 783.99], duration=0.15, volume=0.25)
+        if not self.snd_error.exists():
             self._create_tone(self.snd_error, [220.0, 180.0], duration=0.2, volume=0.25)
+
+    def _create_gentle_pulse(self, path: Path):
+        """Generate a soft, pleasing ambient thinking pulse (E5 droplet tone with gentle decay)."""
+        rate = 44100
+        duration = 0.06
+        samples = int(rate * duration)
+        data = bytearray()
+        for i in range(samples):
+            t = float(i) / rate
+            if i < int(rate * 0.003):
+                env = math.sin((math.pi / 2) * (i / (rate * 0.003)))
+            else:
+                env = math.exp(-38 * (t - 0.003))
+            val = math.sin(2 * math.pi * 659.25 * t) * 0.88 + math.sin(2 * math.pi * 1318.5 * t) * 0.12
+            sample = int(32767 * 0.20 * env * val)
+            data.extend(struct.pack("<h", max(-32768, min(32767, sample))))
+
+        with wave.open(str(path), "w") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(rate)
+            wf.writeframes(data)
 
     def _create_rising_chime(self, path: Path):
         """Generate a bright, modern assistant activation chime (D5 -> A5 rising bell)."""
@@ -133,11 +157,12 @@ class SoundManager:
         self._stop_pulse.clear()
 
         def _pulse_loop():
-            pulse_sound = "/System/Library/Sounds/Pop.aiff" if sys.platform == "darwin" and os.path.exists("/System/Library/Sounds/Pop.aiff") else str(self.snd_pulse)
+            # Soft procedural ambient thinking droplet tone across all operating systems
+            pulse_sound = str(self.snd_pulse)
             while not self._stop_pulse.is_set():
-                self._play_file(pulse_sound, volume=0.35)
-                # Pulse rhythm every 500ms
-                if self._stop_pulse.wait(0.50):
+                self._play_file(pulse_sound, volume=0.25)
+                # Gentle 450ms rhythm
+                if self._stop_pulse.wait(0.45):
                     break
 
         self._pulse_thread = threading.Thread(target=_pulse_loop, daemon=True)
