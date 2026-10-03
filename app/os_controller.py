@@ -207,6 +207,13 @@ class OSController:
                 )
             except Exception:
                 pyautogui.hotkey("command", "v")
+        elif sys.platform.startswith("win"):
+            # Windows: Cleanly hold Ctrl, press V, and release to avoid IME drops
+            pyautogui.keyDown("ctrl")
+            time.sleep(0.02)
+            pyautogui.press("v")
+            time.sleep(0.02)
+            pyautogui.keyUp("ctrl")
         else:
             pyautogui.hotkey("ctrl", "v")
         time.sleep(0.05)
@@ -253,12 +260,45 @@ class OSController:
                 except Exception:
                     pass
 
-        # Fallback to pyautogui
+        elif sys.platform.startswith("win"):
+            parts = [p.strip() for p in combo_clean.split("+")]
+            # Automatically translate macOS shortcuts to Windows equivalents
+            normalized_parts = []
+            for p in parts:
+                if p in ("cmd", "command"):
+                    normalized_parts.append("ctrl")
+                elif p in ("return",):
+                    normalized_parts.append("enter")
+                elif p in ("esc",):
+                    normalized_parts.append("escape")
+                else:
+                    normalized_parts.append(p)
+
+            # Shortcut: cmd+space -> win (Windows Start)
+            if normalized_parts == ["ctrl", "space"] and ("cmd" in combo_clean or "command" in combo_clean):
+                pyautogui.press("win")
+                return
+
+            # Press modifiers cleanly without dropping
+            modifiers = [p for p in normalized_parts if p in ("ctrl", "alt", "shift", "win")]
+            main_keys = [p for p in normalized_parts if p not in ("ctrl", "alt", "shift", "win")]
+
+            for m in modifiers:
+                pyautogui.keyDown(m)
+            time.sleep(0.02)
+            for k in main_keys:
+                pyautogui.press(k)
+            time.sleep(0.02)
+            for m in reversed(modifiers):
+                pyautogui.keyUp(m)
+            return
+
+        # Fallback to pyautogui for Linux/other
         keys = [k.strip() for k in combo_clean.split("+")]
         mapped_keys = []
         for k in keys:
             if k in ("cmd", "command", "win", "windows", "super"):
-                mapped_keys.append("command" if sys.platform == "darwin" else "win")
+                mapped_keys.append("win")
             elif k in ("ctrl", "control"):
                 mapped_keys.append("ctrl")
             elif k in ("alt", "option"):

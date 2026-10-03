@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Optional, Tuple
 import pyautogui
 
 IS_MACOS = sys.platform == "darwin"
+IS_WINDOWS = sys.platform.startswith("win")
 
 if IS_MACOS:
     try:
@@ -30,11 +31,15 @@ class AccessibilityManager:
         """
         Inspect the frontmost application and active window to extract
         high-confidence interactive UI elements (buttons, inputs, search fields).
-        Returns exact normalized coordinates (0.00 - 1.00) and pixel centers.
+        Returns exact normalized coordinates (0.00 - 1.00) and pixel centers across macOS and Windows.
         """
-        if not HAS_MACOS_AX:
-            return {"app": "", "window": "", "elements": []}
+        if IS_MACOS and HAS_MACOS_AX:
+            return self._get_macos_app_elements(max_elements)
+        elif IS_WINDOWS:
+            return self._get_windows_app_elements(max_elements)
+        return {"app": "", "window": "", "elements": []}
 
+    def _get_macos_app_elements(self, max_elements: int = 25) -> Dict[str, Any]:
         try:
             ws = AppKit.NSWorkspace.sharedWorkspace()
             front_app = ws.frontmostApplication()
@@ -82,7 +87,7 @@ class AccessibilityManager:
                         ok_s, sz = ApplicationServices.AXValueGetValue(size_val, ApplicationServices.kAXValueCGSizeType, None)
 
                         if ok_p and ok_s and sz.width >= 12 and sz.height >= 12:
-                            # Calculate click target: For wide text fields, click near left edge (50px in)
+                            # For wide text fields, click near left edge (50-80px in)
                             if "TextField" in role or "TextArea" in role or "ComboBox" in role:
                                 click_x = int(pt.x + min(80, sz.width * 0.2))
                             else:
@@ -111,7 +116,6 @@ class AccessibilityManager:
                     for c in children:
                         walk(c, depth + 1)
 
-            # Inspect frontmost window, then second window if available (e.g. popup menus/autocomplete)
             win_title = ""
             for w in windows[:2]:
                 if not win_title:
@@ -123,8 +127,112 @@ class AccessibilityManager:
             return {"app": app_name, "window": win_title, "elements": results}
 
         except Exception as e:
-            print(f"[AccessibilityManager] Warning during UI element extraction: {e}")
+            print(f"[AccessibilityManager] Warning during macOS UI element extraction: {e}")
             return {"app": "", "window": "", "elements": []}
+
+    def _get_windows_app_elements(self, max_elements: int = 25) -> Dict[str, Any]:
+        """
+        Inspect the active foreground window on Windows using UIAutomation or PowerShell.
+        Extracts Edit, Button, ComboBox controls and their exact screen rectangles.
+        """
+        import subprocess
+        import json
+
+        # 1. Try uiautomation library if installed
+        try:
+            import uiautomation as auto
+            win = auto.GetForegroundControl()
+            if win:
+                win_name = win.Name or ""
+                screen_w, screen_h = pyautogui.size()
+                results = []
+                for ctrl in win.GetChildren():
+                    rect = ctrl.BoundingRectangle
+                    if rect and rect.width() > 10 and rect.height() > 10:
+                        name = ctrl.Name or ""
+                        if name:
+                            cx = int(rect.left + rect.width() / 2.0)
+                            cy = int(rect.top + rect.height() / 2.0)
+                            results.append({
+                                "role": ctrl.ControlTypeName.replace("Control", ""),
+                                "name": name,
+                                "x_percent": round(cx / float(screen_w), 3),
+                                "y_percent": round(cy / float(screen_h), 3),
+                                "pixel_x": cx,
+                                "pixel_y": cy,
+                                "width": int(rect.width()),
+                                "height": int(rect.height()),
+                            })
+                if results:
+                    self.cached_elements = results[:max_elements]
+                    return {"app": win_name, "window": win_name, "elements": self.cached_elements}
+        except Exception:
+            pass
+
+        # 2. Built-in Windows UIAutomation via PowerShell fallback (pre-installed on all Windows)
+        try:
+            ps_script = (
+                "Add-Type -AssemblyName UIAutomationClient; "
+                "Add-Type -AssemblyName UIAutomationTypes; "
+                "$def = @'\n"
+                "[DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow();\n"
+                "[DllImport(\"user32.dll\")] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);\n"
+                "'@;\n"
+                "Add-Type -MemberDefinition $def -Name W32 -Namespace Native -PassThru | Out-Null;\n"
+                "$h = [Native.W32]::GetForegroundWindow();\n"
+                "$sb = New-Object System.Text.StringBuilder 256;\n"
+                "[Native.W32]::GetWindowText($h, $sb, 256) | Out-Null;\n"
+                "$title = $sb.ToString();\n"
+                "$elem = [System.Windows.Automation.AutomationElement]::FromHandle($h);\n"
+                "$cond = New-Object System.Windows.Automation.OrCondition(\n"
+                "  (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit)),\n"
+                "  (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)),\n"
+                "  (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::ComboBox))\n"
+                ");\n"
+                "$found = $elem.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond);\n"
+                "$list = @();\n"
+                "foreach ($f in $found) {\n"
+                "  $r = $f.Current.BoundingRectangle;\n"
+                "  if ($r.Width -gt 10 -and $r.Height -gt 10 -and $f.Current.Name) {\n"
+                "    $list += [PSCustomObject]@{ role=$f.Current.ControlType.ProgrammaticName.Replace('ControlType.',''); name=$f.Current.Name; x=[int]$r.X; y=[int]$r.Y; w=[int]$r.Width; h=[int]$r.Height };\n"
+                "  }\n"
+                "}\n"
+                "[PSCustomObject]@{ window=$title; items=$list } | ConvertTo-Json -Compress\n"
+            )
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+                capture_output=True,
+                text=True,
+                timeout=1.5
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                data = json.loads(res.stdout.strip())
+                win_name = data.get("window", "")
+                items = data.get("items", [])
+                if isinstance(items, dict):
+                    items = [items]
+                screen_w, screen_h = pyautogui.size()
+                results = []
+                for it in items:
+                    x, y, w, h = it.get("x", 0), it.get("y", 0), it.get("w", 0), it.get("h", 0)
+                    cx = int(x + w / 2.0)
+                    cy = int(y + h / 2.0)
+                    results.append({
+                        "role": it.get("role", "Control"),
+                        "name": it.get("name", ""),
+                        "x_percent": round(cx / float(screen_w), 3),
+                        "y_percent": round(cy / float(screen_h), 3),
+                        "pixel_x": cx,
+                        "pixel_y": cy,
+                        "width": w,
+                        "height": h,
+                    })
+                self.cached_elements = results[:max_elements]
+                return {"app": win_name, "window": win_name, "elements": self.cached_elements}
+        except Exception as e:
+            print(f"[AccessibilityManager] Windows UI Automation notice: {e}")
+
+        return {"app": "", "window": "", "elements": []}
 
     def focus_element_by_name(self, target_name: str) -> bool:
         """
