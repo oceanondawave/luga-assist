@@ -25,6 +25,8 @@ class NativeVoiceListener:
         self.is_recording = False
         self.is_processing = False
         self._stop_requested = False
+        self._last_trigger_time = 0.0
+        self._recording_start_time = 0.0
         self.sample_rate = 16000
         self.channels = 1
         self._hotkey_listener: Optional[keyboard.Listener] = None
@@ -33,10 +35,11 @@ class NativeVoiceListener:
     def listen_and_transcribe(self) -> Optional[str]:
         """
         Record audio from system microphone with rapid voice activity detection (VAD).
-        Stops automatically when user stops speaking (0.65s silence threshold).
+        Stops automatically when user stops speaking (0.85s natural silence threshold).
         """
         self.is_recording = True
         self._stop_requested = False
+        self._recording_start_time = time.time()
         sound_manager.play_start()
         print("\n" + "=" * 60)
         print("🎙️ ĐANG LẮNG NGHE BẠN NÓI... (Nói lệnh và dừng lại khi nói xong)")
@@ -46,11 +49,12 @@ class NativeVoiceListener:
         chunk_samples = int(self.sample_rate * chunk_duration)
         recorded_frames = []
 
-        silence_threshold = 280  # RMS energy threshold
+        silence_threshold = 200  # Optimal sensitivity for natural speech
         speech_detected = False
+        speech_duration = 0.0
         silence_start_time = None
-        silence_duration_to_stop = 0.55  # Ultra-fast 0.55s silence cutoff (instant response)
-        max_duration = 10.0  # Max 10 seconds per command
+        silence_duration_to_stop = 0.85  # 0.85s natural pause threshold
+        max_duration = 12.0  # Max 12 seconds per command
         start_time = time.time()
 
         try:
@@ -68,8 +72,10 @@ class NativeVoiceListener:
 
                     if rms > silence_threshold:
                         speech_detected = True
+                        speech_duration += chunk_duration
                         silence_start_time = None
-                    elif speech_detected:
+                    elif speech_detected and speech_duration >= 0.35:
+                        # Only start counting silence if user has actually spoken for at least 0.35s
                         if silence_start_time is None:
                             silence_start_time = time.time()
                         elif time.time() - silence_start_time >= silence_duration_to_stop:
@@ -114,12 +120,21 @@ class NativeVoiceListener:
 
     def trigger_voice_flow(self):
         """Trigger the complete voice-to-action flow without opening any browser."""
+        now = time.time()
+        # Debounce: ignore repeated keypresses within 0.5s (prevents OS key repeat glitch)
+        if now - self._last_trigger_time < 0.5:
+            return
+        self._last_trigger_time = now
+
         if self.is_processing:
             print("[NativeVoice] Hệ thống đang bận thực hiện tác vụ trước...")
             return
 
+        # If already recording, only allow manual stop if recording has been running for at least 1.0s
         if self.is_recording:
-            self._stop_requested = True
+            if now - self._recording_start_time > 1.0:
+                print("[NativeVoice] ⏹️ Nhận lệnh dừng ghi âm từ phím nóng.")
+                self._stop_requested = True
             return
 
         self.is_processing = True
