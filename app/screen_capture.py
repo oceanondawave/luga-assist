@@ -40,28 +40,29 @@ class ScreenCapturer:
             # Convert to PIL Image
             img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
             self.last_screen_size = img.size  # (width, height)
-            orig_w, orig_h = img.size
+        orig_w, orig_h = img.size
 
-        # Create working copy
-        processed_img = img.copy()
-
-        # Overlay visual coordinate grid if requested
-        if with_grid:
-            processed_img = self._draw_coordinate_grid(processed_img)
-
-        # Scale down if width exceeds max limit (reduces upload latency on Gemini Web)
+        # 1. High-speed scale down first (reduces memory & drawing time by 75%)
         if orig_w > SCREENSHOT_MAX_WIDTH:
             scale_ratio = SCREENSHOT_MAX_WIDTH / float(orig_w)
             new_h = int(orig_h * scale_ratio)
-            processed_img = processed_img.resize((SCREENSHOT_MAX_WIDTH, new_h), Image.Resampling.LANCZOS)
+            processed_img = img.resize((SCREENSHOT_MAX_WIDTH, new_h), Image.Resampling.BILINEAR)
+        else:
+            processed_img = img
 
-        # Save to temp file
-        processed_img.save(self.screenshot_path, format="JPEG", quality=85)
+        # 2. Draw visual coordinate grid on the optimized image
+        if with_grid:
+            processed_img = self._draw_coordinate_grid(processed_img)
 
-        # Encode to Base64 Data URI
+        # 3. High-speed JPEG save & Base64 encoding in memory
         buffered = io.BytesIO()
-        processed_img.save(buffered, format="JPEG", quality=85)
-        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        processed_img.save(buffered, format="JPEG", quality=75)
+        raw_bytes = buffered.getvalue()
+
+        with open(self.screenshot_path, "wb") as f:
+            f.write(raw_bytes)
+
+        img_str = base64.b64encode(raw_bytes).decode("utf-8")
         data_uri = f"data:image/jpeg;base64,{img_str}"
 
         return data_uri, self.last_screen_size

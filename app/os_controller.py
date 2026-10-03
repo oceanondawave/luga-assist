@@ -68,7 +68,7 @@ class OSController:
                         x, y = self.to_pixel_coords(action_data["x_percent"], action_data["y_percent"])
                         pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
                         pyautogui.click()
-                        time.sleep(0.2)
+                        time.sleep(0.06)
                     
                     # For Vietnamese Unicode text: copy to clipboard and paste to avoid IME issues
                     self._paste_unicode_text(text)
@@ -139,7 +139,7 @@ class OSController:
 
             # Pause between sequential steps
             step_delay = float(act.get("delay", ACTION_SAFETY_PAUSE))
-            time.sleep(max(0.1, step_delay))
+            time.sleep(max(0.04, step_delay))
 
         summary_details = " ➔ ".join([r.get("details", "") for r in results if r.get("details")])
         return {
@@ -156,7 +156,7 @@ class OSController:
         to preserve full Vietnamese accents and diacritics.
         """
         pyperclip.copy(text)
-        time.sleep(0.1)
+        time.sleep(0.04)
         if sys.platform == "darwin":
             pyautogui.hotkey("command", "v")
         else:

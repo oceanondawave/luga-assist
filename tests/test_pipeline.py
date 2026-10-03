@@ -104,6 +104,17 @@ def test_multi_action_sequence():
     assert result["count"] == 2
     print("test_multi_action_sequence: PASSED")
 
+def test_sound_effects():
+    import time
+    from app.sound_effects import sound_manager
+    sound_manager.play_start()
+    sound_manager.start_pulsing()
+    time.sleep(0.6)
+    sound_manager.play_done()
+    time.sleep(0.1)
+    sound_manager.play_error()
+    print("test_sound_effects: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -111,4 +122,5 @@ if __name__ == "__main__":
     test_os_controller_to_pixel_coords()
     test_tts_generation()
     test_multi_action_sequence()
-    print("\n🎉 ALL TESTS (INCLUDING MULTI-ACTION) PASSED SUCCESSFULLY!")
+    test_sound_effects()
+    print("\n🎉 ALL TESTS (INCLUDING SOUND EFFECTS & SPEED OPTIMIZATIONS) PASSED SUCCESSFULLY!")

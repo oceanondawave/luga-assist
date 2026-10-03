@@ -33,9 +33,9 @@ KHẢ NĂNG THỰC HIỆN NHIỀU HÀNH ĐỘNG CÙNG LÚC (RẤT QUAN TRỌNG):
   2. Gõ từ khóa
   3. Nhấn phím enter
 
-YÊU CẦU PHẢN HỒI:
-- Trường "speech": Viết câu trả lời ngắn gọn, tự nhiên, lễ phép bằng tiếng Việt để đọc to cho người khiếm thị nghe (ví dụ: "Đang tìm kiếm Spotify cho bạn", "Tôi đang mở ứng dụng và chọn mục đầu tiên").
-- Chỉ trả về DUY NHẤT một khối mã JSON hợp lệ như định dạng dưới đây. KHÔNG viết thêm bất kỳ văn bản nào khác ngoài JSON.
+YÊU CẦU PHẢN HỒI (TỐI ƯU TỐC ĐỘ XỬ LÝ):
+- Trường "speech": Viết câu trả lời CỰC KỲ NGẮN GỌN (dưới 10 từ tiếng Việt, ví dụ: "Đang mở Spotify", "Đã tìm kiếm theo yêu cầu", "Đang mở ứng dụng").
+- Chỉ trả về DUY NHẤT một khối mã JSON hợp lệ như định dạng dưới đây. TUYỆT ĐỐI KHÔNG giải thích, KHÔNG viết thêm bất kỳ văn bản nào khác ngoài JSON.
 
 ```json
 {

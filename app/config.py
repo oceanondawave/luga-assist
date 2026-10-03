@@ -27,8 +27,8 @@ TTS_VOLUME = "+0%"
 # Draws a reference grid overlay on screenshots so Gemini can pinpoint exact coordinates
 ENABLE_VISUAL_GRID = True
 GRID_PERCENT_STEP = 10  # 10% grid lines (0%, 10%, 20%... 100%)
-SCREENSHOT_MAX_WIDTH = 1920  # Rescale screenshot to fit upload limits if screen is 4K/Retina
+SCREENSHOT_MAX_WIDTH = 1280  # Optimal size: lightning-fast upload & high precision
 
-# Automation limits
-MOUSE_MOVE_DURATION = 0.4  # Smooth mouse movement
-ACTION_SAFETY_PAUSE = 0.2  # Pause between sequential actions
+# High-Speed Automation limits
+MOUSE_MOVE_DURATION = 0.08  # Ultra-fast, snappy mouse movement
+ACTION_SAFETY_PAUSE = 0.03  # Instant pacing between steps

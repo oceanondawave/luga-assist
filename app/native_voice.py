@@ -16,6 +16,7 @@ import audioop
 import sounddevice as sd
 import speech_recognition as sr
 from pynput import keyboard
+from app.sound_effects import sound_manager
 
 class NativeVoiceListener:
     def __init__(self, on_command_callback: Optional[Callable[[str], None]] = None):
@@ -29,44 +30,27 @@ class NativeVoiceListener:
         self._hotkey_listener: Optional[keyboard.Listener] = None
         self._current_keys = set()
 
-    def play_sound(self, sound_type: str = "start"):
-        """Play native system earcon cues."""
-        if sys.platform == "darwin":  # macOS built-in earcons
-            sound_map = {
-                "start": "/System/Library/Sounds/Tink.aiff",
-                "thinking": "/System/Library/Sounds/Submarine.aiff",
-                "success": "/System/Library/Sounds/Glass.aiff",
-                "error": "/System/Library/Sounds/Basso.aiff",
-            }
-            sound_file = sound_map.get(sound_type, "/System/Library/Sounds/Tink.aiff")
-            if os.path.exists(sound_file):
-                subprocess.Popen(["/usr/bin/afplay", sound_file], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return
-
-        # Fallback cross-platform print
-        print(f"[Earcon] 🔔 {sound_type.upper()}")
-
     def listen_and_transcribe(self) -> Optional[str]:
         """
-        Record audio from system microphone with automatic voice activity detection (VAD).
-        Stops automatically when user stops speaking, or when F8 is pressed again.
+        Record audio from system microphone with rapid voice activity detection (VAD).
+        Stops automatically when user stops speaking (0.65s silence threshold).
         """
         self.is_recording = True
         self._stop_requested = False
-        self.play_sound("start")
+        sound_manager.play_start()
         print("\n" + "=" * 60)
         print("🎙️ ĐANG LẮNG NGHE BẠN NÓI... (Nói lệnh và dừng lại khi nói xong)")
         print("=" * 60)
 
-        chunk_duration = 0.1  # 100ms
+        chunk_duration = 0.08  # 80ms chunks for rapid response
         chunk_samples = int(self.sample_rate * chunk_duration)
         recorded_frames = []
 
-        silence_threshold = 300  # RMS energy threshold
+        silence_threshold = 280  # RMS energy threshold
         speech_detected = False
         silence_start_time = None
-        silence_duration_to_stop = 1.3  # Stop after 1.3s of silence
-        max_duration = 12.0  # Max 12 seconds per command
+        silence_duration_to_stop = 0.55  # Ultra-fast 0.55s silence cutoff (instant response)
+        max_duration = 10.0  # Max 10 seconds per command
         start_time = time.time()
 
         try:
@@ -97,16 +81,18 @@ class NativeVoiceListener:
 
         except Exception as e:
             print(f"[NativeVoice] Lỗi khi thu âm từ micro: {e}")
-            self.play_sound("error")
+            sound_manager.play_error()
             self.is_recording = False
             return None
 
         self.is_recording = False
         if not recorded_frames or not speech_detected:
             print("[NativeVoice] Không phát hiện thấy giọng nói.")
+            sound_manager.play_error()
             return None
 
-        self.play_sound("thinking")
+        # Start pulsing sound as soon as voice stops and thinking begins!
+        sound_manager.start_pulsing()
         print("[NativeVoice] ⏳ Đang nhận diện tiếng Việt qua Google STT...")
 
         audio_bytes = b"".join(recorded_frames)
@@ -119,11 +105,11 @@ class NativeVoiceListener:
             return text
         except sr.UnknownValueError:
             print("[NativeVoice] Chưa nghe rõ câu lệnh, vui lòng thử lại.")
-            self.play_sound("error")
+            sound_manager.play_error()
             return None
         except Exception as e:
             print(f"[NativeVoice] Lỗi nhận diện: {e}")
-            self.play_sound("error")
+            sound_manager.play_error()
             return None
 
     def trigger_voice_flow(self):

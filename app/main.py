@@ -29,6 +29,7 @@ from app.tts_service import tts_service
 from app.prompt_templates import build_gemini_prompt
 from app.gemini_service import gemini_service
 from app.native_voice import NativeVoiceListener
+from app.sound_effects import sound_manager
 
 app = FastAPI(title="Luga Assist Local Server", version="1.0.0")
 
@@ -219,10 +220,13 @@ async def websocket_extension(ws: WebSocket):
 # Master Pipeline Execution
 async def process_user_command(user_command: str, voice: str):
     print(f"\n[Pipeline] New Voice Command: '{user_command}'")
+    # Ensure pulsing heartbeat cue is playing while AI is thinking and acting
+    sound_manager.start_pulsing()
 
     # Step 1: Check Connection (Gemini Background Service or Extension)
     is_gemini_ready = gemini_service.is_ready or (hub.extension_client is not None)
     if not is_gemini_ready:
+        sound_manager.play_error()
         error_msg = (
             "Chưa nhận được session Google Gemini! "
             "Vui lòng đảm bảo Chrome đã bật Extension Luga Assist và bạn đã đăng nhập tài khoản Google."
@@ -259,6 +263,7 @@ async def process_user_command(user_command: str, voice: str):
                 image_path=screen_capturer.screenshot_path
             )
         except Exception as e:
+            sound_manager.play_error()
             print(f"[Pipeline] Lỗi khi gọi gemini_service: {e}")
             err_text = f"Lỗi khi xử lý với Gemini: {e}"
             await hub.broadcast_webui({"type": "ERROR", "message": err_text, "user_command": user_command})
@@ -287,6 +292,7 @@ async def process_user_command(user_command: str, voice: str):
             result_payload = await asyncio.wait_for(future, timeout=45.0)
             raw_response = result_payload.get("raw_text", "")
         except asyncio.TimeoutError:
+            sound_manager.play_error()
             hub.pending_tasks.pop(task_id, None)
             timeout_msg = "Quá thời gian chờ phản hồi từ Gemini. Vui lòng thử lại câu lệnh."
             await hub.broadcast_webui({"type": "ERROR", "message": timeout_msg, "user_command": user_command})
@@ -311,18 +317,25 @@ async def process_user_command(user_command: str, voice: str):
     # Step 6: Annotate Screenshot for Visual Verification with Step Badges (#1, #2, ...)
     annotated_b64 = screen_capturer.annotate_actions(actions_list)
 
-    # Step 7: Speak Spoken Response to Visually Impaired User
+    # Step 7: Speak Spoken Response to Visually Impaired User concurrently
     speak_task = asyncio.create_task(tts_service.speak(speech_to_say))
 
     # Step 8: Execute Action Sequence on OS
-    if len(actions_list) > 1:
-        print(f"[Pipeline] ⚡ Đang thực thi chuỗi {len(actions_list)} hành động liên hoàn...")
-        action_result = os_controller.execute_action_sequence(actions_list)
-    elif len(actions_list) == 1:
-        action_result = os_controller.execute_action(actions_list[0])
-    else:
-        action_result = {"success": True, "action": "none", "details": "No action needed"}
+    try:
+        if len(actions_list) > 1:
+            print(f"[Pipeline] ⚡ Đang thực thi chuỗi {len(actions_list)} hành động liên hoàn...")
+            action_result = os_controller.execute_action_sequence(actions_list)
+        elif len(actions_list) == 1:
+            action_result = os_controller.execute_action(actions_list[0])
+        else:
+            action_result = {"success": True, "action": "none", "details": "No action needed"}
+    except Exception as e:
+        sound_manager.play_error()
+        print(f"[Pipeline] Lỗi khi thực thi hành động: {e}")
+        action_result = {"success": False, "action": "error", "details": str(e)}
 
+    # Stop pulsing and play completion chime!
+    sound_manager.play_done()
     print(f"[Pipeline] Kết quả chuỗi hành động: {action_result}")
 
     # Await voice completion
