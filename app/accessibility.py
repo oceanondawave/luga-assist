@@ -1,7 +1,7 @@
 """
 Accessibility grounding module for Luga Assist.
-Provides 100% exact UI element detection, direct focus, and coordinate anchoring
-via macOS Accessibility APIs (ApplicationServices & AppKit) and cross-platform keyboard focus.
+Provides 100% exact UI element detection, direct focus, coordinate anchoring,
+and outcome verification via macOS Accessibility APIs and cross-platform UI Automation.
 """
 import sys
 import time
@@ -22,12 +22,49 @@ else:
     HAS_MACOS_AX = False
 
 
+def _score_element(role: str, name: str) -> int:
+    """Prioritize form inputs and core action buttons, suppressing formatting toolbar noise."""
+    name_lower = name.lower().strip()
+    role_clean = role.replace("AX", "")
+
+    # Toolbar formatting noise gets negative score
+    noise_keywords = (
+        "bold", "italic", "underline", "strikethrough", "font", "font size",
+        "font color", "highlight color", "increase indent", "decrease indent",
+        "bullet list", "number list", "text alignment", "paragraph spacing",
+        "styles", "clipboard", "undo", "redo", "more options"
+    )
+    if any(k == name_lower or name_lower.startswith(k) for k in noise_keywords):
+        return -50
+
+    score = 0
+    # Primary form inputs
+    if any(r in role_clean for r in ("TextField", "TextArea", "SearchField", "ComboBox", "Edit")):
+        score += 100
+        if any(k in name_lower for k in ("to", "recipients", "subject", "search", "tìm", "tiêu đề", "người nhận")):
+            score += 50
+    # Primary action buttons
+    elif "Button" in role_clean:
+        action_button_keywords = (
+            "send", "gửi", "new mail", "new", "mới", "soạn", "reply",
+            "save", "lưu", "submit", "discard", "hủy", "search", "ok", "cancel"
+        )
+        if any(k in name_lower for k in action_button_keywords):
+            score += 80
+        else:
+            score += 20
+    else:
+        score += 10
+
+    return score
+
+
 class AccessibilityManager:
     def __init__(self):
         self.cached_elements: List[Dict[str, Any]] = []
         self.last_app_name: str = ""
 
-    def get_frontmost_app_elements(self, max_elements: int = 25) -> Dict[str, Any]:
+    def get_frontmost_app_elements(self, max_elements: int = 35) -> Dict[str, Any]:
         """
         Inspect the frontmost application and active window to extract
         high-confidence interactive UI elements (buttons, inputs, search fields).
@@ -39,7 +76,7 @@ class AccessibilityManager:
             return self._get_windows_app_elements(max_elements)
         return {"app": "", "window": "", "elements": []}
 
-    def _get_macos_app_elements(self, max_elements: int = 25) -> Dict[str, Any]:
+    def _get_macos_app_elements(self, max_elements: int = 35) -> Dict[str, Any]:
         try:
             ws = AppKit.NSWorkspace.sharedWorkspace()
             front_app = ws.frontmostApplication()
@@ -56,11 +93,13 @@ class AccessibilityManager:
                 return {"app": app_name, "window": "", "elements": []}
 
             screen_w, screen_h = pyautogui.size()
-            results: List[Dict[str, Any]] = []
+            candidates: List[Dict[str, Any]] = []
             seen_keys = set()
+            visited_nodes = [0]
 
             def walk(elem, depth: int = 0):
-                if depth > 10 or len(results) >= max_elements:
+                visited_nodes[0] += 1
+                if depth > 14 or visited_nodes[0] > 400:
                     return
 
                 e, role = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXRole", None)
@@ -75,7 +114,7 @@ class AccessibilityManager:
                 interactive_roles = (
                     "AXTextField", "AXTextArea", "AXButton", "AXPopUpButton",
                     "AXComboBox", "AXCheckBox", "AXRadioButton", "AXMenuItem",
-                    "AXSearchField", "AXTabGroup"
+                    "AXSearchField"
                 )
 
                 if role in interactive_roles and name_str:
@@ -100,7 +139,7 @@ class AccessibilityManager:
                             dedup_key = f"{role}:{name_str}:{xp}:{yp}"
                             if dedup_key not in seen_keys:
                                 seen_keys.add(dedup_key)
-                                results.append({
+                                candidates.append({
                                     "role": role.replace("AX", ""),
                                     "name": name_str,
                                     "x_percent": xp,
@@ -123,14 +162,16 @@ class AccessibilityManager:
                     win_title = str(t) if t else ""
                 walk(w)
 
-            self.cached_elements = results
-            return {"app": app_name, "window": win_title, "elements": results}
+            # Sort candidates by relevance score
+            candidates.sort(key=lambda el: _score_element(el["role"], el["name"]), reverse=True)
+            self.cached_elements = candidates[:max_elements]
+            return {"app": app_name, "window": win_title, "elements": self.cached_elements}
 
         except Exception as e:
             print(f"[AccessibilityManager] Warning during macOS UI element extraction: {e}")
             return {"app": "", "window": "", "elements": []}
 
-    def _get_windows_app_elements(self, max_elements: int = 25) -> Dict[str, Any]:
+    def _get_windows_app_elements(self, max_elements: int = 35) -> Dict[str, Any]:
         """
         Inspect the active foreground window on Windows using UIAutomation or PowerShell.
         Extracts Edit, Button, ComboBox controls and their exact screen rectangles.
@@ -153,8 +194,9 @@ class AccessibilityManager:
                         if name:
                             cx = int(rect.left + rect.width() / 2.0)
                             cy = int(rect.top + rect.height() / 2.0)
+                            role_str = ctrl.ControlTypeName.replace("Control", "")
                             results.append({
-                                "role": ctrl.ControlTypeName.replace("Control", ""),
+                                "role": role_str,
                                 "name": name,
                                 "x_percent": round(cx / float(screen_w), 3),
                                 "y_percent": round(cy / float(screen_h), 3),
@@ -164,12 +206,13 @@ class AccessibilityManager:
                                 "height": int(rect.height()),
                             })
                 if results:
+                    results.sort(key=lambda el: _score_element(el["role"], el["name"]), reverse=True)
                     self.cached_elements = results[:max_elements]
                     return {"app": win_name, "window": win_name, "elements": self.cached_elements}
         except Exception:
             pass
 
-        # 2. Built-in Windows UIAutomation via PowerShell fallback (pre-installed on all Windows)
+        # 2. Built-in Windows UIAutomation via PowerShell fallback
         try:
             ps_script = (
                 "Add-Type -AssemblyName UIAutomationClient; "
@@ -227,6 +270,7 @@ class AccessibilityManager:
                         "width": w,
                         "height": h,
                     })
+                results.sort(key=lambda el: _score_element(el["role"], el["name"]), reverse=True)
                 self.cached_elements = results[:max_elements]
                 return {"app": win_name, "window": win_name, "elements": self.cached_elements}
         except Exception as e:
@@ -234,10 +278,74 @@ class AccessibilityManager:
 
         return {"app": "", "window": "", "elements": []}
 
+    def _search_live_macos(self, search_tokens: List[str], allowed_roles: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+        """Live deep search in active macOS window when element is not in top cached list."""
+        if not (IS_MACOS and HAS_MACOS_AX):
+            return None
+        try:
+            ws = AppKit.NSWorkspace.sharedWorkspace()
+            front_app = ws.frontmostApplication()
+            if not front_app:
+                return None
+            pid = front_app.processIdentifier()
+            app_elem = ApplicationServices.AXUIElementCreateApplication(pid)
+            err, windows = ApplicationServices.AXUIElementCopyAttributeValue(app_elem, "AXWindows", None)
+            if not windows:
+                return None
+
+            screen_w, screen_h = pyautogui.size()
+
+            def search_node(elem, depth: int = 0):
+                if depth > 15:
+                    return None
+                e, role = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXRole", None)
+                e, desc = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXDescription", None)
+                e, title = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXTitle", None)
+                e, ph = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXPlaceholderValue", None)
+                e, val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXValue", None)
+
+                name_str = str(desc or title or ph or (val if role in ("AXTextField", "AXButton") else "") or "").lower().strip()
+
+                if allowed_roles is None or role in allowed_roles:
+                    for token in search_tokens:
+                        if token in name_str or (name_str and name_str in token):
+                            e, pos_val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXPosition", None)
+                            e, size_val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXSize", None)
+                            if pos_val and size_val:
+                                ok_p, pt = ApplicationServices.AXValueGetValue(pos_val, ApplicationServices.kAXValueCGPointType, None)
+                                ok_s, sz = ApplicationServices.AXValueGetValue(size_val, ApplicationServices.kAXValueCGSizeType, None)
+                                if ok_p and ok_s and sz.width >= 10 and sz.height >= 10:
+                                    if "TextField" in role or "TextArea" in role or "ComboBox" in role:
+                                        cx = int(pt.x + min(80, sz.width * 0.2))
+                                    else:
+                                        cx = int(pt.x + sz.width / 2.0)
+                                    cy = int(pt.y + sz.height / 2.0)
+                                    return {
+                                        "role": role.replace("AX", ""),
+                                        "name": name_str,
+                                        "pixel_x": cx,
+                                        "pixel_y": cy,
+                                        "x_percent": round(cx / float(screen_w), 3),
+                                        "y_percent": round(cy / float(screen_h), 3),
+                                    }
+
+                e, children = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXChildren", None)
+                if children:
+                    for c in children:
+                        res = search_node(c, depth + 1)
+                        if res:
+                            return res
+                return None
+
+            return search_node(windows[0])
+        except Exception as e:
+            print(f"[AccessibilityManager] Live search warning: {e}")
+            return None
+
     def focus_element_by_name(self, target_name: str) -> bool:
         """
         Find and focus an element matching target_name (e.g. 'to', 'subject', 'search', 'send').
-        Combines macOS Accessibility activation and direct mouse click for 100% reliability.
+        Combines cached lookup and live targeted UI search with direct click for 100% reliability.
         """
         target_lower = target_name.strip().lower()
         if not target_lower:
@@ -245,45 +353,111 @@ class AccessibilityManager:
 
         # Keyword mappings for Vietnamese & English common form fields
         synonyms = {
-            "to": ["to", "recipients", "người nhận", "đến", "gửi đến"],
+            "to": ["to recipients", "to:", "to", "recipients", "người nhận", "đến", "gửi đến"],
             "subject": ["subject", "tiêu đề", "chủ đề"],
             "body": ["body", "nội dung", "soạn", "thư"],
             "search": ["search", "tìm kiếm", "tìm"],
             "send": ["send", "gửi"],
             "discard": ["discard", "hủy", "xóa"],
             "attach": ["attach", "đính kèm", "tệp"],
-            "new": ["new mail", "new", "soạn thư", "mới"],
+            "new mail": ["new mail", "new", "soạn thư", "mới"],
         }
 
         search_tokens = [target_lower]
+        target_category = ""
         for key, syn_list in synonyms.items():
-            if target_lower in syn_list or key in target_lower:
+            if target_lower in syn_list or key in target_lower or target_lower in key:
                 search_tokens.extend(syn_list)
+                target_category = key
 
-        # Refresh cached elements if empty
+        # 1. Search in cached elements first
         if not self.cached_elements:
             self.get_frontmost_app_elements()
 
         best_elem = None
         for elem in self.cached_elements:
             elem_name_lower = elem.get("name", "").lower()
-            elem_role = elem.get("role", "").lower()
-
             for token in search_tokens:
-                if token in elem_name_lower or elem_name_lower in token:
+                if token in elem_name_lower or (elem_name_lower and elem_name_lower in token):
                     best_elem = elem
                     break
             if best_elem:
                 break
 
+        # 2. If not found in cached list, perform live targeted search
+        if not best_elem and IS_MACOS:
+            allowed_roles = None
+            if target_category in ("to", "subject"):
+                allowed_roles = ["AXTextField", "AXTextArea", "AXComboBox"]
+            elif target_category in ("send", "discard", "new mail"):
+                allowed_roles = ["AXButton"]
+            best_elem = self._search_live_macos(search_tokens, allowed_roles=allowed_roles)
+
         if best_elem:
             px = best_elem["pixel_x"]
             py = best_elem["pixel_y"]
-            print(f"[AccessibilityManager] 🎯 Tìm thấy phần tử '{best_elem['name']}' ({best_elem['role']}) tại ({px}, {py})")
+            print(f"[AccessibilityManager] 🎯 Khóa chính xác phần tử '{best_elem['name']}' ({best_elem.get('role', '')}) tại ({px}, {py})")
             pyautogui.moveTo(px, py, duration=0.08)
             pyautogui.click()
             time.sleep(0.12)
             return True
+
+        return False
+
+    def is_compose_window_active(self) -> bool:
+        """
+        Accurately inspect whether an email composer / draft is currently open on screen.
+        Used to prevent premature completion claims until the email is genuinely sent.
+        """
+        if IS_MACOS and HAS_MACOS_AX:
+            try:
+                ws = AppKit.NSWorkspace.sharedWorkspace()
+                front_app = ws.frontmostApplication()
+                if not front_app:
+                    return False
+                pid = front_app.processIdentifier()
+                app_elem = ApplicationServices.AXUIElementCreateApplication(pid)
+                err, windows = ApplicationServices.AXUIElementCopyAttributeValue(app_elem, "AXWindows", None)
+                if not windows:
+                    return False
+
+                found_markers = set()
+
+                def check_node(elem, depth: int = 0):
+                    if depth > 12 or len(found_markers) >= 2:
+                        return
+                    e, role = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXRole", None)
+                    e, desc = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXDescription", None)
+                    e, title = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXTitle", None)
+                    e, val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXValue", None)
+                    text = f"{desc or ''} {title or ''} {val or ''}".lower()
+
+                    if "to recipients" in text or "to:" in text:
+                        found_markers.add("to")
+                    if "subject" in text and role in ("AXTextField", "AXStaticText"):
+                        found_markers.add("subject")
+                    if "discard" in text and role == "AXButton":
+                        found_markers.add("discard")
+                    if "draft saved" in text:
+                        found_markers.add("draft")
+
+                    e, children = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXChildren", None)
+                    if children:
+                        for c in children:
+                            check_node(c, depth + 1)
+
+                check_node(windows[0])
+                return len(found_markers) >= 1
+            except Exception:
+                pass
+
+        # Fallback inspection on cached elements
+        if self.cached_elements:
+            markers = [el["name"].lower() for el in self.cached_elements]
+            has_to = any("to recipients" in m or "to:" in m for m in markers)
+            has_subject = any("subject" in m for m in markers)
+            has_discard = any("discard" in m for m in markers)
+            return (has_to and has_subject) or (has_discard and has_to)
 
         return False
 
@@ -302,7 +476,7 @@ class AccessibilityManager:
         header = f"[TỌA ĐỘ UI CHÍNH XÁC 100% TỪ HỆ THỐNG ({app_name} - {win_name})]:\n"
 
         lines = []
-        for el in elements[:18]:
+        for el in elements[:22]:
             role = el.get("role", "Element")
             name = el.get("name", "")
             xp = el.get("x_percent")

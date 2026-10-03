@@ -93,17 +93,87 @@ class OSController:
                     else:
                         result["details"] = f"Could not focus '{target_str}'"
 
+            elif action in ("send_email", "compose_email"):
+                to_addr = action_data.get("to") or action_data.get("recipient", "")
+                subject = action_data.get("subject", "")
+                body = action_data.get("body", "")
+
+                details = []
+
+                # Ensure compose window / pane is open
+                if not accessibility_manager.is_compose_window_active():
+                    new_btn_ok = accessibility_manager.focus_element_by_name("new mail")
+                    if not new_btn_ok:
+                        self._press_key_combo("cmd+n" if sys.platform == "darwin" else "ctrl+n")
+                    time.sleep(0.6)
+
+                # 1. Focus To field
+                focused_to = accessibility_manager.focus_element_by_name("to")
+                time.sleep(0.12)
+
+                # 2. Type recipient and commit contact chip
+                if to_addr:
+                    self._press_key_combo("cmd+a" if sys.platform == "darwin" else "ctrl+a")
+                    time.sleep(0.04)
+                    self._paste_unicode_text(to_addr)
+                    time.sleep(0.1)
+                    self._press_key_combo("enter")
+                    time.sleep(0.15)
+                    details.append(f"To: {to_addr}")
+
+                # 3. Focus Subject field
+                focused_subject = accessibility_manager.focus_element_by_name("subject")
+                if not focused_subject:
+                    self._press_key_combo("tab")
+                    time.sleep(0.1)
+
+                if subject:
+                    self._press_key_combo("cmd+a" if sys.platform == "darwin" else "ctrl+a")
+                    time.sleep(0.04)
+                    self._paste_unicode_text(subject)
+                    time.sleep(0.1)
+                    details.append(f"Subject: {subject}")
+
+                # 4. Focus Body field (Tab from Subject moves cleanly to Body)
+                focused_body = accessibility_manager.focus_element_by_name("body")
+                if not focused_body:
+                    self._press_key_combo("tab")
+                    time.sleep(0.1)
+
+                if body:
+                    self._press_key_combo("cmd+a" if sys.platform == "darwin" else "ctrl+a")
+                    time.sleep(0.04)
+                    self._paste_unicode_text(body)
+                    time.sleep(0.15)
+                    details.append(f"Body: {body}")
+
+                # 5. Send Email: try clicking Send button or pressing send shortcut
+                send_clicked = accessibility_manager.focus_element_by_name("send")
+                if send_clicked:
+                    details.append("Clicked Send button")
+                else:
+                    send_key = "cmd+return" if sys.platform == "darwin" else "ctrl+enter"
+                    self._press_key_combo(send_key)
+                    details.append(f"Pressed {send_key}")
+
+                result["details"] = " | ".join(details)
+
             elif action == "type":
                 text = action_data.get("text", "")
                 if text:
                     target = action_data.get("target") or action_data.get("field")
-                    if target and accessibility_manager.focus_element_by_name(target):
-                        time.sleep(0.1)
-                    elif "x_percent" in action_data and "y_percent" in action_data:
+                    focused = False
+                    if target:
+                        focused = accessibility_manager.focus_element_by_name(target)
+                        if focused:
+                            time.sleep(0.1)
+
+                    if not focused and "x_percent" in action_data and "y_percent" in action_data:
                         x, y = self.to_pixel_coords(action_data["x_percent"], action_data["y_percent"])
                         pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
                         pyautogui.click(x, y)
                         time.sleep(0.12)
+                        focused = True
 
                     # Clear existing content if requested (default True for clean input)
                     clear_first = action_data.get("clear_first", True)
@@ -113,6 +183,13 @@ class OSController:
 
                     # Paste Unicode text reliably without IME interference
                     self._paste_unicode_text(text)
+
+                    # If typing recipient, auto-commit with enter so contact chip resolves
+                    target_str = str(target or "").lower().strip()
+                    if any(k in target_str for k in ("to", "recipients", "người nhận", "đến")):
+                        time.sleep(0.08)
+                        self._press_key_combo("enter")
+
                     result["details"] = f"Typed: {text}"
 
             elif action == "press":

@@ -372,12 +372,22 @@ async def process_user_command(user_command: str, voice: str):
             else:
                 # This was a verification turn! If Gemini inspected the screen and confirms completion:
                 if claimed_done:
-                    is_goal_verified_completed = True
-                    print(f"[Pipeline] 🎯 ĐÃ XÁC MINH HOÀN TẤT MỤC TIÊU 100% (Outcome Verified) tại bước {step}!")
+                    # EXTRA GUARD FOR EMAIL: Verify compose window is genuinely closed
+                    user_cmd_lower = user_command.lower()
+                    is_email_intent = any(k in user_cmd_lower for k in ("gửi email", "gửi thư", "send email", "soạn thư", "gửi mail"))
+                    if is_email_intent and accessibility_manager.is_compose_window_active():
+                        print("[Pipeline] ⚠️ CẢNH BÁO KIỂM CHỨNG: Gemini báo hoàn thành nhưng cửa sổ/khung soạn thư vẫn còn mở trên màn hình!")
+                        is_goal_verified_completed = False
+                        speech_to_say = "Thư chưa gửi đi được, đang thực hiện gửi lại."
+                        actions_list = [{"action": "click", "target": "send"}, {"action": "press", "key": "cmd+return"}]
+                        active_actions = actions_list
+                    else:
+                        is_goal_verified_completed = True
+                        print(f"[Pipeline] 🎯 ĐÃ XÁC MINH HOÀN TẤT MỤC TIÊU 100% (Outcome Verified) tại bước {step}!")
                 else:
                     is_goal_verified_completed = False
         else:
-            # Active manipulation actions exist (click, type, press, launch_app, focus).
+            # Active manipulation actions exist (click, type, press, launch_app, focus, send_email).
             # An authentic agent CANNOT claim completion in the same step it proposes the action!
             # It MUST wait and verify the outcome on the next observation step!
             is_goal_verified_completed = False
@@ -442,9 +452,9 @@ async def process_user_command(user_command: str, voice: str):
         sound_manager.play_done()
         print(f"\n[Pipeline] 🎉 HOÀN THÀNH VÀ ĐÃ XÁC MINH TOÀN BỘ MỤC TIÊU!")
     else:
-        sound_manager.play_done()
-        print(f"\n[Pipeline] ⚠️ Đã thực hiện tối đa {MAX_AUTONOMOUS_STEPS} bước.")
-        await tts_service.speak("Đã thực hiện xong các bước, bạn vui lòng kiểm tra lại kết quả trên màn hình.")
+        sound_manager.play_error()
+        print(f"\n[Pipeline] ⚠️ Đã dừng sau {MAX_AUTONOMOUS_STEPS} bước mà chưa xác minh được kết quả hoàn tất.")
+        await tts_service.speak("Chưa thể xác nhận hoàn tất thao tác. Bạn vui lòng kiểm tra lại màn hình.")
 
 
 

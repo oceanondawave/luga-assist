@@ -179,6 +179,41 @@ def test_outcome_verification_prompt():
     assert "TRƯỜNG HỢP A" in v_prompt
     print("test_outcome_verification_prompt: PASSED")
 
+def test_element_scoring_and_email_action():
+    from app.accessibility import _score_element, accessibility_manager
+    # 1. Test scoring prioritizing input fields and action buttons over formatting noise
+    to_score = _score_element("AXTextField", "To Recipients")
+    subject_score = _score_element("AXTextField", "Subject")
+    send_score = _score_element("AXButton", "Send")
+    bold_score = _score_element("AXButton", "Bold")
+    italic_score = _score_element("AXButton", "Italic")
+
+    assert to_score > 100
+    assert subject_score > 100
+    assert send_score > 70
+    assert bold_score < 0
+    assert italic_score < 0
+    assert to_score > bold_score
+    assert subject_score > italic_score
+
+    # 2. Test send_email in prompt templates
+    from app.prompt_templates import build_gemini_prompt
+    prompt = build_gemini_prompt("Gửi email tới phuongma.luga, tiêu đề test, nội dung test")
+    assert "send_email" in prompt
+    assert "To Recipients" not in prompt or "x_percent" in prompt
+
+    # 3. Test send_email action schema in extract_json_payload
+    from app.main import extract_json_payload
+    email_json = '{"speech": "Đang gửi thư", "done": false, "actions": [{"action": "send_email", "to": "phuongma.luga", "subject": "test", "body": "test"}]}'
+    payload = extract_json_payload(email_json)
+    assert payload is not None
+    assert payload["actions"][0]["action"] == "send_email"
+    assert payload["actions"][0]["to"] == "phuongma.luga"
+
+    # 4. Test is_compose_window_active method exists
+    assert hasattr(accessibility_manager, "is_compose_window_active")
+    print("test_element_scoring_and_email_action: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -190,7 +225,9 @@ if __name__ == "__main__":
     test_accessibility_and_precision_focus()
     test_windows_cross_platform_compatibility()
     test_outcome_verification_prompt()
+    test_element_scoring_and_email_action()
     print("\n🎉 ALL TESTS (INCLUDING OUTCOME VERIFICATION & REAL AGENT PIPELINE) PASSED SUCCESSFULLY!")
+
 
 
 

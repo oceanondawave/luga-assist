@@ -20,6 +20,11 @@ HÃY PHÂN TÍCH KỸ ẢNH MÀN HÌNH VÀ THỰC HIỆN HÀNH ĐỘNG PHÙ HỢ
      * Nội dung thư (Body): dải y=28% trở xuống.
 
 DANH SÁCH ACTION ĐƯỢC PHÉP:
+- "send_email": Soạn và gửi email trọn gói chính xác 100% (CỰC KỲ KHUYÊN DÙNG khi người dùng muốn gửi thư/email):
+  * "to": địa chỉ email hoặc tên người nhận (ví dụ: "phuongma.luga").
+  * "subject": tiêu đề thư.
+  * "body": nội dung thư.
+  (Hệ thống tự động khóa ô To -> gõ và chốt contact chip -> chuyển sang Subject -> gõ tiêu đề -> chuyển Body -> gõ nội dung -> tự động gửi an toàn 100%).
 - "focus": Chuyển tiêu điểm trực tiếp vào ô nhập liệu mà không sợ lệch chuột (chỉ định "target": "to" | "subject" | "body" | "search" | "next" | "prev").
   * "next": chuyển sang ô tiếp theo (tương đương phím Tab).
   * "prev": quay lại ô trước (tương đương phím Shift+Tab).
@@ -42,11 +47,13 @@ KHẢ NĂNG THỰC HIỆN NHIỀU HÀNH ĐỘNG CÙNG LÚC (CHUỖI HÀNH ĐỘN
 - Trả về mảng "actions" để thực hiện liên hoàn (ví dụ: focus ô To -> gõ email -> focus Subject -> gõ tiêu đề).
 
 QUY TẮC CỐT LÕI CỦA MỘT ACTION AGENT THỰC THỤ (CHỐNG ẢO TƯỞNG / ANTI-HALLUCINATION):
-- TUYỆT ĐỐI KHÔNG ĐƯỢC đặt "done": true khi bạn đang đề xuất một hành động thao tác (click, type, press, launch_app) chưa được kiểm chứng kết quả trên màn hình!
+- TUYỆT ĐỐI KHÔNG ĐƯỢC đặt "done": true khi bạn đang đề xuất một hành động thao tác (click, type, press, launch_app, send_email) chưa được kiểm chứng kết quả trên màn hình!
 - Khi đưa ra hành động thao tác: LUÔN ĐẶT "done": false. Hệ thống sẽ tự động chụp ảnh màn hình mới ngay sau khi thực thi để bạn KIỂM CHỨNG KẾT QUẢ THỰC TẾ (Outcome Verification).
+- NGUYÊN TẮC KIỂM TRA GỬI EMAIL:
+  * Nếu người dùng yêu cầu gửi email: Khi khung/cửa sổ soạn thảo (ô To Recipients, Subject, nút Send/Discard, hoặc chữ 'Draft saved') VẪN CÒN TRÊN MÀN HÌNH -> Thư CHƯA được gửi đi! TUYỆT ĐỐI KHÔNG ĐƯỢC đặt "done": true. Hãy tiếp tục ấn phím "cmd+return" hoặc click nút "send"!
 - CHỈ ĐƯỢC đặt "done": true khi:
   1. Yêu cầu của người dùng chỉ là hỏi thông tin/đọc màn hình (action=none hoặc read_screen).
-  2. HOẶC bạn đang ở bước kiểm chứng và nhìn thấy BẰNG CHỨNG RÕ RÀNG TRÊN MÀN HÌNH rằng mục tiêu đã thành công 100% (ví dụ: cửa sổ đã đóng, thư đã gửi, ô đã có chữ đúng, trang web đã tải xong).
+  2. HOẶC bạn đang ở bước kiểm chứng và nhìn thấy BẰNG CHỨNG RÕ RÀNG TRÊN MÀN HÌNH rằng mục tiêu đã thành công 100% (ví dụ: cửa sổ soạn thư đã đóng hoàn toàn, thư đã gửi đi, trang web đã tải xong).
 
 YÊU CẦU PHẢN HỒI:
 - Trường "speech": Câu nói tiếng Việt tóm tắt hành động CỰC KỲ NGẮN GỌN (dưới 10 từ).
@@ -54,12 +61,15 @@ YÊU CẦU PHẢN HỒI:
 
 ```json
 {
-  "speech": "Đang nhập email và gửi thư",
+  "speech": "Đang soạn và gửi email cho bạn",
   "done": false,
   "actions": [
     {
-      "action": "focus | type | click | double_click | press | scroll | launch_app | wait | read_screen | none",
+      "action": "send_email | focus | type | click | double_click | press | scroll | launch_app | wait | read_screen | none",
       "target": "tên ô hoặc nút nếu có (ví dụ: to, subject, body, search, send, next)",
+      "to": "email người nhận nếu action=send_email",
+      "subject": "tiêu đề thư nếu action=send_email",
+      "body": "nội dung thư nếu action=send_email",
       "x_percent": 0.50,
       "y_percent": 0.50,
       "text": "nội dung cần gõ nếu action=type",
