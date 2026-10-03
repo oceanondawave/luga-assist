@@ -22,7 +22,6 @@ from app.config import (
     PORT,
     WEB_DIR,
     DEFAULT_TTS_VOICE,
-    MAX_TURNS_PER_CHAT,
 )
 from app.screen_capture import screen_capturer
 from app.os_controller import os_controller
@@ -77,9 +76,7 @@ class ConnectionHub:
         payload = {
             "type": "STATUS_UPDATE",
             "extension_connected": ext_connected,
-            "turns_count": gemini_service.turns_count if gemini_service.is_ready else self.chat_turns_count,
-            "max_turns": MAX_TURNS_PER_CHAT,
-            "gemini_ready": gemini_service.is_ready or (self.extension_client is not None),
+            "gemini_ready": gemini_service.is_ready or ext_connected,
         }
         dead_clients = []
         for client in self.webui_clients:
@@ -130,7 +127,6 @@ async def get_status():
         "gemini_background_mode": gemini_service.is_ready,
         "extension_connected": hub.extension_client is not None,
         "screen_size": os_controller.get_screen_size(),
-        "turns_count": gemini_service.turns_count if gemini_service.is_ready else hub.chat_turns_count,
     }
 
 @app.post("/api/set_session")
@@ -274,14 +270,11 @@ async def process_user_command(user_command: str, voice: str):
         loop = asyncio.get_running_loop()
         future = loop.create_future()
         hub.pending_tasks[task_id] = future
-        hub.chat_turns_count += 1
-
         await hub.extension_client.send_json({
             "type": "EXECUTE_COMMAND",
             "id": task_id,
             "prompt": full_prompt,
             "imageBase64": screenshot_b64,
-            "turnsCount": hub.chat_turns_count,
         })
 
         await hub.broadcast_webui({
