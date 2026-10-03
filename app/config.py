@@ -36,3 +36,9 @@ ACTION_SAFETY_PAUSE = 0.03  # Instant pacing between steps
 # Audio Feedback Settings
 # Processing pulse: enabled by default for reassuring auditory UX while Gemini is thinking
 ENABLE_PROCESSING_PULSE = os.getenv("LUGA_ENABLE_PULSE", "true").lower() in ("true", "1", "yes")
+
+# Voice Recognition Language Settings:
+# - 'auto': Concurrent bilingual recognition (vi-VN & en-US in parallel, auto-detected)
+# - 'vi-VN': Vietnamese only
+# - 'en-US': English only
+VOICE_RECOGNITION_LANG = os.getenv("LUGA_STT_LANG", "auto")

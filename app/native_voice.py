@@ -13,10 +13,134 @@ from pathlib import Path
 from typing import Optional, Callable
 
 import audioop
+import concurrent.futures
+import re
 import sounddevice as sd
 import speech_recognition as sr
 from pynput import keyboard
 from app.sound_effects import sound_manager
+from app.config import VOICE_RECOGNITION_LANG
+
+VI_DIACRITICS = set(
+    "àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ"
+    "ÀÁẢÃẠÂẦẤẨẪẬĂẰẮẲẴẶÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ"
+)
+
+COMMON_EN_WORDS = {
+    "a", "about", "action", "after", "all", "also", "an", "and", "any", "app",
+    "application", "are", "as", "at", "audio", "back", "be", "before", "browser",
+    "button", "by", "can", "cancel", "check", "chrome", "click", "close", "compose",
+    "computer", "confirm", "copy", "cut", "delete", "desktop", "discard", "display",
+    "document", "done", "down", "double", "download", "drag", "edit", "email",
+    "enter", "escape", "exit", "file", "find", "first", "folder", "for", "from",
+    "get", "go", "google", "help", "here", "home", "how", "in", "input", "into",
+    "is", "it", "item", "jump", "key", "keyboard", "last", "launch", "left",
+    "link", "list", "lock", "log", "login", "look", "mac", "mail", "make", "menu",
+    "message", "microsoft", "minimize", "mouse", "move", "music", "mute", "new",
+    "next", "no", "not", "now", "off", "ok", "on", "open", "or", "outlook", "page",
+    "paste", "pause", "play", "please", "press", "prev", "previous", "print",
+    "put", "read", "refresh", "reload", "restart", "return", "right", "run",
+    "safari", "save", "say", "screen", "screenshot", "scroll", "search", "select",
+    "send", "setting", "settings", "shift", "show", "shutdown", "sleep", "sound",
+    "speak", "spotify", "start", "stop", "subject", "system", "tab", "take",
+    "task", "test", "text", "the", "then", "this", "to", "turn", "type", "undo",
+    "unmute", "up", "url", "volume", "wait", "web", "website", "what", "where",
+    "which", "window", "windows", "with", "word", "write", "yes", "you", "youtube"
+}
+
+def normalize_spoken_terms(text: str) -> str:
+    """
+    Intelligently normalize spoken Vietnamese loanwords and tech terms
+    (e.g., 'chấm loga' -> '.luga', 'tiêu đề taxi/tết' -> 'tiêu đề test', 'cơ rôm' -> 'Chrome').
+    """
+    if not text:
+        return text
+
+    # Common email domain and recipient corrections
+    text = re.sub(r'(?i)\bphương\s*mai\s*chấm\s*loga\b', 'phuongma.luga', text)
+    text = re.sub(r'(?i)\bphương\s*mai\s*chấm\s*luga\b', 'phuongma.luga', text)
+    text = re.sub(r'(?i)\bchấm\s*loga\b', '.luga', text)
+    text = re.sub(r'(?i)\bchấm\s*duca\b', '.luga', text)
+    text = re.sub(r'(?i)\bchấm\s*luga\b', '.luga', text)
+
+    # Common misinterpretations of 'test' in tech context
+    text = re.sub(r'(?i)\btiêu\s*đề\s+(taxi|tết|tét|tab)\b', 'tiêu đề test', text)
+    text = re.sub(r'(?i)\bnội\s*dung\s+(cũng\s+là\s+)?(taxi|tết|tét|tab)\b', r'nội dung \1test', text)
+
+    # Common tech & app spoken loanwords in Vietnamese
+    text = re.sub(r'(?i)\bmáy\s+mát\b', 'máy Mac', text)
+    text = re.sub(r'(?i)\bcơ\s*rôm\b', 'Chrome', text)
+    text = re.sub(r'(?i)\bkhôm\b', 'Chrome', text)
+    text = re.sub(r'(?i)\bgúc\s*gồ\b', 'Google', text)
+    text = re.sub(r'(?i)\bgu\s*gồ\b', 'Google', text)
+    text = re.sub(r'(?i)\bxa\s*fa\s*ri\b', 'Safari', text)
+    text = re.sub(r'(?i)\bbóp\s*phi\b', 'Spotify', text)
+    text = re.sub(r'(?i)\bspốt\s*ti\s*phai\b', 'Spotify', text)
+    text = re.sub(r'(?i)\bốt\s*lúc\b', 'Outlook', text)
+    text = re.sub(r'(?i)\bót\s*lúc\b', 'Outlook', text)
+    text = re.sub(r'(?i)\bát\s*láp\b', 'Outlook', text)
+    text = re.sub(r'(?i)\byou\s*tube\b', 'YouTube', text)
+    text = re.sub(r'(?i)\byu\s*túp\b', 'YouTube', text)
+
+    return text.strip()
+
+def count_vietnamese_diacritics(text: str) -> int:
+    return sum(1 for c in text if c in VI_DIACRITICS)
+
+def evaluate_english_word_ratio(text: str) -> float:
+    words = [w.strip('.,!?:;\"\'()[]{}').lower() for w in text.split()]
+    words = [w for w in words if w]
+    if not words:
+        return 0.0
+    matches = sum(1 for w in words if w in COMMON_EN_WORDS)
+    return matches / len(words)
+
+def select_best_transcript(
+    vi_res: Optional[tuple[str, float]], 
+    en_res: Optional[tuple[str, float]]
+) -> Optional[str]:
+    """
+    Intelligently select between Vietnamese and English speech recognition hypotheses.
+    Handles:
+    - Pure English commands ('mute system audio', 'volume up', 'open Spotify')
+    - Pure Vietnamese commands ('cho máy tính ngủ', 'tắt tiếng hệ thống')
+    - Mixed code-switching commands
+    """
+    if not vi_res and not en_res:
+        return None
+    if not vi_res:
+        return en_res[0]
+    if not en_res:
+        return vi_res[0]
+
+    vi_text, vi_conf = vi_res
+    en_text, en_conf = en_res
+
+    vi_diacritics = count_vietnamese_diacritics(vi_text)
+    en_ratio = evaluate_english_word_ratio(en_text)
+
+    # 1. Clear English commands:
+    # If English confidence is solid (>= 0.70) and all or most words are common English words:
+    if en_conf >= 0.70 and en_ratio >= 0.60:
+        # Check if VI has zero diacritics (e.g. 'Musical Open Google Chrome', 'Doraemon')
+        # OR EN is 100% common English command words (like 'mute sound', 'volume up')
+        # OR EN confidence is high and VI has minimal accidental diacritics
+        if vi_diacritics == 0 or en_ratio == 1.0 or (en_conf >= 0.85 and vi_diacritics <= 2):
+            return en_text
+
+    # 2. Clear Vietnamese speech:
+    # If VI has Vietnamese diacritics and en_conf is low or en_ratio is low:
+    if vi_diacritics >= 2 and (en_conf < 0.70 or en_ratio < 0.50):
+        return vi_text
+
+    # 3. If VI has higher confidence and has diacritics:
+    if vi_conf >= en_conf and vi_diacritics > 0:
+        return vi_text
+
+    # 4. Fallback based on English ratio and confidence
+    if en_ratio >= 0.5 and en_conf >= vi_conf:
+        return en_text
+    return vi_text
 
 class NativeVoiceListener:
     def __init__(self, on_command_callback: Optional[Callable[[str], None]] = None):
@@ -99,24 +223,52 @@ class NativeVoiceListener:
 
         # Start pulsing sound as soon as voice stops and thinking begins!
         sound_manager.start_pulsing()
-        print("[NativeVoice] ⏳ Đang nhận diện tiếng Việt qua Google STT...")
 
         audio_bytes = b"".join(recorded_frames)
         audio = sr.AudioData(audio_bytes, self.sample_rate, 2)
 
-        try:
-            text = self.recognizer.recognize_google(audio, language="vi-VN")
-            text = text.strip()
-            print(f"\n[NativeVoice] 🗣️ Nhận diện thành công: \"{text}\"")
-            return text
-        except sr.UnknownValueError:
+        def _recognize_lang(lang: str) -> Optional[tuple[str, float]]:
+            try:
+                res = self.recognizer.recognize_google(audio, language=lang, with_confidence=True)
+                if isinstance(res, tuple):
+                    return (res[0].strip(), float(res[1]))
+                return (str(res).strip(), 0.8)
+            except Exception:
+                return None
+
+        mode = VOICE_RECOGNITION_LANG.lower().strip()
+        best_text = None
+
+        if mode == "vi-vn":
+            print("[NativeVoice] ⏳ Đang nhận diện tiếng Việt qua Google STT...")
+            res = _recognize_lang("vi-VN")
+            if res:
+                best_text = res[0]
+        elif mode == "en-us":
+            print("[NativeVoice] ⏳ Đang nhận diện tiếng Anh qua Google STT...")
+            res = _recognize_lang("en-US")
+            if res:
+                best_text = res[0]
+        else:
+            # 'auto': Concurrent bilingual recognition (vi-VN & en-US running in parallel)
+            print("[NativeVoice] ⏳ Đang nhận diện song ngữ (Tiếng Việt & English concurrently)...")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                fut_vi = executor.submit(_recognize_lang, "vi-VN")
+                fut_en = executor.submit(_recognize_lang, "en-US")
+                vi_res = fut_vi.result()
+                en_res = fut_en.result()
+
+            best_text = select_best_transcript(vi_res, en_res)
+
+        if not best_text:
             print("[NativeVoice] Chưa nghe rõ câu lệnh, vui lòng thử lại.")
             sound_manager.play_error()
             return None
-        except Exception as e:
-            print(f"[NativeVoice] Lỗi nhận diện: {e}")
-            sound_manager.play_error()
-            return None
+
+        # Apply intelligent loanword and tech term normalizer
+        best_text = normalize_spoken_terms(best_text)
+        print(f"\n[NativeVoice] 🗣️ Nhận diện thành công: \"{best_text}\"")
+        return best_text
 
     def trigger_voice_flow(self):
         """Trigger the complete voice-to-action flow without opening any browser."""

@@ -230,6 +230,62 @@ def test_system_control_action():
     assert payload["actions"][0]["command"] == "mute"
     print("test_system_control_action: PASSED")
 
+def test_bilingual_voice_selection_and_normalization():
+    from app.native_voice import (
+        select_best_transcript,
+        normalize_spoken_terms,
+        count_vietnamese_diacritics,
+        evaluate_english_word_ratio,
+    )
+
+    # 1. Test pure English vs Vietnamese hallucination
+    # E.g. 'mute system audio' misheard as 'Musical' or 'mì xào'
+    res_en = select_best_transcript(
+        vi_res=("Musical Open Google Chrome", 0.87),
+        en_res=("mute system audio and open Google Chrome", 0.90)
+    )
+    assert res_en == "mute system audio and open Google Chrome"
+
+    res_mute = select_best_transcript(
+        vi_res=("mì xào", 0.88),
+        en_res=("mute sound", 0.92)
+    )
+    assert res_mute == "mute sound"
+
+    res_vol = select_best_transcript(
+        vi_res=("Doraemon", 0.94),
+        en_res=("volume up", 0.96)
+    )
+    assert res_vol == "volume up"
+
+    # 2. Test pure Vietnamese vs English nonsense
+    res_vi = select_best_transcript(
+        vi_res=("cho máy tính ngủ ngay lập tức", 0.95),
+        en_res=("the amazing world I love you", 0.20)
+    )
+    assert res_vi == "cho máy tính ngủ ngay lập tức"
+
+    # 3. Test mixed Vietnamese + English apps
+    res_mixed = select_best_transcript(
+        vi_res=("Mở Google Chrome và vào trang YouTube", 0.94),
+        en_res=("my Google turn YouTube", 0.51)
+    )
+    assert res_mixed == "Mở Google Chrome và vào trang YouTube"
+
+    # 4. Test term normalization for spoken Vietnamese tech loanwords
+    norm1 = normalize_spoken_terms("soạn một email mới đến Phương Mai chấm Loga tiêu đề taxi nội dung cũng là test")
+    assert "phuongma.luga" in norm1
+    assert "tiêu đề test" in norm1
+    assert "nội dung cũng là test" in norm1
+
+    norm2 = normalize_spoken_terms("mở cơ rôm và tìm kiếm trên gúc gồ")
+    assert norm2 == "mở Chrome và tìm kiếm trên Google"
+
+    norm3 = normalize_spoken_terms("bật ứng dụng bóp phi và nghe nhạc")
+    assert norm3 == "bật ứng dụng Spotify và nghe nhạc"
+
+    print("test_bilingual_voice_selection_and_normalization: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -243,7 +299,8 @@ if __name__ == "__main__":
     test_outcome_verification_prompt()
     test_element_scoring_and_email_action()
     test_system_control_action()
-    print("\n🎉 ALL TESTS (INCLUDING OUTCOME VERIFICATION & REAL AGENT PIPELINE) PASSED SUCCESSFULLY!")
+    test_bilingual_voice_selection_and_normalization()
+    print("\n🎉 ALL TESTS (INCLUDING BILINGUAL STT & OUTCOME VERIFICATION) PASSED SUCCESSFULLY!")
 
 
 
