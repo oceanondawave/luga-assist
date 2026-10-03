@@ -32,3 +32,7 @@ SCREENSHOT_MAX_WIDTH = 1920  # High-definition resolution for crisp UI labels & 
 # High-Speed Automation limits
 MOUSE_MOVE_DURATION = 0.08  # Ultra-fast, snappy mouse movement
 ACTION_SAFETY_PAUSE = 0.03  # Instant pacing between steps
+
+# Audio Feedback Settings
+# Processing pulse: default False to avoid unnecessary sound during fast tasks
+ENABLE_PROCESSING_PULSE = os.getenv("LUGA_ENABLE_PULSE", "false").lower() in ("true", "1", "yes")

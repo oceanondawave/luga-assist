@@ -18,13 +18,20 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from app.config import TEMP_DIR
+from app.config import TEMP_DIR, ENABLE_PROCESSING_PULSE
 
 class SoundManager:
     def __init__(self):
         self._pulse_thread: Optional[threading.Thread] = None
         self._stop_pulse = threading.Event()
+        self.pulse_enabled: bool = ENABLE_PROCESSING_PULSE
         self._prepare_fallback_wavs()
+
+    def set_pulse_enabled(self, enabled: bool):
+        """Toggle processing pulse sound on/off."""
+        self.pulse_enabled = enabled
+        if not enabled:
+            self.stop_pulsing()
 
     def _prepare_fallback_wavs(self):
         """Generate smooth procedural WAV files for cross-platform sound."""
@@ -118,6 +125,8 @@ class SoundManager:
 
     def start_pulsing(self):
         """Start repeating pulse sound while Gemini is thinking/processing."""
+        if not self.pulse_enabled:
+            return  # Pulsing disabled by user preference
         if self._pulse_thread and self._pulse_thread.is_alive() and not self._stop_pulse.is_set():
             return  # Already pulsing smoothly
         self.stop_pulsing()

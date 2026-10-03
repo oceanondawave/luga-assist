@@ -251,7 +251,24 @@ MAX_AUTONOMOUS_STEPS = 5
 
 async def process_user_command(user_command: str, voice: str):
     print(f"\n[Pipeline] 🎯 Nhận mục tiêu mới: '{user_command}'")
-    # Start pulsing audio feedback for the user
+
+    user_cmd_lower = user_command.lower().strip()
+    # Direct fast-path: voice control for processing sound
+    if any(k in user_cmd_lower for k in ("tắt tiếng processing", "ngắt tiếng processing", "tắt âm thanh xử lý", "tắt tiếng bíp", "tắt pulsing", "tắt tiếng nhịp tim")):
+        sound_manager.set_pulse_enabled(False)
+        sound_manager.play_done()
+        msg = "Đã tắt âm thanh khi xử lý cho bạn."
+        await tts_service.speak(msg)
+        return
+
+    if any(k in user_cmd_lower for k in ("bật tiếng processing", "bật âm thanh xử lý", "bật pulsing", "bật tiếng nhịp tim")):
+        sound_manager.set_pulse_enabled(True)
+        sound_manager.play_done()
+        msg = "Đã bật lại âm thanh khi xử lý cho bạn."
+        await tts_service.speak(msg)
+        return
+
+    # Start pulsing audio feedback for the user (only if enabled)
     sound_manager.start_pulsing()
 
     # Step 1: Check Connection (Gemini Background Service or Extension)
@@ -359,6 +376,8 @@ async def process_user_command(user_command: str, voice: str):
                 return
 
         print(f"[Pipeline] [Bước {step}] Phản hồi từ Gemini:\n{raw_response}")
+        # Stop pulsing audio cue immediately as soon as AI response has been received
+        sound_manager.stop_pulsing()
 
         # Step 4: Robust JSON Parse
         action_data = extract_json_payload(raw_response)
@@ -403,10 +422,29 @@ async def process_user_command(user_command: str, voice: str):
                 else:
                     is_goal_verified_completed = False
         else:
-            # Active manipulation actions exist (click, type, press, launch_app, focus, send_email).
-            # An authentic agent CANNOT claim completion in the same step it proposes the action!
-            # It MUST wait and verify the outcome on the next observation step!
-            is_goal_verified_completed = False
+            # Active manipulation actions exist (click, type, press, launch_app, focus, send_email, system_control).
+            # CHECK FOR IMMEDIATE COMPLETION:
+            # System controls (sleep, mute, unmute, volume, lock) or simple instant actions do NOT need
+            # a secondary screenshot verification loop.
+            all_system = all(
+                isinstance(a, dict) and a.get("action", "").lower() in (
+                    "system_control", "system", "sleep", "mute", "unmute", "volume_up", "volume_down", "lock"
+                )
+                for a in active_actions
+            )
+            is_complex_form = any(
+                isinstance(a, dict) and (
+                    a.get("action", "").lower() in ("send_email", "compose_email")
+                    or (a.get("action", "").lower() == "type" and a.get("target") in ("to", "recipients", "subject"))
+                )
+                for a in active_actions
+            )
+
+            if all_system or (claimed_done and not is_complex_form):
+                is_goal_verified_completed = True
+                print(f"[Pipeline] ⚡ Thao tác tức thì hoàn tất tại bước {step} (không cần chụp ảnh thẩm định lại): {speech_to_say}")
+            else:
+                is_goal_verified_completed = False
 
         # Step 5: Annotate Screenshot for Visual Feedback
         annotated_b64 = screen_capturer.annotate_actions(actions_list)
