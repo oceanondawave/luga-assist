@@ -138,6 +138,8 @@ class NativeVoiceListener:
             return
 
         self.is_processing = True
+        # Play activation chime IMMEDIATELY at keypress
+        sound_manager.play_start()
 
         def _worker():
             try:

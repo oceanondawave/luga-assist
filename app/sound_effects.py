@@ -33,11 +33,45 @@ class SoundManager:
         self.snd_done = TEMP_DIR / "snd_done.wav"
         self.snd_error = TEMP_DIR / "snd_error.wav"
 
+        # Always generate crisp assistant rising chime for voice activation
+        self._create_rising_chime(self.snd_start)
+
         if not self.snd_pulse.exists():
-            self._create_tone(self.snd_start, [523.25, 659.25], duration=0.12, volume=0.25)
             self._create_tone(self.snd_pulse, [587.33], duration=0.04, volume=0.18)
             self._create_tone(self.snd_done, [523.25, 659.25, 783.99], duration=0.15, volume=0.25)
             self._create_tone(self.snd_error, [220.0, 180.0], duration=0.2, volume=0.25)
+
+    def _create_rising_chime(self, path: Path):
+        """Generate a bright, modern assistant activation chime (D5 -> A5 rising bell)."""
+        rate = 44100
+        note1_dur = 0.07
+        note2_dur = 0.14
+        total_dur = note1_dur + note2_dur
+        samples1 = int(rate * note1_dur)
+        samples2 = int(rate * note2_dur)
+        data = bytearray()
+
+        # Note 1: 587.33 Hz
+        for i in range(samples1):
+            t = float(i) / rate
+            env = math.sin(math.pi * (i / samples1)) ** 0.5
+            val = math.sin(2 * math.pi * 587.33 * t) * 0.7 + math.sin(2 * math.pi * 1174.66 * t) * 0.3
+            sample = int(32767 * 0.55 * env * val)
+            data.extend(struct.pack("<h", max(-32768, min(32767, sample))))
+
+        # Note 2: 880 Hz with bright bell resonance decay
+        for i in range(samples2):
+            t = float(i) / rate
+            env = math.exp(-4.5 * (i / samples2))
+            val = math.sin(2 * math.pi * 880.0 * t) * 0.8 + math.sin(2 * math.pi * 1760.0 * t) * 0.2
+            sample = int(32767 * 0.65 * env * val)
+            data.extend(struct.pack("<h", max(-32768, min(32767, sample))))
+
+        with wave.open(str(path), "w") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(rate)
+            wf.writeframes(data)
 
     def _create_tone(self, path: Path, freqs: list, duration: float = 0.1, volume: float = 0.25):
         rate = 22050
@@ -74,12 +108,13 @@ class SoundManager:
             pass
 
     def play_start(self):
-        """Chime when voice listening is activated."""
-        if sys.platform == "darwin" and os.path.exists("/System/Library/Sounds/Tink.aiff"):
-            self._play_file("/System/Library/Sounds/Tink.aiff", volume=0.7)
-        else:
-            self._play_file(str(self.snd_start), volume=0.4)
-        print("\n[Sound] 🔔 TINK (Đã kích hoạt chế độ nghe)")
+        """Chime when voice listening is activated (distinct, bright, immediate earcon)."""
+        now = time.time()
+        if hasattr(self, "_last_start_sound_time") and now - self._last_start_sound_time < 0.35:
+            return
+        self._last_start_sound_time = now
+        self._play_file(str(self.snd_start), volume=0.8)
+        print("\n[Sound] 🔔 CHIME (Đã kích hoạt chế độ nghe - Bắt đầu lắng nghe)")
 
     def start_pulsing(self):
         """Start repeating pulse sound while Gemini is thinking/processing."""
