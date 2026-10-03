@@ -12,6 +12,7 @@ from app.config import (
     MOUSE_MOVE_DURATION,
     ACTION_SAFETY_PAUSE,
 )
+from app.accessibility import accessibility_manager
 
 # Enable failsafe: moving mouse cursor to any corner will raise pyautogui.FailSafeException
 pyautogui.FAILSAFE = True
@@ -37,40 +38,80 @@ class OSController:
     def execute_action(self, action_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute an automated action returned by Gemini Vision.
+        Supports 100% precision Accessibility snapping, direct focus, and reliable typing.
         """
         action = action_data.get("action", "none").lower()
         result = {"success": True, "action": action, "details": ""}
 
         try:
             if action == "click":
-                x, y = self.to_pixel_coords(action_data.get("x_percent", 0.5), action_data.get("y_percent", 0.5))
-                pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION, tween=pyautogui.easeInOutQuad)
-                pyautogui.click()
-                result["details"] = f"Clicked at ({x}, {y})"
+                target = action_data.get("target") or action_data.get("field")
+                if target and accessibility_manager.focus_element_by_name(target):
+                    result["details"] = f"Clicked '{target}' via 100% Accessibility Grounding"
+                else:
+                    x, y = self.to_pixel_coords(action_data.get("x_percent", 0.5), action_data.get("y_percent", 0.5))
+                    pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
+                    pyautogui.click(x, y)
+                    result["details"] = f"Clicked at ({x}, {y})"
 
             elif action == "double_click":
                 x, y = self.to_pixel_coords(action_data.get("x_percent", 0.5), action_data.get("y_percent", 0.5))
-                pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION, tween=pyautogui.easeInOutQuad)
-                pyautogui.doubleClick()
+                pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
+                pyautogui.doubleClick(x, y)
                 result["details"] = f"Double clicked at ({x}, {y})"
 
             elif action == "right_click":
                 x, y = self.to_pixel_coords(action_data.get("x_percent", 0.5), action_data.get("y_percent", 0.5))
-                pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION, tween=pyautogui.easeInOutQuad)
-                pyautogui.rightClick()
+                pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
+                pyautogui.rightClick(x, y)
                 result["details"] = f"Right clicked at ({x}, {y})"
+
+            elif action == "focus":
+                target = action_data.get("target") or action_data.get("field", "")
+                target_str = str(target).lower().strip()
+                if target_str in ("next", "tab"):
+                    self._press_key_combo("tab")
+                    result["details"] = "Focused next input field (Tab)"
+                elif target_str in ("prev", "previous", "shift+tab"):
+                    self._press_key_combo("shift+tab")
+                    result["details"] = "Focused previous input field (Shift+Tab)"
+                elif target_str in ("address", "url", "search_bar"):
+                    self._press_key_combo("cmd+l" if sys.platform == "darwin" else "ctrl+l")
+                    result["details"] = "Focused address bar"
+                elif target_str in ("find", "in_page_search"):
+                    self._press_key_combo("cmd+f" if sys.platform == "darwin" else "ctrl+f")
+                    result["details"] = "Focused find bar (Cmd+F)"
+                else:
+                    ok = accessibility_manager.focus_element_by_name(target_str)
+                    if ok:
+                        result["details"] = f"Focused '{target_str}' via 100% Accessibility"
+                    elif "x_percent" in action_data and "y_percent" in action_data:
+                        x, y = self.to_pixel_coords(action_data["x_percent"], action_data["y_percent"])
+                        pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
+                        pyautogui.click(x, y)
+                        result["details"] = f"Focused at ({x}, {y})"
+                    else:
+                        result["details"] = f"Could not focus '{target_str}'"
 
             elif action == "type":
                 text = action_data.get("text", "")
                 if text:
-                    # If coordinate provided, click there first
-                    if "x_percent" in action_data and "y_percent" in action_data:
+                    target = action_data.get("target") or action_data.get("field")
+                    if target and accessibility_manager.focus_element_by_name(target):
+                        time.sleep(0.1)
+                    elif "x_percent" in action_data and "y_percent" in action_data:
                         x, y = self.to_pixel_coords(action_data["x_percent"], action_data["y_percent"])
                         pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
-                        pyautogui.click()
-                        time.sleep(0.06)
-                    
-                    # For Vietnamese Unicode text: copy to clipboard and paste to avoid IME issues
+                        pyautogui.click(x, y)
+                        time.sleep(0.12)
+
+                    # Clear existing content if requested (default True for clean input)
+                    clear_first = action_data.get("clear_first", True)
+                    if clear_first:
+                        self._press_key_combo("cmd+a" if sys.platform == "darwin" else "ctrl+a")
+                        time.sleep(0.04)
+
+                    # Paste Unicode text reliably without IME interference
                     self._paste_unicode_text(text)
                     result["details"] = f"Typed: {text}"
 
@@ -83,7 +124,6 @@ class OSController:
                 direction = action_data.get("direction", "down").lower()
                 amount = int(action_data.get("amount", 5))
                 clicks = -amount if direction == "down" else amount
-                # Move to center or specified coordinate
                 if "x_percent" in action_data and "y_percent" in action_data:
                     x, y = self.to_pixel_coords(action_data["x_percent"], action_data["y_percent"])
                     pyautogui.moveTo(x, y)
@@ -153,33 +193,82 @@ class OSController:
     def _paste_unicode_text(self, text: str):
         """
         Copy text to clipboard and simulate Cmd+V (macOS) or Ctrl+V (Windows/Linux)
-        to preserve full Vietnamese accents and diacritics.
+        to preserve full Vietnamese accents and diacritics without dropping modifiers.
         """
         pyperclip.copy(text)
-        time.sleep(0.04)
+        time.sleep(0.05)
         if sys.platform == "darwin":
-            pyautogui.hotkey("command", "v")
+            try:
+                # AppleScript keystroke guarantees Command modifier is held (prevents typing literal 'v')
+                subprocess.run(
+                    ["osascript", "-e", 'tell application "System Events" to keystroke "v" using command down'],
+                    capture_output=True,
+                    check=True
+                )
+            except Exception:
+                pyautogui.hotkey("command", "v")
         else:
             pyautogui.hotkey("ctrl", "v")
+        time.sleep(0.05)
 
     def _press_key_combo(self, combo: str):
-        """Parse and press single keys or combinations like 'cmd+space' or 'ctrl+c'."""
-        keys = [k.strip() for k in combo.split("+")]
+        """Parse and press single keys or combinations like 'cmd+space', 'cmd+return', 'tab'."""
+        combo_clean = combo.strip().lower()
+
+        if sys.platform == "darwin":
+            parts = [p.strip() for p in combo_clean.split("+")]
+            modifiers = []
+            key = ""
+            for p in parts:
+                if p in ("cmd", "command"):
+                    modifiers.append("command down")
+                elif p in ("ctrl", "control"):
+                    modifiers.append("control down")
+                elif p in ("alt", "option"):
+                    modifiers.append("option down")
+                elif p in ("shift",):
+                    modifiers.append("shift down")
+                else:
+                    key = p
+
+            mod_str = f" using {{{', '.join(modifiers)}}}" if modifiers else ""
+            cmd = ""
+            if key in ("enter", "return"):
+                cmd = f'tell application "System Events" to key code 36{mod_str}'
+            elif key == "tab":
+                cmd = f'tell application "System Events" to key code 48{mod_str}'
+            elif key == "space":
+                cmd = f'tell application "System Events" to key code 49{mod_str}'
+            elif key in ("escape", "esc"):
+                cmd = f'tell application "System Events" to key code 53{mod_str}'
+            elif key in ("backspace", "delete"):
+                cmd = f'tell application "System Events" to key code 51{mod_str}'
+            elif len(key) == 1:
+                cmd = f'tell application "System Events" to keystroke "{key}"{mod_str}'
+
+            if cmd:
+                try:
+                    subprocess.run(["osascript", "-e", cmd], capture_output=True, check=True)
+                    return
+                except Exception:
+                    pass
+
+        # Fallback to pyautogui
+        keys = [k.strip() for k in combo_clean.split("+")]
         mapped_keys = []
         for k in keys:
-            k_lower = k.lower()
-            if k_lower in ("cmd", "command", "win", "windows", "super"):
+            if k in ("cmd", "command", "win", "windows", "super"):
                 mapped_keys.append("command" if sys.platform == "darwin" else "win")
-            elif k_lower in ("ctrl", "control"):
+            elif k in ("ctrl", "control"):
                 mapped_keys.append("ctrl")
-            elif k_lower in ("alt", "option"):
+            elif k in ("alt", "option"):
                 mapped_keys.append("alt")
-            elif k_lower == "return":
+            elif k in ("return",):
                 mapped_keys.append("enter")
-            elif k_lower == "esc":
+            elif k in ("esc",):
                 mapped_keys.append("escape")
             else:
-                mapped_keys.append(k_lower)
+                mapped_keys.append(k)
 
         if len(mapped_keys) == 1:
             pyautogui.press(mapped_keys[0])

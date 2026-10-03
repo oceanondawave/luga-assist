@@ -26,8 +26,8 @@ TTS_VOLUME = "+0%"
 # Visual Grid Settings for precise AI Grounding
 # Draws a reference grid overlay on screenshots so Gemini can pinpoint exact coordinates
 ENABLE_VISUAL_GRID = True
-GRID_PERCENT_STEP = 10  # 10% grid lines (0%, 10%, 20%... 100%)
-SCREENSHOT_MAX_WIDTH = 1280  # Optimal size: lightning-fast upload & high precision
+GRID_PERCENT_STEP = 5  # 5% grid lines for fine-grained coordinate precision
+SCREENSHOT_MAX_WIDTH = 1920  # High-definition resolution for crisp UI labels & inputs
 
 # High-Speed Automation limits
 MOUSE_MOVE_DURATION = 0.08  # Ultra-fast, snappy mouse movement

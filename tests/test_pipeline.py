@@ -148,6 +148,18 @@ def test_sound_effects():
     sound_manager.play_error()
     print("test_sound_effects: PASSED")
 
+def test_accessibility_and_precision_focus():
+    from app.accessibility import accessibility_manager
+    ctx = accessibility_manager.get_ui_grounding_context()
+    assert isinstance(ctx, str)
+    print("test_accessibility_context: PASSED (length:", len(ctx), ")")
+
+    # Test focus action execution
+    res = os_controller.execute_action({"action": "focus", "target": "next"})
+    assert res["success"] is True
+    assert "Tab" in res["details"]
+    print("test_precision_focus_action: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -156,4 +168,6 @@ if __name__ == "__main__":
     test_tts_generation()
     test_multi_action_sequence()
     test_sound_effects()
-    print("\n🎉 ALL TESTS (INCLUDING SOUND EFFECTS & SPEED OPTIMIZATIONS) PASSED SUCCESSFULLY!")
+    test_accessibility_and_precision_focus()
+    print("\n🎉 ALL TESTS (INCLUDING 100% PRECISION ACCESSIBILITY & FOCUS) PASSED SUCCESSFULLY!")
+

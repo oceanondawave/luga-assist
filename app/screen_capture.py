@@ -69,35 +69,43 @@ class ScreenCapturer:
 
     def _draw_coordinate_grid(self, img: Image.Image) -> Image.Image:
         """
-        Draw a subtle visual coordinate grid with percentage indicators.
-        This enables Gemini Vision to anchor coordinates with extreme precision.
+        Draw a dual-tier visual coordinate grid with primary (10%) and secondary (5%) indicators.
+        Enables Gemini Vision to anchor coordinates with extreme precision down to individual input fields.
         """
         draw = ImageDraw.Draw(img)
         w, h = img.size
 
-        # Grid lines color: Subtle cyan/white with opacity
-        grid_color = (0, 230, 255)
-        label_color = (255, 255, 0)
-        bg_label_color = (0, 0, 0)
-
         # Draw vertical lines (x_percent)
-        step = GRID_PERCENT_STEP  # e.g., 10%
-        for p in range(step, 100, step):
+        for p in range(5, 100, 5):
+            is_primary = (p % 10 == 0)
             x = int(w * (p / 100.0))
-            draw.line([(x, 0), (x, h)], fill=grid_color, width=1)
-            # Label at the top
+            line_color = (0, 230, 255) if is_primary else (0, 130, 170)
+            line_width = 2 if is_primary else 1
+            draw.line([(x, 0), (x, h)], fill=line_color, width=line_width)
+
             label = f"{p}%"
-            draw.rectangle([(x - 14, 2), (x + 14, 18)], fill=bg_label_color)
-            draw.text((x - 11, 3), label, fill=label_color)
+            if is_primary:
+                draw.rectangle([(x - 14, 2), (x + 14, 18)], fill=(0, 0, 0))
+                draw.text((x - 11, 3), label, fill=(255, 255, 0))
+            else:
+                draw.rectangle([(x - 11, 2), (x + 11, 15)], fill=(0, 0, 0))
+                draw.text((x - 9, 2), label, fill=(0, 240, 255))
 
         # Draw horizontal lines (y_percent)
-        for p in range(step, 100, step):
+        for p in range(5, 100, 5):
+            is_primary = (p % 10 == 0)
             y = int(h * (p / 100.0))
-            draw.line([(0, y), (w, y)], fill=grid_color, width=1)
-            # Label at the left
+            line_color = (0, 230, 255) if is_primary else (0, 130, 170)
+            line_width = 2 if is_primary else 1
+            draw.line([(0, y), (w, y)], fill=line_color, width=line_width)
+
             label = f"{p}%"
-            draw.rectangle([(2, y - 8), (30, y + 8)], fill=bg_label_color)
-            draw.text((4, y - 7), label, fill=label_color)
+            if is_primary:
+                draw.rectangle([(2, y - 8), (32, y + 8)], fill=(0, 0, 0))
+                draw.text((4, y - 7), label, fill=(255, 255, 0))
+            else:
+                draw.rectangle([(2, y - 7), (28, y + 7)], fill=(0, 0, 0))
+                draw.text((3, y - 6), label, fill=(0, 240, 255))
 
         return img
 

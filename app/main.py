@@ -31,6 +31,7 @@ from app.prompt_templates import build_gemini_prompt
 from app.gemini_service import gemini_service
 from app.native_voice import NativeVoiceListener
 from app.sound_effects import sound_manager
+from app.accessibility import accessibility_manager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -283,13 +284,15 @@ async def process_user_command(user_command: str, voice: str):
 
         # Step 2: Screen Capture with Grid Overlay
         screenshot_b64, screen_size = screen_capturer.capture(with_grid=True)
+        ui_context = accessibility_manager.get_ui_grounding_context()
 
         if is_first_step:
-            prompt = build_gemini_prompt(user_command)
+            prompt = build_gemini_prompt(user_command, ui_context=ui_context)
         else:
             prompt = (
                 f"Màn hình đã được cập nhật sau bước trước.\n"
                 f"Mục tiêu ban đầu của người dùng: \"{user_command}\".\n"
+                f"{ui_context}\n"
                 f"Hãy quan sát màn hình mới này và thực hiện hành động tiếp theo để hoàn thành mục tiêu.\n"
                 f"Nếu yêu cầu của người dùng ĐÃ ĐƯỢC HOÀN TẤT 100%, hãy đặt \"done\": true.\n"
                 f"Nếu vẫn còn bước tiếp theo (ví dụ: cần điền tiếp hoặc gửi), hãy đặt \"done\": false.\n"
