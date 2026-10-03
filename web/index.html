@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Luga Assist - Trợ lý AI khiếm thị</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="logo-group">
+      <div class="logo-icon" aria-hidden="true">🎙️</div>
+      <div>
+        <h1>Luga Assist</h1>
+        <p style="font-size: 13px; color: var(--text-muted);">Trợ lý AI hỗ trợ người khiếm thị điều khiển máy tính bằng giọng nói</p>
+      </div>
+    </div>
+
+    <div class="badge-status-group">
+      <div class="status-chip" role="status" aria-live="polite">
+        <span id="agentDot" class="dot"></span>
+        <span id="agentStatusText">Local Agent: Đang kết nối...</span>
+      </div>
+      <div class="status-chip" role="status" aria-live="polite">
+        <span id="extDot" class="dot"></span>
+        <span id="extStatusText">Google Gemini: Đang kiểm tra...</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Left Column: Voice Interaction & Hotkeys -->
+    <section class="card">
+      <h2 class="card-title">
+        <span>🎤</span> Tương tác Giọng nói
+      </h2>
+
+      <div class="voice-hero">
+        <button
+          id="btnMic"
+          class="mic-button"
+          aria-label="Bấm vào đây hoặc giữ phím cách Space để nói"
+          title="Bấm hoặc giữ phím Space"
+        >
+          🎙️
+        </button>
+
+        <div
+          id="speechDisplay"
+          class="live-speech-box"
+          role="status"
+          aria-live="assertive"
+        >
+          Nhấn phím Space hoặc bấm Mic để nói lệnh của bạn...
+        </div>
+
+        <div class="hotkey-hints">
+          <div><span class="kbd">Phím Space</span> Bấm để nói</div>
+          <div><span class="kbd">Phím F2</span> Bật/tắt nghe liên tục</div>
+          <div><span class="kbd">Phím F4</span> Đọc nội dung màn hình</div>
+          <div><span class="kbd">Phím Esc</span> Hủy / Dừng đọc</div>
+        </div>
+      </div>
+
+      <div class="settings-row">
+        <label for="selectVoice" style="font-size: 14px; font-weight: 600;">Giọng đọc tiếng Việt:</label>
+        <select id="selectVoice">
+          <option value="vi-VN-HoaiMyNeural" selected>Hoài My (Nữ - Tự nhiên, truyền cảm)</option>
+          <option value="vi-VN-NamMinhNeural">Nam Minh (Nam - Giọng đọc chuẩn)</option>
+        </select>
+        <button id="btnReadScreen" style="
+          margin-left: auto;
+          background: #1e293b;
+          color: #38bdf8;
+          border: 1px solid #334155;
+          padding: 8px 14px;
+          border-radius: 8px;
+          cursor: pointer;
+          font-weight: 600;
+        ">👁️ Đọc màn hình (F4)</button>
+      </div>
+    </section>
+
+    <!-- Right Column: Verification & Activity History -->
+    <section class="card">
+      <h2 class="card-title">
+        <span>📋</span> Nhật ký Hành động & Xác minh
+      </h2>
+
+      <div class="visual-viewer">
+        <div class="screen-preview-container" id="previewContainer">
+          <span class="screen-placeholder" id="previewPlaceholder">Ảnh chụp hành động gần nhất sẽ hiển thị tại đây</span>
+          <img id="lastActionImg" src="" alt="Ảnh chụp màn hình có đánh dấu vị trí click" style="display: none;">
+        </div>
+      </div>
+
+      <div style="margin-top: 14px; font-weight: 700; font-size: 14px; color: var(--accent-cyan);">Lịch sử thao tác:</div>
+      <div class="activity-log" id="activityLog" role="log" aria-live="polite">
+        <!-- Log items injected via JS -->
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

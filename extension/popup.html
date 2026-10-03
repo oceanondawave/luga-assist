@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Luga Assist Bridge</title>
+  <style>
+    body {
+      width: 300px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      background: #0f172a;
+      color: #f8fafc;
+    }
+    h2 {
+      font-size: 16px;
+      margin: 0 0 12px 0;
+      color: #60a5fa;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-card {
+      background: #1e293b;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ef4444;
+      flex-shrink: 0;
+    }
+    .dot.connected {
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+    }
+    p {
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.5;
+      margin: 0 0 12px 0;
+    }
+    .btn-primary {
+      width: 100%;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 8px;
+      background: #2563eb;
+      color: white;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 0.2s;
+    }
+    .btn-primary:hover {
+      background: #1d4ed8;
+    }
+    .btn-secondary {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 12px;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .btn-secondary:hover {
+      background: #1e293b;
+      color: #e2e8f0;
+    }
+    .notice {
+      background: rgba(59, 130, 246, 0.1);
+      border-left: 3px solid #3b82f6;
+      padding: 8px 10px;
+      font-size: 11px;
+      color: #93c5fd;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h2>🎙️ Luga Assist Bridge</h2>
+
+  <div class="status-card">
+    <div class="status-row">
+      <span id="agentDot" class="dot"></span>
+      <span id="agentStatus">Local Agent: Đang kiểm tra...</span>
+    </div>
+    <div class="status-row">
+      <span id="geminiDot" class="dot"></span>
+      <span id="geminiStatus">Google Gemini: Đang kiểm tra...</span>
+    </div>
+  </div>
+
+  <p>Extension tự động lấy Session Google trên Chrome để Gemini chạy ngầm 100% không cần mở tab.</p>
+
+  <button id="btnOpenApp" class="btn-primary">
+    🚀 Mở Luga Assist App
+  </button>
+
+  <button id="btnSyncSession" class="btn-secondary">
+    ⚡ Đồng bộ lại Session Google
+  </button>
+
+  <div class="notice">
+    💡 Bạn chỉ cần đăng nhập Google trên Chrome 1 lần, hệ thống sẽ tự động sử dụng miễn phí vĩnh viễn!
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
