@@ -303,6 +303,9 @@ async def process_user_command(user_command: str, voice: str):
         raw_response = ""
 
         # Step 3: Execute via Background Service (Priority 1) or Extension (Priority 2)
+        raw_response = ""
+        used_background = False
+
         if gemini_service.is_ready:
             print(f"[Pipeline] [Bước {step}] Gửi tới Background Gemini Service...")
             try:
@@ -310,36 +313,49 @@ async def process_user_command(user_command: str, voice: str):
                     prompt=prompt,
                     image_path=screen_capturer.screenshot_path
                 )
+                used_background = True
             except Exception as e:
+                print(f"[Pipeline] ⚠️ Background Gemini Service không khả dụng ({e})")
+                gemini_service.is_ready = False
+                # Notify extension to sync fresh cookies in background
+                if hub.extension_client is not None:
+                    try:
+                        await hub.extension_client.send_json({"type": "SYNC_COOKIES"})
+                    except Exception:
+                        pass
+
+        if not used_background:
+            if hub.extension_client is not None:
+                print(f"[Pipeline] 🔄 [Bước {step}] Tự động chuyển tiếp qua Chrome Extension...")
+                task_id = str(uuid.uuid4())
+                loop = asyncio.get_running_loop()
+                future = loop.create_future()
+                hub.pending_tasks[task_id] = future
+                await hub.extension_client.send_json({
+                    "type": "EXECUTE_COMMAND",
+                    "id": task_id,
+                    "prompt": prompt,
+                    "imageBase64": screenshot_b64,
+                })
+
+                try:
+                    result_payload = await asyncio.wait_for(future, timeout=45.0)
+                    raw_response = result_payload.get("raw_text", "")
+                except asyncio.TimeoutError:
+                    sound_manager.play_error()
+                    hub.pending_tasks.pop(task_id, None)
+                    timeout_msg = "Quá thời gian chờ phản hồi từ Gemini. Vui lòng thử lại câu lệnh."
+                    await hub.broadcast_webui({"type": "ERROR", "message": timeout_msg, "user_command": user_command})
+                    await tts_service.speak(timeout_msg)
+                    return
+            else:
                 sound_manager.play_error()
-                print(f"[Pipeline] Lỗi khi gọi gemini_service: {e}")
-                err_text = f"Lỗi khi xử lý với Gemini: {e}"
+                err_text = (
+                    "Session Google đã hết hạn và Chrome Extension chưa kết nối. "
+                    "Vui lòng đảm bảo Chrome đã mở và bạn đã đăng nhập tài khoản Google."
+                )
                 await hub.broadcast_webui({"type": "ERROR", "message": err_text, "user_command": user_command})
-                await tts_service.speak("Có lỗi xảy ra khi kết nối tới Gemini, vui lòng thử lại.")
-                return
-
-        elif hub.extension_client is not None:
-            print(f"[Pipeline] [Bước {step}] Gửi qua Extension WebSocket...")
-            task_id = str(uuid.uuid4())
-            loop = asyncio.get_running_loop()
-            future = loop.create_future()
-            hub.pending_tasks[task_id] = future
-            await hub.extension_client.send_json({
-                "type": "EXECUTE_COMMAND",
-                "id": task_id,
-                "prompt": prompt,
-                "imageBase64": screenshot_b64,
-            })
-
-            try:
-                result_payload = await asyncio.wait_for(future, timeout=45.0)
-                raw_response = result_payload.get("raw_text", "")
-            except asyncio.TimeoutError:
-                sound_manager.play_error()
-                hub.pending_tasks.pop(task_id, None)
-                timeout_msg = "Quá thời gian chờ phản hồi từ Gemini. Vui lòng thử lại câu lệnh."
-                await hub.broadcast_webui({"type": "ERROR", "message": timeout_msg, "user_command": user_command})
-                await tts_service.speak(timeout_msg)
+                await tts_service.speak(err_text)
                 return
 
         print(f"[Pipeline] [Bước {step}] Phản hồi từ Gemini:\n{raw_response}")

@@ -37,6 +37,13 @@ DANH SÁCH ACTION ĐƯỢC PHÉP:
 - "double_click": Nhấp đúp chuột để mở app, thư mục, file (x_percent, y_percent).
 - "right_click": Nhấp chuột phải để mở menu ngữ cảnh (x_percent, y_percent).
 - "press": Nhấn phím nóng (chỉ định trường "key", ví dụ: "enter", "tab", "esc", "cmd+return" để gửi thư, "cmd+n" để tạo mới, "cmd+l" để vào thanh địa chỉ trình duyệt, "cmd+space", "ctrl+c", "ctrl+v", "space").
+- "system_control": Điều khiển hệ thống máy tính chuẩn xác 100% (chỉ định "command"):
+  * "sleep": Cho máy tính ngủ (Sleep mode) ngay lập tức.
+  * "mute": Tắt tiếng / tắt âm thanh hệ thống.
+  * "unmute": Bật lại âm thanh hệ thống.
+  * "volume_up": Tăng âm lượng hệ thống.
+  * "volume_down": Giảm âm lượng hệ thống.
+  * "lock": Khóa màn hình máy tính.
 - "scroll": Cuộn trang (chỉ định "direction": "down" hoặc "up", "amount": 5).
 - "launch_app": Mở trực tiếp ứng dụng (chỉ định "app_name", ví dụ: "Google Chrome", "Microsoft Outlook", "Spotify", "Finder").
 - "wait": Tạm dừng chờ UI cập nhật (chỉ định "delay": số giây, ví dụ: 0.5 hoặc 1.0).

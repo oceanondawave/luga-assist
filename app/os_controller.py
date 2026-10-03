@@ -207,6 +207,52 @@ class OSController:
                 pyautogui.scroll(clicks * 100)
                 result["details"] = f"Scrolled {direction} by {amount}"
 
+            elif action in ("system_control", "system", "sleep", "mute", "unmute", "volume_up", "volume_down", "lock"):
+                cmd_type = action_data.get("command") or action_data.get("type") or action
+                cmd_clean = str(cmd_type).lower().strip()
+
+                if cmd_clean in ("sleep", "ngủ"):
+                    if sys.platform == "darwin":
+                        subprocess.Popen(["osascript", "-e", 'tell application "System Events" to sleep'])
+                    elif sys.platform.startswith("win"):
+                        subprocess.Popen(["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"])
+                    result["details"] = "Put computer into Sleep mode"
+
+                elif cmd_clean in ("mute", "tắt tiếng", "tắt âm"):
+                    if sys.platform == "darwin":
+                        subprocess.run(["osascript", "-e", "set volume output muted true"], capture_output=True)
+                    else:
+                        pyautogui.press("volumemute")
+                    result["details"] = "Muted system audio"
+
+                elif cmd_clean in ("unmute", "bật tiếng", "bật âm"):
+                    if sys.platform == "darwin":
+                        subprocess.run(["osascript", "-e", "set volume output muted false"], capture_output=True)
+                    else:
+                        pyautogui.press("volumemute")
+                    result["details"] = "Unmuted system audio"
+
+                elif cmd_clean in ("volume_up", "tăng âm", "tăng âm lượng"):
+                    if sys.platform == "darwin":
+                        subprocess.run(["osascript", "-e", "set volume output volume ((output volume of (get volume settings)) + 10)"], capture_output=True)
+                    else:
+                        pyautogui.press("volumeup")
+                    result["details"] = "Increased volume"
+
+                elif cmd_clean in ("volume_down", "giảm âm", "giảm âm lượng"):
+                    if sys.platform == "darwin":
+                        subprocess.run(["osascript", "-e", "set volume output volume ((output volume of (get volume settings)) - 10)"], capture_output=True)
+                    else:
+                        pyautogui.press("volumedown")
+                    result["details"] = "Decreased volume"
+
+                elif cmd_clean in ("lock", "khóa màn hình"):
+                    if sys.platform == "darwin":
+                        subprocess.Popen(["osascript", "-e", 'tell application "System Events" to key code 12 using {control down, command down}'])
+                    elif sys.platform.startswith("win"):
+                        subprocess.Popen(["rundll32.exe", "user32.dll,LockWorkStation"])
+                    result["details"] = "Locked computer screen"
+
             elif action == "launch_app":
                 app_name = action_data.get("app_name", "").strip()
                 if app_name:

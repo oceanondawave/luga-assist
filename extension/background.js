@@ -35,30 +35,44 @@ async function syncCookiesWithServer() {
     let secure_1psid = "";
     let secure_1psidts = "";
 
-    // Search across all Google domains for __Secure-1PSID
-    const psidCookies = await chrome.cookies.getAll({ name: "__Secure-1PSID" });
-    for (const c of psidCookies) {
-      if (c.domain && c.domain.includes("google.com") && c.value) {
-        secure_1psid = c.value;
-        break;
-      }
-    }
+    // 1. Search directly on https://gemini.google.com first (authoritative for Gemini session)
+    let gCookie = await chrome.cookies.get({ url: "https://gemini.google.com", name: "__Secure-1PSID" });
+    if (gCookie && gCookie.value) secure_1psid = gCookie.value;
 
-    // Search for __Secure-1PSIDTS
-    const psidtsCookies = await chrome.cookies.getAll({ name: "__Secure-1PSIDTS" });
-    for (const c of psidtsCookies) {
-      if (c.domain && c.domain.includes("google.com") && c.value) {
-        secure_1psidts = c.value;
-        break;
-      }
-    }
+    let gTsCookie = await chrome.cookies.get({ url: "https://gemini.google.com", name: "__Secure-1PSIDTS" });
+    if (gTsCookie && gTsCookie.value) secure_1psidts = gTsCookie.value;
 
-    // Fallback: search specifically on accounts or gemini
+    // 2. If not found on gemini.google.com, search across Google domains
     if (!secure_1psid) {
-      const gCookie = await chrome.cookies.get({ url: "https://gemini.google.com", name: "__Secure-1PSID" })
-                   || await chrome.cookies.get({ url: "https://accounts.google.com", name: "__Secure-1PSID" })
+      const psidCookies = await chrome.cookies.getAll({ name: "__Secure-1PSID" });
+      for (const c of psidCookies) {
+        if (c.domain && c.domain.includes("google.com") && c.value) {
+          secure_1psid = c.value;
+          break;
+        }
+      }
+    }
+
+    if (!secure_1psidts) {
+      const psidtsCookies = await chrome.cookies.getAll({ name: "__Secure-1PSIDTS" });
+      for (const c of psidtsCookies) {
+        if (c.domain && c.domain.includes("google.com") && c.value) {
+          secure_1psidts = c.value;
+          break;
+        }
+      }
+    }
+
+    // 3. Fallback: accounts.google.com
+    if (!secure_1psid) {
+      const aCookie = await chrome.cookies.get({ url: "https://accounts.google.com", name: "__Secure-1PSID" })
                    || await chrome.cookies.get({ url: "https://google.com", name: "__Secure-1PSID" });
-      if (gCookie) secure_1psid = gCookie.value;
+      if (aCookie) secure_1psid = aCookie.value;
+    }
+    if (!secure_1psidts) {
+      const aTsCookie = await chrome.cookies.get({ url: "https://accounts.google.com", name: "__Secure-1PSIDTS" })
+                     || await chrome.cookies.get({ url: "https://google.com", name: "__Secure-1PSIDTS" });
+      if (aTsCookie) secure_1psidts = aTsCookie.value;
     }
 
     if (secure_1psid) {

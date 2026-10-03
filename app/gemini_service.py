@@ -24,6 +24,7 @@ class GeminiSessionService:
         self.chat_session = None
         self.is_ready = False
         self._current_psid: str = ""
+        self._current_psidts: str = ""
         self._init_lock = asyncio.Lock()
         self._saved_cookies = self._read_saved_cookies()
 
@@ -58,14 +59,18 @@ class GeminiSessionService:
         """Initialize or keep active background Gemini client using cookies."""
         async with self._init_lock:
             cleaned_psid = (secure_1psid or "").strip()
-            cleaned_psidts = (secure_1psidts or "").strip() if secure_1psidts else None
+            cleaned_psidts = (secure_1psidts or "").strip() if secure_1psidts else ""
 
             if not cleaned_psid:
                 return False
 
-            # If already initialized with the same cookies and session is active,
-            # KEEP THE EXISTING CHAT to preserve full conversation context!
-            if self.is_ready and self.client and self._current_psid == cleaned_psid:
+            # If already initialized with THE EXACT SAME COOKIES and IS HEALTHY, keep existing session
+            if (
+                self.is_ready
+                and self.client
+                and self._current_psid == cleaned_psid
+                and self._current_psidts == cleaned_psidts
+            ):
                 if self.chat_session is None:
                     self.chat_session = self._start_chat_safe()
                 return True
@@ -74,10 +79,11 @@ class GeminiSessionService:
                 print("[GeminiSessionService] Đang kết nối session Google Gemini ngầm...")
                 self.client = GeminiClient(
                     secure_1psid=cleaned_psid,
-                    secure_1psidts=cleaned_psidts,
+                    secure_1psidts=cleaned_psidts or None,
                 )
                 await self.client.init(timeout=30)
                 self._current_psid = cleaned_psid
+                self._current_psidts = cleaned_psidts
                 self.is_ready = True
 
                 # Start or retain continuous chat session
@@ -89,7 +95,7 @@ class GeminiSessionService:
                 with open(SESSION_FILE, "w") as f:
                     json.dump({
                         "secure_1psid": cleaned_psid,
-                        "secure_1psidts": cleaned_psidts or "",
+                        "secure_1psidts": cleaned_psidts,
                     }, f)
 
                 print("[GeminiSessionService] ✅ Kết nối Google Gemini ngầm thành công! (Duy trì 1 cuộc trò chuyện liên tục)")
@@ -123,8 +129,12 @@ class GeminiSessionService:
             return response_text
         except Exception as e:
             err_str = str(e).lower()
-            # If context is truly overloaded or token limit hit, reset once and retry
-            if "exhausted" in err_str or "too long" in err_str or "context window" in err_str:
+            if "unauthenticated" in err_str or "permission denied" in err_str or "cookie" in err_str:
+                print(f"[GeminiSessionService] ⚠️ Session Google hết hạn hoặc chưa xác thực: {e}")
+                self.is_ready = False
+                self.client = None
+                self.chat_session = None
+            elif "exhausted" in err_str or "too long" in err_str or "context window" in err_str:
                 print(f"[GeminiSessionService] Context bị quá tải ({e}), tự động làm mới chat session...")
                 self.reset_chat()
                 output = await self.chat_session.send_message(prompt, files=files)

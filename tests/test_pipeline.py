@@ -214,6 +214,22 @@ def test_element_scoring_and_email_action():
     assert hasattr(accessibility_manager, "is_compose_window_active")
     print("test_element_scoring_and_email_action: PASSED")
 
+def test_system_control_action():
+    from app.prompt_templates import build_gemini_prompt
+    prompt = build_gemini_prompt("Tắt tiếng âm thanh hệ thống")
+    assert "system_control" in prompt
+    assert "mute" in prompt
+    assert "sleep" in prompt
+
+    # Test extract_json_payload for system_control
+    from app.main import extract_json_payload
+    mute_json = '{"speech": "Đang tắt tiếng hệ thống", "done": true, "actions": [{"action": "system_control", "command": "mute"}]}'
+    payload = extract_json_payload(mute_json)
+    assert payload is not None
+    assert payload["actions"][0]["action"] == "system_control"
+    assert payload["actions"][0]["command"] == "mute"
+    print("test_system_control_action: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -226,6 +242,7 @@ if __name__ == "__main__":
     test_windows_cross_platform_compatibility()
     test_outcome_verification_prompt()
     test_element_scoring_and_email_action()
+    test_system_control_action()
     print("\n🎉 ALL TESTS (INCLUDING OUTCOME VERIFICATION & REAL AGENT PIPELINE) PASSED SUCCESSFULLY!")
 
 
