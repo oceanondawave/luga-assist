@@ -428,7 +428,11 @@ async def process_user_command(user_command: str, voice: str):
             # a secondary screenshot verification loop.
             all_system = all(
                 isinstance(a, dict) and a.get("action", "").lower() in (
-                    "system_control", "system", "sleep", "mute", "unmute", "volume_up", "volume_down", "lock"
+                    "system_control", "system", "sleep", "mute", "unmute", "volume_up", "volume_down", "lock",
+                    "terminal_command", "terminal", "run_terminal", "bash", "cmd", "powershell", "powershell_command",
+                    "find_files", "find_file", "search_file", "search_files", "open_file", "open", "open_folder",
+                    "list_files", "list_dir", "dir", "ls", "read_file", "cat", "view_file",
+                    "create_file", "write_file", "new_file", "delete_file", "remove_file", "trash_file"
                 )
                 for a in active_actions
             )
@@ -472,9 +476,14 @@ async def process_user_command(user_command: str, voice: str):
             last_actions_summary = "; ".join([
                 f"{a.get('action')}" + (f" vào '{a.get('target')}'" if a.get('target') else "") +
                 (f" text='{a.get('text')}'" if a.get('text') else "") +
-                (f" key='{a.get('key')}'" if a.get('key') else "")
+                (f" key='{a.get('key')}'" if a.get('key') else "") +
+                (f" query='{a.get('query')}'" if a.get('query') else "") +
+                (f" path='{a.get('path')}'" if a.get('path') else "") +
+                (f" cmd='{a.get('command')}'" if a.get('command') else "")
                 for a in active_actions
             ])
+            if action_result.get("details"):
+                last_actions_summary += f" | Kết quả: {action_result.get('details')[:250]}"
             print(f"[Pipeline] [Bước {step}] Đã thực thi xong: {last_actions_summary}")
 
         # Step 8: Broadcast Step or Verified Final Result to WebUI
@@ -490,6 +499,12 @@ async def process_user_command(user_command: str, voice: str):
 
         # Wait for spoken audio to finish
         await speak_task
+
+        # If action returned dynamic speech result (e.g. search results, terminal output, read file), speak it!
+        dynamic_speech = action_result.get("speech_result")
+        if dynamic_speech and dynamic_speech != speech_to_say:
+            print(f"[Pipeline] 🗣️ Báo cáo kết quả trực tiếp: \"{dynamic_speech}\"")
+            await tts_service.speak(dynamic_speech)
 
         # Check termination condition
         if is_goal_verified_completed:

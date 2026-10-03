@@ -13,6 +13,7 @@ from app.config import (
     ACTION_SAFETY_PAUSE,
 )
 from app.accessibility import accessibility_manager
+from app.file_and_terminal import file_and_terminal
 
 # Enable failsafe: moving mouse cursor to any corner will raise pyautogui.FailSafeException
 pyautogui.FAILSAFE = True
@@ -264,6 +265,85 @@ class OSController:
                 time.sleep(delay)
                 result["details"] = f"Waited for {delay}s"
 
+            elif action in ("terminal_command", "terminal", "run_terminal", "bash", "cmd", "powershell", "powershell_command"):
+                cmd = action_data.get("command") or action_data.get("cmd", "")
+                cwd = action_data.get("cwd")
+                open_visible = bool(action_data.get("open_visible", False))
+                shell_type = action_data.get("shell_type")
+                if action in ("powershell", "powershell_command"):
+                    shell_type = "powershell"
+                elif action == "cmd":
+                    shell_type = "cmd"
+
+                t_res = file_and_terminal.execute_terminal(
+                    command=cmd, cwd=cwd, open_visible=open_visible, shell_type=shell_type
+                )
+                result["success"] = t_res["success"]
+                result["details"] = t_res["details"]
+                if t_res.get("speech_result"):
+                    result["speech_result"] = t_res["speech_result"]
+                if "stdout" in t_res:
+                    result["stdout"] = t_res["stdout"]
+
+            elif action in ("find_files", "find_file", "search_file", "search_files"):
+                query = action_data.get("query") or action_data.get("name") or action_data.get("pattern", "")
+                location = action_data.get("location") or action_data.get("dir")
+                limit = int(action_data.get("limit", 10))
+                open_first = bool(action_data.get("open_first", False))
+
+                f_res = file_and_terminal.find_files(query=query, location=location, limit=limit, open_first=open_first)
+                result["success"] = f_res["success"]
+                result["details"] = f_res["details"]
+                if f_res.get("speech_result"):
+                    result["speech_result"] = f_res["speech_result"]
+                result["files"] = f_res.get("files", [])
+
+            elif action in ("open_file", "open", "open_folder"):
+                path_str = action_data.get("path") or action_data.get("file") or action_data.get("target", "")
+                o_res = file_and_terminal.open_file(path_str=str(path_str))
+                result["success"] = o_res["success"]
+                result["details"] = o_res["details"]
+                if o_res.get("speech_result"):
+                    result["speech_result"] = o_res["speech_result"]
+
+            elif action in ("list_files", "list_dir", "dir", "ls"):
+                path_str = action_data.get("path") or action_data.get("dir") or action_data.get("folder")
+                limit = int(action_data.get("limit", 20))
+                l_res = file_and_terminal.list_files(path_str=path_str, limit=limit)
+                result["success"] = l_res["success"]
+                result["details"] = l_res["details"]
+                if l_res.get("speech_result"):
+                    result["speech_result"] = l_res["speech_result"]
+
+            elif action in ("read_file", "cat", "view_file"):
+                path_str = action_data.get("path") or action_data.get("file", "")
+                max_lines = int(action_data.get("max_lines", 40))
+                r_res = file_and_terminal.read_file(path_str=str(path_str), max_lines=max_lines)
+                result["success"] = r_res["success"]
+                result["details"] = r_res["details"]
+                if r_res.get("speech_result"):
+                    result["speech_result"] = r_res["speech_result"]
+                if "content" in r_res:
+                    result["content"] = r_res["content"]
+
+            elif action in ("create_file", "write_file", "new_file"):
+                path_str = action_data.get("path") or action_data.get("file", "")
+                content = action_data.get("content") or action_data.get("text", "")
+                c_res = file_and_terminal.create_file(path_str=str(path_str), content=content)
+                result["success"] = c_res["success"]
+                result["details"] = c_res["details"]
+                if c_res.get("speech_result"):
+                    result["speech_result"] = c_res["speech_result"]
+
+            elif action in ("delete_file", "remove_file", "trash_file"):
+                path_str = action_data.get("path") or action_data.get("file", "")
+                safe_trash = bool(action_data.get("safe_trash", True))
+                d_res = file_and_terminal.delete_file(path_str=str(path_str), safe_trash=safe_trash)
+                result["success"] = d_res["success"]
+                result["details"] = d_res["details"]
+                if d_res.get("speech_result"):
+                    result["speech_result"] = d_res["speech_result"]
+
             elif action in ("none", "read_screen"):
                 result["details"] = "No mouse/keyboard action needed"
 
@@ -305,11 +385,13 @@ class OSController:
             time.sleep(max(0.04, step_delay))
 
         summary_details = " ➔ ".join([r.get("details", "") for r in results if r.get("details")])
+        summary_speech = " ".join([r.get("speech_result", "") for r in results if r.get("speech_result")])
         return {
             "success": overall_success,
             "action": "sequence",
             "count": len(actions_list),
             "details": summary_details,
+            "speech_result": summary_speech,
             "results": results,
         }
 

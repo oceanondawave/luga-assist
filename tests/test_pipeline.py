@@ -286,6 +286,79 @@ def test_bilingual_voice_selection_and_normalization():
 
     print("test_bilingual_voice_selection_and_normalization: PASSED")
 
+def test_file_management_and_terminal_suite():
+    import tempfile
+    from pathlib import Path
+    from app.prompt_templates import build_gemini_prompt
+    from app.file_and_terminal import file_and_terminal
+
+    # 1. Test prompt generation includes terminal and file actions
+    prompt = build_gemini_prompt("Tìm file báo cáo trong thư mục Downloads")
+    assert "find_files" in prompt
+    assert "terminal_command" in prompt
+    assert "open_file" in prompt
+
+    # 2. Test terminal command execution
+    res_term = os_controller.execute_action({
+        "action": "terminal_command",
+        "command": "echo 'LUGA_TERMINAL_OK'"
+    })
+    assert res_term["success"] is True
+    assert "LUGA_TERMINAL_OK" in res_term.get("stdout", "") or "LUGA_TERMINAL_OK" in res_term.get("details", "")
+    assert res_term.get("speech_result") is not None
+
+    # 3. Test find_files action
+    res_find = os_controller.execute_action({
+        "action": "find_files",
+        "query": "test_pipeline.py"
+    })
+    assert res_find["success"] is True
+    assert len(res_find.get("files", [])) > 0
+    assert "test_pipeline.py" in res_find.get("speech_result", "")
+
+    # 4. Test create_file, read_file, and delete_file
+    tmp_path = Path(tempfile.gettempdir()) / "luga_pipeline_test.txt"
+    res_create = os_controller.execute_action({
+        "action": "create_file",
+        "path": str(tmp_path),
+        "content": "Dòng 1: Nội dung kiểm thử Luga Assist\nDòng 2: Hàng thứ hai"
+    })
+    assert res_create["success"] is True
+    assert tmp_path.exists()
+
+    res_read = os_controller.execute_action({
+        "action": "read_file",
+        "path": str(tmp_path)
+    })
+    assert res_read["success"] is True
+    assert "Nội dung kiểm thử Luga Assist" in res_read.get("content", "")
+
+    res_del = os_controller.execute_action({
+        "action": "delete_file",
+        "path": str(tmp_path),
+        "safe_trash": False
+    })
+    assert res_del["success"] is True
+    assert not tmp_path.exists()
+
+    # 5. Test JSON parsing for terminal and powershell
+    payload1 = extract_json_payload("""```json
+{
+  "speech": "Đang chạy lệnh powershell",
+  "done": true,
+  "actions": [
+    {
+      "action": "powershell_command",
+      "command": "Get-Process | Select-Object -First 5"
+    }
+  ]
+}
+```""")
+    assert payload1["actions"][0]["action"] == "powershell_command"
+    assert "Get-Process" in payload1["actions"][0]["command"]
+
+    print("test_file_management_and_terminal_suite: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -300,7 +373,8 @@ if __name__ == "__main__":
     test_element_scoring_and_email_action()
     test_system_control_action()
     test_bilingual_voice_selection_and_normalization()
-    print("\n🎉 ALL TESTS (INCLUDING BILINGUAL STT & OUTCOME VERIFICATION) PASSED SUCCESSFULLY!")
+    test_file_management_and_terminal_suite()
+    print("\n🎉 ALL TESTS (INCLUDING FILE SUITE, TERMINAL & POWERSHELL) PASSED SUCCESSFULLY!")
 
 
 

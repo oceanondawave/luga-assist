@@ -45,6 +45,27 @@ DANH SÁCH ACTION ĐƯỢC PHÉP:
   * "volume_up": Tăng âm lượng hệ thống.
   * "volume_down": Giảm âm lượng hệ thống.
   * "lock": Khóa màn hình máy tính.
+- "find_files": Tìm kiếm file hoặc thư mục siêu tốc (Spotlight macOS / PowerShell Windows):
+  * "query": tên file hoặc mẫu tìm kiếm (ví dụ: "báo cáo", "*.pdf", "note.txt", "cv").
+  * "location" (tùy chọn): thư mục tìm kiếm (ví dụ: "Downloads", "Desktop", "Documents", "~").
+  * "open_first" (tùy chọn, true/false): nếu true, tự động mở ngay file đầu tiên tìm thấy.
+- "open_file": Mở trực tiếp file hoặc thư mục bằng ứng dụng mặc định:
+  * "path": đường dẫn file hoặc thư mục (ví dụ: "~/Desktop/bao_cao.docx", "Downloads").
+- "list_files": Xem danh sách file trong thư mục:
+  * "path" (tùy chọn): thư mục cần liệt kê (mặc định Desktop hoặc Downloads).
+- "read_file": Đọc nội dung file văn bản, code, cấu hình để đọc tóm tắt cho người khiếm thị nghe:
+  * "path": đường dẫn file cần đọc.
+  * "max_lines" (tùy chọn): số dòng tối đa cần đọc (mặc định 40).
+- "create_file": Tạo mới hoặc ghi đè nội dung file văn bản:
+  * "path": đường dẫn file cần tạo (ví dụ: "~/Desktop/ghi_chu.txt").
+  * "content": nội dung văn bản cần ghi.
+- "delete_file": Xóa file hoặc chuyển vào thùng rác an toàn:
+  * "path": đường dẫn file cần xóa.
+- "terminal_command": Thực thi lệnh Terminal / PowerShell / Bash / Zsh KHÔNG GIỚI HẠN:
+  * "command": câu lệnh shell cần chạy (ví dụ: "ls -la", "git status", "Get-Process", "python main.py", "mkdir test_folder", "curl https://...").
+  * "open_visible" (tùy chọn, true/false): nếu true, mở hẳn cửa sổ Terminal/PowerShell hiển thị trên Desktop; nếu false (mặc định), chạy ngầm và báo cáo output kết quả cho người dùng.
+  * "shell_type" (tùy chọn): "powershell", "cmd", "zsh", "bash".
+  * "cwd" (tùy chọn): thư mục làm việc.
 - "scroll": Cuộn trang (chỉ định "direction": "down" hoặc "up", "amount": 5).
 - "launch_app": Mở trực tiếp ứng dụng (chỉ định "app_name", ví dụ: "Google Chrome", "Microsoft Outlook", "Spotify", "Finder").
 - "wait": Tạm dừng chờ UI cập nhật (chỉ định "delay": số giây, ví dụ: 0.5 hoặc 1.0).
@@ -73,7 +94,11 @@ YÊU CẦU PHẢN HỒI:
   "done": false,
   "actions": [
     {
-      "action": "send_email | focus | type | click | double_click | press | scroll | launch_app | wait | read_screen | none",
+      "action": "find_files | open_file | terminal_command | list_files | read_file | create_file | delete_file | send_email | focus | type | click | double_click | press | scroll | launch_app | system_control | wait | read_screen | none",
+      "query": "tên file nếu action=find_files",
+      "path": "đường dẫn file nếu action=open_file / read_file / create_file / delete_file",
+      "command": "lệnh shell nếu action=terminal_command hoặc lệnh hệ thống nếu action=system_control",
+      "content": "nội dung nếu action=create_file",
       "target": "tên ô hoặc nút nếu có (ví dụ: to, subject, body, search, send, next)",
       "to": "email người nhận nếu action=send_email",
       "subject": "tiêu đề thư nếu action=send_email",
