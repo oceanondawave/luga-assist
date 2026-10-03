@@ -84,8 +84,17 @@ QUY TẮC CỐT LÕI CỦA MỘT ACTION AGENT THỰC THỤ (CHỐNG ẢO TƯỞN
   1. Yêu cầu của người dùng chỉ là hỏi thông tin/đọc màn hình (action=none hoặc read_screen).
   2. HOẶC bạn đang ở bước kiểm chứng và nhìn thấy BẰNG CHỨNG RÕ RÀNG TRÊN MÀN HÌNH rằng mục tiêu đã thành công 100% (ví dụ: cửa sổ soạn thư đã đóng hoàn toàn, thư đã gửi đi, trang web đã tải xong).
 
+QUY TẮC QUAN TRỌNG VỀ TRƯỜNG "speech" VÀ TÁC VỤ MIÊU TẢ / TÓM TẮT:
+1. ĐỐI VỚI TÁC VỤ MIÊU TẢ / TÓM TẮT MÀN HÌNH / TRẢ LỜI CÂU HỎI (action="none" hoặc "read_screen"):
+   - Trường "speech": CHÍNH LÀ NỘI DUNG TÓM TẮT / MIÊU TẢ / TRẢ LỜI ĐẦY ĐỦ, RÕ RÀNG, DỄ HIỂU để hệ thống đọc to bằng giọng nói cho người khiếm thị nghe!
+   - TUYỆT ĐỐI KHÔNG ĐƯỢC đặt "speech" là câu hứa hẹn suông (như "Đang tóm tắt các video...") rồi viết nội dung ra ngoài! Toàn bộ nội dung thông tin phải nằm trực tiếp trong trường "speech" bên trong JSON.
+   - Đặt "done": true, "actions": [{"action": "none"}] hoặc [{"action": "read_screen"}].
+
+2. ĐỐI VỚI CÁC THAO TÁC ĐIỀU KHIỂN MÁY TÍNH (click, type, press, launch_app, send_email, system_control...):
+   - Trường "speech": Câu thông báo ngắn gọn dưới 10 từ (ví dụ: "Đang mở trình duyệt", "Đang tắt tiếng hệ thống").
+   - Đặt "done": false (để hệ thống chụp ảnh kiểm chứng kết quả).
+
 YÊU CẦU PHẢN HỒI:
-- Trường "speech": Câu nói tiếng Việt tóm tắt hành động CỰC KỲ NGẮN GỌN (dưới 10 từ).
 - Chỉ trả về DUY NHẤT một khối mã JSON hợp lệ:
 
 ```json

@@ -160,17 +160,38 @@ async def set_session(payload: SessionPayload):
 
 
 # Helper: Extract clean JSON from Gemini's response
-def extract_json_payload(text: str) -> Optional[Dict[str, Any]]:
+def clean_text_for_speech(text: str) -> str:
+    """Clean markdown artifacts, headers, bullets, and file badges so TTS speaks naturally."""
+    if not text:
+        return text
+    cleaned = re.sub(r"```[a-zA-Z]*\n?", "", text)
+    cleaned = re.sub(r"\*\*([^*]+)\*\*", r"\1", cleaned)
+    cleaned = re.sub(r"\*([^*]+)\*", r"\1", cleaned)
+    cleaned = re.sub(r"__([^_]+)__", r"\1", cleaned)
+    cleaned = re.sub(r"_([^_]+)_", r"\1", cleaned)
+    cleaned = re.sub(r"^#{1,6}\s+", "", cleaned, flags=re.MULTILINE)
+    # Replace bullet marks (- or * or • or o ) with a clean natural pause
+    cleaned = re.sub(r"^\s*[-*•oO]\s+", ". ", cleaned, flags=re.MULTILINE)
+    cleaned = re.sub(r"\[(JPG|PNG|JPEG|GIF|SVG|IMG)\]", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\bJPG\b|\bPNG\b", "", cleaned)
+    cleaned = re.sub(r"!\[.*?\]\(.*?\)", "", cleaned)
+    cleaned = re.sub(r"\n{2,}", "\n. ", cleaned)
+    return cleaned.strip()
+
+def extract_payload_and_narrative(text: str) -> tuple[Optional[Dict[str, Any]], str]:
     """
-    Robust JSON extractor: scans text using json.JSONDecoder to find all valid JSON objects,
-    resilient against markdown truncation, multiple blocks, or conversational preambles.
+    Robust JSON & Narrative extractor:
+    Scans text using json.JSONDecoder to find valid JSON objects,
+    and captures any surrounding markdown/narrative text (e.g. summaries, descriptions, answers)
+    written before or after the JSON block.
     """
     if not text:
-        return None
+        return None, ""
 
     decoder = json.JSONDecoder()
     pos = 0
     candidates = []
+    json_spans = []
 
     while pos < len(text):
         idx = text.find("{", pos)
@@ -180,19 +201,41 @@ def extract_json_payload(text: str) -> Optional[Dict[str, Any]]:
             obj, end_pos = decoder.raw_decode(text, idx)
             if isinstance(obj, dict):
                 candidates.append(obj)
+                json_spans.append((idx, end_pos))
             pos = end_pos
         except Exception:
             pos = idx + 1
 
     # Prioritize candidates that contain "actions" or "action", preferring the last one (final decided answer)
+    chosen_payload = None
     for cand in reversed(candidates):
         if "actions" in cand or "action" in cand:
-            return cand
+            chosen_payload = cand
+            break
 
-    if candidates:
-        return candidates[-1]
+    if not chosen_payload and candidates:
+        chosen_payload = candidates[-1]
 
-    return None
+    # Extract narrative (text outside the JSON block)
+    narrative = ""
+    if json_spans:
+        first_start = json_spans[0][0]
+        last_end = json_spans[-1][1]
+        before = text[:first_start]
+        after = text[last_end:]
+        before = re.sub(r"```(?:json)?", "", before).strip()
+        after = re.sub(r"```(?:json)?", "", after).strip()
+        parts = [p for p in (before, after) if p]
+        narrative = "\n\n".join(parts).strip()
+    else:
+        narrative = text.strip()
+
+    return chosen_payload, narrative
+
+# Helper: Extract clean JSON from Gemini's response (backwards compatible)
+def extract_json_payload(text: str) -> Optional[Dict[str, Any]]:
+    payload, _ = extract_payload_and_narrative(text)
+    return payload
 
 
 # WebUI WebSocket Endpoint
@@ -379,11 +422,19 @@ async def process_user_command(user_command: str, voice: str):
         # Stop pulsing audio cue immediately as soon as AI response has been received
         sound_manager.stop_pulsing()
 
-        # Step 4: Robust JSON Parse
-        action_data = extract_json_payload(raw_response)
+        # Step 4: Robust JSON Parse & Narrative Extraction
+        action_data, narrative_text = extract_payload_and_narrative(raw_response)
         if not action_data:
-            speech_text = raw_response.strip() or "Đang kiểm tra kết quả màn hình."
-            action_data = {"speech": speech_text, "actions": [{"action": "none"}], "done": False}
+            speech_text = narrative_text.strip() or "Đang kiểm tra kết quả màn hình."
+            action_data = {"speech": speech_text, "actions": [{"action": "none"}], "done": True}
+
+        # Check for summary or description fields inside JSON
+        summary_inside = (
+            action_data.get("description")
+            or action_data.get("summary")
+            or action_data.get("answer")
+            or action_data.get("content")
+        )
 
         speech_to_say = action_data.get("speech", "Đang thực hiện.")
 
@@ -398,6 +449,29 @@ async def process_user_command(user_command: str, voice: str):
         ]
         is_passive_only = len(active_actions) == 0
         claimed_done = bool(action_data.get("done", False))
+
+        # SPECIAL HANDLING FOR SUMMARY / SCREEN DESCRIPTION / INFORMATIONAL REQUESTS:
+        if is_passive_only:
+            # Detect placeholder starters in speech_to_say (e.g. 'Đang tóm tắt...', 'Đang miêu tả...')
+            placeholder_starters = (
+                "đang tóm tắt", "đang miêu tả", "đang mô tả", "đang đọc", 
+                "tôi đang xem", "đang kiểm tra", "đang nhìn", "dưới đây là", "sau đây là",
+                "đang trả lời", "tôi đang tóm tắt"
+            )
+            is_placeholder = (
+                any(speech_to_say.lower().strip().startswith(p) for p in placeholder_starters)
+                or len(speech_to_say.split()) <= 12
+            )
+
+            # If narrative text outside JSON exists and has substance (e.g. YouTube summary outside JSON):
+            if narrative_text and len(narrative_text.strip()) > 30:
+                print(f"[Pipeline] 📝 Phát hiện nội dung tóm tắt/miêu tả ngoài JSON ({len(narrative_text)} ký tự).")
+                speech_to_say = narrative_text.strip()
+            elif summary_inside and len(summary_inside.strip()) > len(speech_to_say):
+                speech_to_say = summary_inside.strip()
+
+        # Clean speech text from markdown artifacts and bullet symbols for natural TTS audio
+        speech_for_tts = clean_text_for_speech(speech_to_say)
 
         # ANTI-HALLUCINATION / OUTCOME VERIFICATION LOGIC:
         if is_passive_only:
@@ -414,6 +488,7 @@ async def process_user_command(user_command: str, voice: str):
                         print("[Pipeline] ⚠️ CẢNH BÁO KIỂM CHỨNG: Gemini báo hoàn thành nhưng cửa sổ/khung soạn thư vẫn còn mở trên màn hình!")
                         is_goal_verified_completed = False
                         speech_to_say = "Thư chưa gửi đi được, đang thực hiện gửi lại."
+                        speech_for_tts = speech_to_say
                         actions_list = [{"action": "click", "target": "send"}, {"action": "press", "key": "cmd+return"}]
                         active_actions = actions_list
                     else:
@@ -454,7 +529,7 @@ async def process_user_command(user_command: str, voice: str):
         annotated_b64 = screen_capturer.annotate_actions(actions_list)
 
         # Step 6: Speak Spoken Response to User Concurrently
-        speak_task = asyncio.create_task(tts_service.speak(speech_to_say))
+        speak_task = asyncio.create_task(tts_service.speak(speech_for_tts))
 
         # Step 7: Execute Action Sequence on OS (if active actions exist)
         action_result = {"success": True, "action": "none", "details": "Verified state"}

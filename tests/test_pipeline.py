@@ -359,6 +359,45 @@ def test_file_management_and_terminal_suite():
 
     print("test_file_management_and_terminal_suite: PASSED")
 
+def test_narrative_extraction_and_speech_cleanup():
+    from app.main import extract_payload_and_narrative, clean_text_for_speech
+
+    sample_raw = """```json
+{
+  "speech": "Đang tóm tắt các video nổi bật trên trang chủ YouTube",
+  "done": true,
+  "actions": [
+    {
+      "action": "none"
+    }
+  ]
+}
+```
+
+Trên trang chủ YouTube hiện đang hiển thị các video nổi bật sau:
+
+o   Video giải trí & đời sống: "Đầu Phòng TV - Tập 85: Nợ Tình". JPG
+o   Video công nghệ & nhiếp ảnh: So sánh "DSLR vs MIRRORLESS" và "Mua máy ảnh đầu tiên? Mọi thứ bạn cần biết". JPG
+o   Video game & thể thao: "SERI ĐỘI HÌNH GIAO DỊCH FO4 TRỞ LẠI #18: Siêu Cò | Love - Cực Đồ Đón Cristiano Ronaldo +10". JPG
+o   Video âm nhạc: "Chris Brown Ft Drake - Another Level (Official Music Video)" và "Machiot - Đổi Nhạc Nền Vol. 4 (Office Mixset)". JPG
+"""
+
+    payload, narrative = extract_payload_and_narrative(sample_raw)
+    assert payload is not None
+    assert payload["speech"] == "Đang tóm tắt các video nổi bật trên trang chủ YouTube"
+    assert "Trên trang chủ YouTube" in narrative
+    assert "Đầu Phòng TV" in narrative
+    assert len(narrative) > 200
+
+    # Test speech cleanup
+    cleaned = clean_text_for_speech(narrative)
+    assert "```" not in cleaned
+    assert "JPG" not in cleaned
+    assert "Đầu Phòng TV" in cleaned
+    assert "Trên trang chủ YouTube" in cleaned
+
+    print("test_narrative_extraction_and_speech_cleanup: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -374,7 +413,8 @@ if __name__ == "__main__":
     test_system_control_action()
     test_bilingual_voice_selection_and_normalization()
     test_file_management_and_terminal_suite()
-    print("\n🎉 ALL TESTS (INCLUDING FILE SUITE, TERMINAL & POWERSHELL) PASSED SUCCESSFULLY!")
+    test_narrative_extraction_and_speech_cleanup()
+    print("\n🎉 ALL TESTS (INCLUDING SUMMARY NARRATIVE EXTRACTION) PASSED SUCCESSFULLY!")
 
 
 
