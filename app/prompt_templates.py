@@ -40,7 +40,13 @@ DANH SÁCH ACTION ĐƯỢC PHÉP:
 
 KHẢ NĂNG THỰC HIỆN NHIỀU HÀNH ĐỘNG CÙNG LÚC (CHUỖI HÀNH ĐỘNG):
 - Trả về mảng "actions" để thực hiện liên hoàn (ví dụ: focus ô To -> gõ email -> focus Subject -> gõ tiêu đề).
-- Nếu mục tiêu ĐÃ HOÀN TẤT 100%: đặt "done": true. Nếu còn cần chụp màn hình bước sau: đặt "done": false.
+
+QUY TẮC CỐT LÕI CỦA MỘT ACTION AGENT THỰC THỤ (CHỐNG ẢO TƯỞNG / ANTI-HALLUCINATION):
+- TUYỆT ĐỐI KHÔNG ĐƯỢC đặt "done": true khi bạn đang đề xuất một hành động thao tác (click, type, press, launch_app) chưa được kiểm chứng kết quả trên màn hình!
+- Khi đưa ra hành động thao tác: LUÔN ĐẶT "done": false. Hệ thống sẽ tự động chụp ảnh màn hình mới ngay sau khi thực thi để bạn KIỂM CHỨNG KẾT QUẢ THỰC TẾ (Outcome Verification).
+- CHỈ ĐƯỢC đặt "done": true khi:
+  1. Yêu cầu của người dùng chỉ là hỏi thông tin/đọc màn hình (action=none hoặc read_screen).
+  2. HOẶC bạn đang ở bước kiểm chứng và nhìn thấy BẰNG CHỨNG RÕ RÀNG TRÊN MÀN HÌNH rằng mục tiêu đã thành công 100% (ví dụ: cửa sổ đã đóng, thư đã gửi, ô đã có chữ đúng, trang web đã tải xong).
 
 YÊU CẦU PHẢN HỒI:
 - Trường "speech": Câu nói tiếng Việt tóm tắt hành động CỰC KỲ NGẮN GỌN (dưới 10 từ).
@@ -48,8 +54,8 @@ YÊU CẦU PHẢN HỒI:
 
 ```json
 {
-  "speech": "Đang soạn email và gửi cho bạn",
-  "done": true,
+  "speech": "Đang nhập email và gửi thư",
+  "done": false,
   "actions": [
     {
       "action": "focus | type | click | double_click | press | scroll | launch_app | wait | read_screen | none",
@@ -69,8 +75,45 @@ YÊU CẦU PHẢN HỒI:
 """
 
 def build_gemini_prompt(user_command: str, ui_context: str = "") -> str:
-    """Build complete prompt to send to Gemini Web"""
+    """Build initial planning prompt for Step 1"""
     context_block = f"\n{ui_context}\n" if ui_context else ""
-    return f"{SYSTEM_GROUNDING_PROMPT}{context_block}\nYêu cầu của người dùng:\n\"{user_command}\"\n"
+    return f"{SYSTEM_GROUNDING_PROMPT}{context_block}\nMục tiêu của người dùng:\n\"{user_command}\"\n"
+
+def build_verification_prompt(user_command: str, step: int, previous_actions_desc: str, ui_context: str = "") -> str:
+    """
+    Build outcome verification prompt for Step > 1.
+    Forces the agent to inspect the new screen, verify whether the previous action succeeded,
+    and self-correct instead of hallucinating completion.
+    """
+    context_block = f"\n{ui_context}\n" if ui_context else ""
+    return f"""{SYSTEM_GROUNDING_PROMPT}{context_block}
+======================================================================
+BƯỚC {step}: KIỂM TRA KẾT QUẢ THỰC TẾ & RA QUYẾT ĐỊNH (OUTCOME VERIFICATION)
+======================================================================
+MỤC TIÊU BAN ĐẦU CỦA NGƯỜI DÙNG: "{user_command}"
+HÀNH ĐỘNG VỪA THỰC HIỆN Ở BƯỚC TRƯỚC: {previous_actions_desc}
+
+BẠN ĐANG QUAN SÁT ẢNH MÀN HÌNH MỚI NHẤT VỪA ĐƯỢC CHỤP LẠI SAU KHI THỰC HIỆN HÀNH ĐỘNG TRÊN.
+HÃY ĐỐI CHIẾU MÀN HÌNH VÀ THẨM ĐỊNH KẾT QUẢ THỰC TẾ (TUYỆT ĐỐI KHÔNG ẢO TƯỞNG):
+
+1. THẨM ĐỊNH THỰC TẾ:
+   - Hành động trước đó có thành công không?
+   - Nếu vừa gõ chữ: ô nhập liệu đã có nội dung chưa?
+   - Nếu vừa gửi thư/tin nhắn: cửa sổ soạn thảo đã đóng/đã gửi đi chưa, hay vẫn còn trên màn hình? Có thông báo lỗi nào xuất hiện không?
+   - Nếu vừa mở app/tìm kiếm: giao diện kết quả đã hiển thị chưa?
+
+2. RA QUYẾT ĐỊNH CHÍNH XÁC:
+   - [TRƯỜNG HỢP A - MỤC TIÊU ĐÃ HOÀN TẤT THỰC SỰ 100%]:
+     Nếu bạn nhìn thấy BẰNG CHỨNG RÕ RÀNG trên màn hình rằng yêu cầu đã đạt kết quả:
+     -> Đặt "done": true
+     -> "actions": [{{"action": "none"}}]
+     -> "speech": Báo cáo kết quả thành công cho người dùng (ví dụ: "Đã gửi email thành công cho bạn.")
+
+   - [TRƯỜNG HỢP B - CHƯA ĐẠT KẾT QUẢ / CẦN SỬA LỖI (RECOVERY)]:
+     Nếu thư chưa gửi được, ô còn trống, hoặc có popup cần xác nhận:
+     -> Đặt "done": false
+     -> "actions": Đưa ra hành động tiếp theo cần thiết (ví dụ: click nút Send, ấn phím cmd+return/ctrl+enter, click vào ô để gõ lại, ấn phím Enter để xác nhận popup).
+     -> "speech": Báo ngắn gọn hành động đang xử lý tiếp (dưới 10 từ).
+"""
 
 

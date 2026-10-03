@@ -166,6 +166,19 @@ def test_windows_cross_platform_compatibility():
     assert hasattr(accessibility_manager, "_get_windows_app_elements")
     print("test_windows_cross_platform_compatibility: PASSED")
 
+def test_outcome_verification_prompt():
+    from app.prompt_templates import build_verification_prompt
+    v_prompt = build_verification_prompt(
+        user_command="Gửi email cho Minh",
+        step=2,
+        previous_actions_desc="Gõ email và nhấn nút gửi",
+        ui_context="[UI Elements detected]"
+    )
+    assert "OUTCOME VERIFICATION" in v_prompt
+    assert "Gửi email cho Minh" in v_prompt
+    assert "TRƯỜNG HỢP A" in v_prompt
+    print("test_outcome_verification_prompt: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -176,6 +189,8 @@ if __name__ == "__main__":
     test_sound_effects()
     test_accessibility_and_precision_focus()
     test_windows_cross_platform_compatibility()
-    print("\n🎉 ALL TESTS (INCLUDING MACOS & WINDOWS PRECISION FOCUS) PASSED SUCCESSFULLY!")
+    test_outcome_verification_prompt()
+    print("\n🎉 ALL TESTS (INCLUDING OUTCOME VERIFICATION & REAL AGENT PIPELINE) PASSED SUCCESSFULLY!")
+
 
 

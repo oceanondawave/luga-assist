@@ -27,7 +27,7 @@ from app.config import (
 from app.screen_capture import screen_capturer
 from app.os_controller import os_controller
 from app.tts_service import tts_service
-from app.prompt_templates import build_gemini_prompt
+from app.prompt_templates import build_gemini_prompt, build_verification_prompt
 from app.gemini_service import gemini_service
 from app.native_voice import NativeVoiceListener
 from app.sound_effects import sound_manager
@@ -271,6 +271,9 @@ async def process_user_command(user_command: str, voice: str):
         return
 
     step = 0
+    last_actions_summary = ""
+    is_goal_verified_completed = False
+
     while step < MAX_AUTONOMOUS_STEPS:
         step += 1
         is_first_step = (step == 1)
@@ -282,21 +285,19 @@ async def process_user_command(user_command: str, voice: str):
             "step": step,
         })
 
-        # Step 2: Screen Capture with Grid Overlay
+        # Step 2: Screen Capture with Dual-Tier Grid Overlay & UI Elements
         screenshot_b64, screen_size = screen_capturer.capture(with_grid=True)
         ui_context = accessibility_manager.get_ui_grounding_context()
 
         if is_first_step:
             prompt = build_gemini_prompt(user_command, ui_context=ui_context)
         else:
-            prompt = (
-                f"Màn hình đã được cập nhật sau bước trước.\n"
-                f"Mục tiêu ban đầu của người dùng: \"{user_command}\".\n"
-                f"{ui_context}\n"
-                f"Hãy quan sát màn hình mới này và thực hiện hành động tiếp theo để hoàn thành mục tiêu.\n"
-                f"Nếu yêu cầu của người dùng ĐÃ ĐƯỢC HOÀN TẤT 100%, hãy đặt \"done\": true.\n"
-                f"Nếu vẫn còn bước tiếp theo (ví dụ: cần điền tiếp hoặc gửi), hãy đặt \"done\": false.\n"
-                f"Chỉ xuất duy nhất một khối JSON hợp lệ theo đúng định dạng:"
+            # Verification Prompt: inspect screen after previous action
+            prompt = build_verification_prompt(
+                user_command=user_command,
+                step=step,
+                previous_actions_desc=last_actions_summary,
+                ui_context=ui_context
             )
 
         raw_response = ""
@@ -346,8 +347,8 @@ async def process_user_command(user_command: str, voice: str):
         # Step 4: Robust JSON Parse
         action_data = extract_json_payload(raw_response)
         if not action_data:
-            speech_text = raw_response.strip() or "Đã nhận lệnh nhưng chưa xác định được hành động tiếp theo."
-            action_data = {"speech": speech_text, "actions": [{"action": "none"}], "done": True}
+            speech_text = raw_response.strip() or "Đang kiểm tra kết quả màn hình."
+            action_data = {"speech": speech_text, "actions": [{"action": "none"}], "done": False}
 
         speech_to_say = action_data.get("speech", "Đang thực hiện.")
 
@@ -356,67 +357,94 @@ async def process_user_command(user_command: str, voice: str):
         if not actions_list and "action" in action_data:
             actions_list = [action_data]
 
-        is_done = action_data.get("done", True)
+        active_actions = [
+            a for a in actions_list
+            if isinstance(a, dict) and a.get("action", "").lower() not in ("none", "read_screen", "wait")
+        ]
+        is_passive_only = len(active_actions) == 0
+        claimed_done = bool(action_data.get("done", False))
 
-        # Smart heuristic: If step 1 only launched an app, but command requested actions afterwards
-        # e.g. "mở Outlook và gửi email..." -> opening the app is just step 1!
-        if is_first_step and len(actions_list) == 1 and actions_list[0].get("action") == "launch_app":
-            lower_cmd = user_command.lower()
-            if any(k in lower_cmd for k in [" và ", " rồi ", " sau đó ", " gửi ", " tìm ", " viết ", " soạn ", " nhập "]):
-                print("[Pipeline] 💡 Phát hiện lệnh liên hoàn sau khi mở app, tiếp tục chuỗi tự hành...")
-                is_done = False
+        # ANTI-HALLUCINATION / OUTCOME VERIFICATION LOGIC:
+        if is_passive_only:
+            if is_first_step:
+                # User asked a question or asked to read screen: no physical action needed
+                is_goal_verified_completed = True
+            else:
+                # This was a verification turn! If Gemini inspected the screen and confirms completion:
+                if claimed_done:
+                    is_goal_verified_completed = True
+                    print(f"[Pipeline] 🎯 ĐÃ XÁC MINH HOÀN TẤT MỤC TIÊU 100% (Outcome Verified) tại bước {step}!")
+                else:
+                    is_goal_verified_completed = False
+        else:
+            # Active manipulation actions exist (click, type, press, launch_app, focus).
+            # An authentic agent CANNOT claim completion in the same step it proposes the action!
+            # It MUST wait and verify the outcome on the next observation step!
+            is_goal_verified_completed = False
 
-        # Step 5: Annotate Screenshot for Visual Verification
+        # Step 5: Annotate Screenshot for Visual Feedback
         annotated_b64 = screen_capturer.annotate_actions(actions_list)
 
         # Step 6: Speak Spoken Response to User Concurrently
         speak_task = asyncio.create_task(tts_service.speak(speech_to_say))
 
-        # Step 7: Execute Action Sequence on OS
-        try:
-            if len(actions_list) > 1:
-                print(f"[Pipeline] ⚡ [Bước {step}] Đang thực thi chuỗi {len(actions_list)} hành động liên hoàn...")
-                action_result = os_controller.execute_action_sequence(actions_list)
-            elif len(actions_list) == 1:
-                action_result = os_controller.execute_action(actions_list[0])
-            else:
-                action_result = {"success": True, "action": "none", "details": "No action needed"}
-        except Exception as e:
-            sound_manager.play_error()
-            print(f"[Pipeline] Lỗi khi thực thi hành động: {e}")
-            action_result = {"success": False, "action": "error", "details": str(e)}
-            await speak_task
-            break
+        # Step 7: Execute Action Sequence on OS (if active actions exist)
+        action_result = {"success": True, "action": "none", "details": "Verified state"}
+        if active_actions:
+            try:
+                if len(actions_list) > 1:
+                    print(f"[Pipeline] ⚡ [Bước {step}] Đang thực thi chuỗi {len(actions_list)} hành động liên hoàn...")
+                    action_result = os_controller.execute_action_sequence(actions_list)
+                elif len(actions_list) == 1:
+                    action_result = os_controller.execute_action(actions_list[0])
+            except Exception as e:
+                sound_manager.play_error()
+                print(f"[Pipeline] Lỗi khi thực thi hành động: {e}")
+                action_result = {"success": False, "action": "error", "details": str(e)}
+                await speak_task
+                break
 
-        print(f"[Pipeline] [Bước {step}] Kết quả: {action_result}")
+            # Build readable summary of what was executed to feed into next verification step
+            last_actions_summary = "; ".join([
+                f"{a.get('action')}" + (f" vào '{a.get('target')}'" if a.get('target') else "") +
+                (f" text='{a.get('text')}'" if a.get('text') else "") +
+                (f" key='{a.get('key')}'" if a.get('key') else "")
+                for a in active_actions
+            ])
+            print(f"[Pipeline] [Bước {step}] Đã thực thi xong: {last_actions_summary}")
 
-        # Step 8: Broadcast Step or Final Result to WebUI
+        # Step 8: Broadcast Step or Verified Final Result to WebUI
         await hub.broadcast_webui({
-            "type": "ACTION_COMPLETED" if is_done else "ACTION_STEP",
+            "type": "ACTION_COMPLETED" if is_goal_verified_completed else "ACTION_STEP",
             "user_command": user_command,
             "speech": speech_to_say,
             "action_result": action_result,
             "annotated_image": annotated_b64,
             "step": step,
-            "done": is_done,
+            "done": is_goal_verified_completed,
         })
 
         # Wait for spoken audio to finish
         await speak_task
 
         # Check termination condition
-        if is_done or not actions_list or all(a.get("action") in ("none", "read_screen") for a in actions_list):
-            print(f"[Pipeline] ✅ Hoàn tất toàn bộ mục tiêu của người dùng sau {step} bước!")
+        if is_goal_verified_completed:
+            print(f"[Pipeline] ✅ Hoàn tất và ĐÃ XÁC MINH mục tiêu sau {step} bước!")
             break
 
-        # If more steps needed, wait briefly for new window/dialog to render
-        delay = 1.2 if any(a.get("action") == "launch_app" for a in actions_list) else 0.8
-        print(f"[Pipeline] ⏳ Đang tạm dừng {delay}s chờ giao diện mới mở ra để chụp màn hình tiếp theo...")
+        # If more steps needed, wait briefly for new window/dialog/state to settle
+        delay = 1.0 if any(a.get("action") == "launch_app" for a in actions_list) else 0.7
+        print(f"[Pipeline] ⏳ Đang tạm dừng {delay}s chờ giao diện cập nhật để chụp ảnh thẩm định kết quả...")
         await asyncio.sleep(delay)
 
-    # All steps completed! Play completion chime
-    sound_manager.play_done()
-    print(f"\n[Pipeline] 🎉 HOÀN THÀNH TOÀN BỘ CHUỖI MỤC TIÊU!")
+    # Completion handling
+    if is_goal_verified_completed:
+        sound_manager.play_done()
+        print(f"\n[Pipeline] 🎉 HOÀN THÀNH VÀ ĐÃ XÁC MINH TOÀN BỘ MỤC TIÊU!")
+    else:
+        sound_manager.play_done()
+        print(f"\n[Pipeline] ⚠️ Đã thực hiện tối đa {MAX_AUTONOMOUS_STEPS} bước.")
+        await tts_service.speak("Đã thực hiện xong các bước, bạn vui lòng kiểm tra lại kết quả trên màn hình.")
 
 
 
