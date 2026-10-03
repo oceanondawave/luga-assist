@@ -10,15 +10,17 @@ import json
 import asyncio
 from typing import Optional, Dict, Any
 
-from gemini_webapi import GeminiClient
+from gemini_webapi import GeminiClient, set_log_level
 from app.config import TEMP_DIR
+
+# Suppress verbose quota logs in terminal
+set_log_level("WARNING")
 
 SESSION_FILE = TEMP_DIR / "gemini_session.json"
 
 class GeminiSessionService:
     def __init__(self):
         self.client: Optional[GeminiClient] = None
-        self.chat_session = None
         self.is_ready = False
         self._current_psid: str = ""
         self._init_lock = asyncio.Lock()
@@ -53,9 +55,7 @@ class GeminiSessionService:
             if not cleaned_psid:
                 return False
 
-            # If already initialized with the same cookies and session is active,
-            # KEEP THE EXISTING CHAT to preserve full conversation context!
-            if self.is_ready and self.client and self.chat_session and self._current_psid == cleaned_psid:
+            if self.is_ready and self.client and self._current_psid == cleaned_psid:
                 return True
 
             try:
@@ -65,12 +65,6 @@ class GeminiSessionService:
                     secure_1psidts=cleaned_psidts,
                 )
                 await self.client.init(timeout=30)
-                
-                # Start or retain chat session
-                if self.chat_session is None:
-                    self.chat_session = self.client.start_chat()
-                    print("[GeminiSessionService] Đã khởi tạo phiên trò chuyện liên tục (Continuous Chat).")
-                
                 self._current_psid = cleaned_psid
                 self.is_ready = True
 
@@ -81,7 +75,7 @@ class GeminiSessionService:
                         "secure_1psidts": cleaned_psidts or "",
                     }, f)
 
-                print("[GeminiSessionService] ✅ Kết nối Google Gemini ngầm thành công! (Duy trì cùng một cuộc hội thoại)")
+                print("[GeminiSessionService] ✅ Kết nối Google Gemini ngầm thành công! (Tối ưu hóa mô hình siêu tốc)")
                 return True
             except Exception as e:
                 print(f"[GeminiSessionService] ❌ Lỗi kết nối session Gemini: {e}")
@@ -90,37 +84,40 @@ class GeminiSessionService:
 
     async def send_prompt(self, prompt: str, image_path: Optional[Path] = None) -> str:
         """
-        Send prompt and optional screenshot to Gemini in the SAME continuous chat.
-        This preserves all conversation history and screen context.
+        Send prompt and current screenshot to Gemini using high-speed Flash-Lite model.
+        Does not accumulate old screenshots in session context, avoiding Google's 35s timeout.
         """
-        if not self.is_ready or not self.client or not self.chat_session:
+        if not self.is_ready or not self.client:
             raise RuntimeError(
                 "Chưa kết nối được với session Google Gemini. "
                 "Vui lòng đảm bảo Extension đã bật và đã đăng nhập Google trên Chrome."
             )
 
-        print(f"[GeminiSessionService] Gửi lệnh tiếp nối vào cuộc trò chuyện hiện tại...")
-
         files = [str(image_path)] if image_path and image_path.exists() else None
 
+        # Choose the fastest model discovered for this account: 'gemini-flash-lite' or 'gemini-flash'
         try:
-            output = await self.chat_session.send_message(prompt, files=files)
+            output = await self.client.generate_content(
+                prompt=prompt,
+                files=files,
+                model="gemini-flash-lite"
+            )
             response_text = output.text if hasattr(output, "text") else str(output)
             return response_text
         except Exception as e:
-            err_str = str(e).lower()
-            # Only reset if truly overloaded/exhausted by Google's backend
-            if "exhausted" in err_str or "too long" in err_str or "context window" in err_str:
-                print(f"[GeminiSessionService] Context thật sự bị quá tải ({e}), tạo chat mới...")
-                self.reset_chat()
-                output = await self.chat_session.send_message(prompt, files=files)
+            # Fallback to gemini-flash if flash-lite is not available
+            try:
+                output = await self.client.generate_content(
+                    prompt=prompt,
+                    files=files,
+                    model="gemini-flash"
+                )
                 return output.text if hasattr(output, "text") else str(output)
-            raise e
+            except Exception:
+                raise e
 
     def reset_chat(self):
-        """Create a fresh chat session only when explicitly asked or overloaded."""
-        if self.client:
-            self.chat_session = self.client.start_chat()
-            print("[GeminiSessionService] Đã tạo phiên chat mới thành công.")
+        """No-op for stateless mode."""
+        pass
 
 gemini_service = GeminiSessionService()
