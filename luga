@@ -1,0 +1,37 @@
+#!/bin/bash
+PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$PROJECT_DIR" || exit 1
+
+case "$1" in
+  start)
+    ./start_background.sh
+    ;;
+  stop)
+    ./stop_background.sh
+    ;;
+  restart)
+    PYTHONPATH=. python3 -m app.daemon restart
+    ;;
+  status)
+    ./status.sh
+    ;;
+  logs)
+    shift
+    PYTHONPATH=. python3 -m app.daemon logs "$@"
+    ;;
+  fg|run|foreground)
+    ./start.sh
+    ;;
+  *)
+    echo "=========================================================="
+    echo "               LỆNH ĐIỀU KHIỂN LUGA ASSIST                "
+    echo "=========================================================="
+    echo "👉 luga start    : Khởi động app chạy ngầm"
+    echo "👉 luga stop     : Dừng app đang chạy ngầm"
+    echo "👉 luga restart  : Khởi động lại app ngầm"
+    echo "👉 luga status   : Kiểm tra app có đang chạy không"
+    echo "👉 luga logs     : Xem nhật ký hoạt động (logs)"
+    echo "👉 luga fg       : Chạy trực tiếp trên màn hình terminal"
+    echo "=========================================================="
+    ;;
+esac
