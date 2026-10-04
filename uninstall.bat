@@ -35,10 +35,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "Write-Host '    [✓] Đã xóa đường dẫn khỏi User PATH!' -ForegroundColor Green;"
 
 echo.
-echo [3/3] Đang xóa biểu tượng lối tắt trên Desktop...
+echo [3/3] Đang xóa các biểu tượng lối tắt trên Desktop...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$link = [Environment]::GetFolderPath('Desktop') + '\Luga Assist.lnk'; " ^
-    "if (Test-Path $link) { Remove-Item $link -Force; Write-Host '    [✓] Đã xóa Desktop Shortcut!' -ForegroundColor Green; }"
+    "$desktop = [Environment]::GetFolderPath('Desktop'); " ^
+    "@('Luga Assist.lnk', 'Dừng Luga.lnk', 'Trạng thái Luga.lnk') | ForEach-Object { " ^
+    "    $f = Join-Path $desktop $_; " ^
+    "    if (Test-Path $f) { Remove-Item $f -Force; Write-Host ('    [✓] Đã xóa ' + $_) -ForegroundColor Green; } " ^
+    "}"
 
 echo.
 set /p CLEAN_LOGS="❓ Bạn có muốn xóa các file nhật ký (logs) và phiên lưu tạm không? (Y/n): "

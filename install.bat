@@ -50,31 +50,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "    Write-Host '    [✓] Lệnh luga đã có sẵn trong User PATH.' -ForegroundColor Green; " ^
     "}"
 
-:: 4. Create Desktop Shortcut
+:: 4. Create Desktop Shortcuts (Zero Terminal Required)
 echo.
-echo [4/4] Tạo biểu tượng lối tắt (Desktop Shortcut)...
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$wsh = New-Object -ComObject WScript.Shell; " ^
-    "$shortcut = $wsh.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\Luga Assist.lnk'); " ^
-    "$shortcut.TargetPath = '%PROJECT_DIR%\luga.cmd'; " ^
-    "$shortcut.Arguments = 'chat'; " ^
-    "$shortcut.WorkingDirectory = '%PROJECT_DIR%'; " ^
-    "$shortcut.Description = 'Luga Assist AI Agent'; " ^
-    "$shortcut.Save(); " ^
-    "Write-Host '    [✓] Đã tạo shortcut Luga Assist trên Desktop!' -ForegroundColor Green;"
+echo [4/4] Tạo các biểu tượng lối tắt trên Màn hình chính (Desktop)...
+python scripts\create_desktop_launchers.py
 
 echo.
 echo ======================================================================
 echo              🎉 CÀI ĐẶT LUGA ASSIST HOÀN TẤT THÀNH CÔNG!              
 echo ======================================================================
-echo Từ bất kỳ cửa sổ CMD hoặc PowerShell nào, bạn chỉ cần gõ:
+echo DÀNH CHO NGƯỜI DÙNG THÔNG THƯỜNG (KHÔNG CẦN TERMINAL/CMD):
+echo   🖱️ Bấm đôi 'Luga Assist' trên Desktop     : Bật app và mở Web
+echo   🛑 Bấm đôi 'Dừng Luga' trên Desktop       : Tắt app ngay lập tức
+echo   ℹ️ Bấm đôi 'Trạng thái Luga' trên Desktop : Xem trạng thái app
+echo   🌐 Nút '🛑 Tắt Luga' trên góc WebUI       : Tắt app bằng 1 click
+echo   🎙️ Phím F8 (Nói qua Micro)                : 'Kiểm tra trạng thái', 'Tắt trợ lý', 'Đổi chế độ'
+echo.
+echo DÀNH CHO LẬP TRÌNH VIÊN / CMD (Toàn cục ở mọi thư mục):
 echo   • luga start    : Khởi động app chạy ngầm
 echo   • luga stop     : Dừng app đang chạy ngầm
 echo   • luga status   : Kiểm tra app có đang chạy hay không
-echo   • luga chat     : Mở giao diện Chat điều khiển máy tính cực đẹp trên CMD
+echo   • luga chat     : Mở giao diện Chat điều khiển trên CMD
 echo   • luga logs     : Xem nhật ký hoạt động gần nhất
-echo   • Phím F8       : Nói lệnh giọng nói từ bất kỳ đâu trên Windows
-echo   • Giao diện Web : http://localhost:8000
 echo ======================================================================
 echo.
 

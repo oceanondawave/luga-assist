@@ -583,6 +583,48 @@ def test_chat_mode_and_endpoints():
 
     print("test_chat_mode_and_endpoints: PASSED")
 
+def test_system_ui_and_lifecycle_controls():
+    import app.main as main_module
+    from app.system_ui import show_desktop_notification
+    from unittest.mock import AsyncMock, patch
+
+    # 1. Test Desktop Notification
+    notif_ok = show_desktop_notification("Luga Assist Test", "Kiểm tra thông báo")
+    assert isinstance(notif_ok, bool)
+
+    # 2. Test GET /api/system/status
+    res_status = asyncio.run(main_module.api_system_status())
+    assert res_status["status"] == "online"
+    assert res_status["app_name"] == "Luga Assist"
+    assert "mode" in res_status
+    assert "screen_resolution" in res_status
+    assert res_status["pid"] > 0
+
+    # 3. Test Voice Intent: "kiểm tra trạng thái"
+    res_cmd = asyncio.run(main_module.process_user_command("kiểm tra trạng thái", speak=False))
+    assert res_cmd["success"] is True
+    assert "Luga Assist đang hoạt động bình thường" in res_cmd["speech"]
+    assert res_cmd["action_result"]["action"] == "system_status"
+
+    # 4. Test Voice Intent: "đổi chế độ"
+    prev_mode = main_module.current_mode
+    res_toggle = asyncio.run(main_module.process_user_command("đổi chế độ", speak=False))
+    assert res_toggle["success"] is True
+    assert res_toggle["action_result"]["action"] == "toggle_mode"
+    assert main_module.current_mode != prev_mode
+    # Toggle back
+    asyncio.run(main_module.set_mode(prev_mode, announce=False))
+
+    # 5. Test Voice Intent: "tắt trợ lý" (with mocked shutdown to avoid terminating test runner)
+    with patch("app.main.trigger_graceful_shutdown", new_callable=AsyncMock) as mock_shutdown:
+        res_shut = asyncio.run(main_module.process_user_command("tắt trợ lý", speak=False))
+        assert res_shut["success"] is True
+        assert res_shut["action_result"]["action"] == "shutdown"
+        assert "Đang tắt Luga Assist" in res_shut["speech"]
+        mock_shutdown.assert_awaited_once()
+
+    print("test_system_ui_and_lifecycle_controls: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -605,7 +647,8 @@ if __name__ == "__main__":
     test_daemon_utilities()
     test_browser_helper()
     test_chat_mode_and_endpoints()
-    print("\n🎉 ALL TESTS (INCLUDING CHAT MODE & ALL FEATURES) PASSED SUCCESSFULLY!")
+    test_system_ui_and_lifecycle_controls()
+    print("\n🎉 ALL TESTS (INCLUDING ZERO-TERMINAL UI & LIFECYCLE CONTROLS) PASSED SUCCESSFULLY!")
 
 
 

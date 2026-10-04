@@ -60,7 +60,12 @@ done
 echo -e "${GREEN}✓ Đã dọn dẹp biến môi trường shell.${NC}"
 
 echo ""
-echo -e "${YELLOW}[4/4] Dọn dẹp dữ liệu tạm thời & nhật ký...${NC}"
+echo -e "${YELLOW}[4/5] Đang xóa các ứng dụng Luga trên Màn hình chính (Desktop)...${NC}"
+rm -rf "$HOME/Desktop/Luga Assist.app" "$HOME/Desktop/Dừng Luga.app" "$HOME/Desktop/Trạng thái Luga.app" 2>/dev/null || true
+echo -e "${GREEN}✓ Đã dọn dẹp các ứng dụng trên Desktop.${NC}"
+
+echo ""
+echo -e "${YELLOW}[5/5] Dọn dẹp dữ liệu tạm thời & nhật ký...${NC}"
 read -p "❓ Bạn có muốn xóa nhật ký (logs) và phiên đăng nhập lưu tạm không? (Y/n): " CLEAN_DATA
 if [[ "$CLEAN_DATA" =~ ^[Yy]?$ ]]; then
     rm -rf "$PROJECT_DIR/logs/"*.log 2>/dev/null || true

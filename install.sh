@@ -85,9 +85,16 @@ fi
 echo -e "${GREEN}✓ Lệnh 'luga' đã được cấu hình toàn cầu!${NC}"
 echo -e "  Từ bây giờ, bạn có thể mở bất kỳ terminal nào và gõ lệnh ${CYAN}luga${NC} mà không cần 'cd'."
 
-# 4. Check Google Chrome
+# 4. Create Desktop Applications (Zero Terminal Required)
 echo ""
-echo -e "${YELLOW}[4/5] Kiểm tra trình duyệt Google Chrome...${NC}"
+echo -e "${YELLOW}[4/6] Đang tạo các ứng dụng lối tắt trên Màn hình chính (Desktop)...${NC}"
+python3 scripts/create_desktop_launchers.py
+echo -e "${GREEN}✓ Đã tạo thành công các app 'Luga Assist', 'Dừng Luga', 'Trạng thái Luga' trên Desktop!${NC}"
+echo -e "  Người dùng thông thường chỉ cần bấm đúp chuột vào Desktop mà không cần mở terminal."
+
+# 5. Check Google Chrome
+echo ""
+echo -e "${YELLOW}[5/6] Kiểm tra trình duyệt Google Chrome...${NC}"
 CHROME_PATH="/Applications/Google Chrome.app"
 if [ -d "$CHROME_PATH" ] || command -v google-chrome &> /dev/null || command -v chrome &> /dev/null; then
     echo -e "${GREEN}✓ Đã tìm thấy Google Chrome trên hệ thống.${NC}"
@@ -96,10 +103,10 @@ else
     echo -e "  Luga Assist hoạt động tốt nhất khi có Google Chrome để duy trì phiên kết nối ngầm."
 fi
 
-# 5. macOS Permissions Check & Guide
+# 6. macOS Permissions Check & Guide
 if [[ "$OSTYPE" == "darwin"* ]]; then
     echo ""
-    echo -e "${YELLOW}[5/5] Cấp quyền trợ năng hệ thống (macOS Accessibility)...${NC}"
+    echo -e "${YELLOW}[6/6] Cấp quyền trợ năng hệ thống (macOS Accessibility)...${NC}"
     echo -e "Để Luga Assist có thể tự động điều khiển chuột, bàn phím và chụp ảnh màn hình,"
     echo -e "macOS yêu cầu bạn bật quyền cho Terminal / Python tại:"
     echo -e "  1. ${BOLD}Cài đặt hệ thống (System Settings)${NC} -> ${BOLD}Quyền riêng tư & Bảo mật (Privacy & Security)${NC}"
@@ -117,14 +124,19 @@ echo ""
 echo -e "${CYAN}${BOLD}======================================================================${NC}"
 echo -e "${GREEN}${BOLD}             🎉 CÀI ĐẶT LUGA ASSIST HOÀN TẤT THÀNH CÔNG!             ${NC}"
 echo -e "${CYAN}${BOLD}======================================================================${NC}"
-echo -e "${BOLD}Các lệnh điều khiển nhanh bạn có thể dùng ở BẤT CỨ ĐÂU:${NC}"
-echo -e "  • ${CYAN}luga start${NC}    : Khởi động app chạy ngầm (Zero browser windows)"
+echo -e "${BOLD}DÀNH CHO NGƯỜI DÙNG THÔNG THƯỜNG (KHÔNG CẦN TERMINAL):${NC}"
+echo -e "  🖱️ ${CYAN}Bấm đôi 'Luga Assist.app' trên Desktop${NC}    : Bật app và mở giao diện Web"
+echo -e "  🛑 ${CYAN}Bấm đôi 'Dừng Luga.app' trên Desktop${NC}      : Tắt app ngay lập tức"
+echo -e "  ℹ️ ${CYAN}Bấm đôi 'Trạng thái Luga.app' trên Desktop${NC} : Xem nhanh trạng thái hệ thống"
+echo -e "  🌐 ${CYAN}Nút '🛑 Tắt Luga' trên góc WebUI${NC}          : Tắt app bằng 1 cú nhấp chuột"
+echo -e "  🎙️ ${CYAN}Phím F8 (Nói qua Micro)${NC}                   : 'Kiểm tra trạng thái', 'Tắt trợ lý', 'Đổi chế độ'"
+echo ""
+echo -e "${BOLD}DÀNH CHO LẬP TRÌNH VIÊN / TERMINAL (Toàn cục ở mọi thư mục):${NC}"
+echo -e "  • ${CYAN}luga start${NC}    : Khởi động app chạy ngầm"
 echo -e "  • ${CYAN}luga stop${NC}     : Dừng app đang chạy ngầm"
 echo -e "  • ${CYAN}luga status${NC}   : Kiểm tra app có đang chạy hay không"
 echo -e "  • ${CYAN}luga chat${NC}     : Mở giao diện Chat điều khiển máy tính cực đẹp trên Terminal"
 echo -e "  • ${CYAN}luga logs${NC}     : Xem nhật ký hoạt động gần nhất"
-echo -e "  • ${CYAN}Phím F8${NC}       : Nói lệnh giọng nói từ bất kỳ ứng dụng nào (toàn hệ thống)"
-echo -e "  • ${CYAN}Giao diện Web${NC} : http://localhost:8000"
 echo -e "${CYAN}======================================================================${NC}"
 echo ""
 

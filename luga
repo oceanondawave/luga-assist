@@ -32,6 +32,9 @@ case "$1" in
   fg|run|foreground)
     ./start.sh
     ;;
+  desktop|shortcuts)
+    python3 scripts/create_desktop_launchers.py
+    ;;
   *)
     echo "=========================================================="
     echo "               LỆNH ĐIỀU KHIỂN LUGA ASSIST                "

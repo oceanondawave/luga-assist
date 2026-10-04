@@ -27,6 +27,32 @@ document.addEventListener("DOMContentLoaded", () => {
   const lastActionImg = document.getElementById("lastActionImg");
   const btnReadScreen = document.getElementById("btnReadScreen");
 
+  // DOM Elements - Header actions
+  const btnSystemStatus = document.getElementById("btnSystemStatus");
+  const btnToggleMode = document.getElementById("btnToggleMode");
+  const btnHeaderShutdown = document.getElementById("btnHeaderShutdown");
+  const modeIcon = document.getElementById("modeIcon");
+  const modeLabel = document.getElementById("modeLabel");
+
+  // DOM Elements - Modals
+  const statusModal = document.getElementById("statusModal");
+  const btnCloseStatusModal = document.getElementById("btnCloseStatusModal");
+  const modalServerStatus = document.getElementById("modalServerStatus");
+  const modalCurrentMode = document.getElementById("modalCurrentMode");
+  const btnModalSwitchMode = document.getElementById("btnModalSwitchMode");
+  const modalGeminiStatus = document.getElementById("modalGeminiStatus");
+  const modalScreenRes = document.getElementById("modalScreenRes");
+  const modalPid = document.getElementById("modalPid");
+  const btnTestVoice = document.getElementById("btnTestVoice");
+  const btnModalRestart = document.getElementById("btnModalRestart");
+  const btnModalShutdown = document.getElementById("btnModalShutdown");
+
+  const shutdownModal = document.getElementById("shutdownModal");
+  const btnCloseShutdownModal = document.getElementById("btnCloseShutdownModal");
+  const btnCancelShutdown = document.getElementById("btnCancelShutdown");
+  const btnConfirmShutdown = document.getElementById("btnConfirmShutdown");
+
+  let currentOperatingMode = "control";
   let ws = null;
   let isListening = false;
   let recognition = null;
@@ -194,6 +220,11 @@ document.addEventListener("DOMContentLoaded", () => {
         extDot.classList.remove("online");
         extStatusText.innerText = "Google Gemini: Đang chờ kết nối";
       }
+      if (msg.mode) {
+        updateModeUI(msg.mode);
+      }
+    } else if (msg.type === "MODE_CHANGED") {
+      updateModeUI(msg.mode);
     } else if (msg.type === "USER_CHAT_MESSAGE") {
       const text = msg.command || msg.text;
       if (text && text !== lastUserCommandRendered) {
@@ -432,6 +463,135 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // 6. System Status, Mode Switcher, and Shutdown Controls
+  function updateModeUI(mode) {
+    currentOperatingMode = mode === "chat" ? "chat" : "control";
+    if (currentOperatingMode === "chat") {
+      if (modeIcon) modeIcon.innerText = "💬";
+      if (modeLabel) modeLabel.innerText = "Trò chuyện AI";
+      if (btnToggleMode) btnToggleMode.title = "Chế độ hiện tại: Trò chuyện AI. Bấm để đổi sang Điều khiển PC.";
+      if (modalCurrentMode) modalCurrentMode.innerText = "💬 Trò chuyện AI";
+      if (btnModalSwitchMode) btnModalSwitchMode.innerText = "🔄 Đổi sang Điều khiển PC";
+    } else {
+      if (modeIcon) modeIcon.innerText = "🎮";
+      if (modeLabel) modeLabel.innerText = "Điều khiển PC";
+      if (btnToggleMode) btnToggleMode.title = "Chế độ hiện tại: Điều khiển máy tính. Bấm để đổi sang Trò chuyện AI.";
+      if (modalCurrentMode) modalCurrentMode.innerText = "🎮 Điều khiển máy tính";
+      if (btnModalSwitchMode) btnModalSwitchMode.innerText = "🔄 Đổi sang Trò chuyện AI";
+    }
+  }
+
+  async function toggleOperatingMode() {
+    const targetMode = currentOperatingMode === "control" ? "chat" : "control";
+    try {
+      const res = await fetch("/api/set_mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: targetMode, announce: true })
+      });
+      const data = await res.json();
+      if (data.mode) {
+        updateModeUI(data.mode);
+      }
+    } catch (e) {
+      console.error("Failed to toggle mode:", e);
+    }
+  }
+
+  async function fetchSystemStatus() {
+    try {
+      const res = await fetch("/api/system/status");
+      const data = await res.json();
+      if (modalServerStatus) modalServerStatus.innerText = "🟢 Đang chạy (Port 8000)";
+      if (modalScreenRes) modalScreenRes.innerText = `🖥️ ${data.screen_resolution || "1920x1080"}`;
+      if (modalPid) modalPid.innerText = `PID: ${data.pid || "-"}`;
+      if (data.gemini_ready) {
+        if (modalGeminiStatus) modalGeminiStatus.innerText = "🟢 Đã sẵn sàng";
+      } else {
+        if (modalGeminiStatus) modalGeminiStatus.innerText = "🟡 Đang chờ kết nối";
+      }
+      if (data.mode) {
+        updateModeUI(data.mode);
+      }
+    } catch (e) {
+      if (modalServerStatus) modalServerStatus.innerText = "🔴 Không phản hồi";
+    }
+  }
+
+  function openStatusModal() {
+    fetchSystemStatus();
+    if (statusModal) statusModal.style.display = "flex";
+  }
+
+  function closeStatusModal() {
+    if (statusModal) statusModal.style.display = "none";
+  }
+
+  function openShutdownModal() {
+    closeStatusModal();
+    if (shutdownModal) shutdownModal.style.display = "flex";
+  }
+
+  function closeShutdownModal() {
+    if (shutdownModal) shutdownModal.style.display = "none";
+  }
+
+  async function performShutdown() {
+    closeShutdownModal();
+    soundStopListening();
+    appendChatBubble("ai", "🛑 Đang tắt Luga Assist. Tạm biệt bạn! Cửa sổ này có thể đóng lại.");
+    try {
+      await fetch("/api/system/shutdown", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ speak: true, delay: 1.0 })
+      });
+    } catch (e) {
+      console.log("Shutdown requested.");
+    }
+  }
+
+  async function performRestart() {
+    closeStatusModal();
+    appendChatBubble("ai", "🔄 Luga Assist đang khởi động lại...");
+    try {
+      await fetch("/api/system/restart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ delay: 1.0 })
+      });
+      setTimeout(() => window.location.reload(), 3000);
+    } catch (e) {
+      console.log("Restart requested.");
+    }
+  }
+
+  // Modal & Action Listeners
+  if (btnSystemStatus) btnSystemStatus.addEventListener("click", openStatusModal);
+  if (btnCloseStatusModal) btnCloseStatusModal.addEventListener("click", closeStatusModal);
+  if (btnToggleMode) btnToggleMode.addEventListener("click", toggleOperatingMode);
+  if (btnModalSwitchMode) btnModalSwitchMode.addEventListener("click", toggleOperatingMode);
+  if (btnHeaderShutdown) btnHeaderShutdown.addEventListener("click", openShutdownModal);
+  if (btnCloseShutdownModal) btnCloseShutdownModal.addEventListener("click", closeShutdownModal);
+  if (btnCancelShutdown) btnCancelShutdown.addEventListener("click", closeShutdownModal);
+  if (btnConfirmShutdown) btnConfirmShutdown.addEventListener("click", performShutdown);
+  if (btnModalShutdown) btnModalShutdown.addEventListener("click", openShutdownModal);
+  if (btnModalRestart) btnModalRestart.addEventListener("click", performRestart);
+
+  if (btnTestVoice) {
+    btnTestVoice.addEventListener("click", () => {
+      sendCommand("Xin chào, tôi là Luga Assist. Giọng nói và hệ thống đang hoạt động rất tốt!");
+      closeStatusModal();
+    });
+  }
+
+  // Close modals when clicking backdrop
+  window.addEventListener("click", (e) => {
+    if (e.target === statusModal) closeStatusModal();
+    if (e.target === shutdownModal) closeShutdownModal();
+  });
+
   // Initialize
+  fetchSystemStatus();
   connectWebSocket();
 });

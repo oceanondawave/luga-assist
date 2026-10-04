@@ -25,6 +25,10 @@ if "%1"=="start" (
     python app\main.py
 ) else if "%1"=="run" (
     python app\main.py
+) else if "%1"=="desktop" (
+    python scripts\create_desktop_launchers.py
+) else if "%1"=="shortcuts" (
+    python scripts\create_desktop_launchers.py
 ) else (
     echo ==========================================================
     echo               LỆNH ĐIỀU KHIỂN LUGA ASSIST (WINDOWS)

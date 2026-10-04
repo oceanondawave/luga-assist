@@ -3,6 +3,8 @@ Luga Assist - Master FastAPI Server & WebSocket Hub.
 Coordinates Voice UI, Screen Capture, Gemini Web Extension, OS Controller, and TTS.
 """
 import re
+import os
+import sys
 import json
 import uuid
 import asyncio
@@ -34,6 +36,11 @@ from app.gemini_service import gemini_service
 from app.native_voice import NativeVoiceListener
 from app.sound_effects import sound_manager
 from app.accessibility import accessibility_manager
+from app.system_ui import (
+    show_desktop_notification,
+    trigger_graceful_shutdown,
+    trigger_graceful_restart,
+)
 
 # Initialize persistent logging and stdout teeing
 setup_logging()
@@ -285,6 +292,48 @@ async def api_ensure_browser():
     return {"status": "ok" if ok else "error"}
 
 
+class SystemActionPayload(BaseModel):
+    speak: Optional[bool] = True
+    delay: Optional[float] = 1.0
+
+@app.post("/api/system/shutdown")
+async def api_system_shutdown(payload: Optional[SystemActionPayload] = None):
+    """Gracefully shut down Luga Assist with voice feedback and desktop notification."""
+    spk = payload.speak if (payload and payload.speak is not None) else True
+    dly = payload.delay if (payload and payload.delay is not None) else 1.0
+    await trigger_graceful_shutdown(delay=dly, speak=spk)
+    return {"status": "ok", "message": "Đang tắt hệ thống Luga Assist..."}
+
+@app.post("/api/system/restart")
+async def api_system_restart(payload: Optional[SystemActionPayload] = None):
+    """Gracefully restart Luga Assist."""
+    dly = payload.delay if (payload and payload.delay is not None) else 1.0
+    await trigger_graceful_restart(delay=dly)
+    return {"status": "ok", "message": "Đang khởi động lại Luga Assist..."}
+
+@app.get("/api/system/status")
+async def api_system_status():
+    """Detailed health report for WebUI status dialog and native inspectors."""
+    screen_w, screen_h = os_controller.get_screen_size()
+    gem_ready = gemini_service.is_ready or (hub.extension_client is not None)
+    return {
+        "status": "online",
+        "app_name": "Luga Assist",
+        "version": "1.0.0",
+        "mode": current_mode,
+        "mode_label": "Điều khiển máy tính" if current_mode == "control" else "Trò chuyện AI",
+        "gemini_ready": gem_ready,
+        "extension_connected": hub.extension_client is not None,
+        "gemini_background_mode": gemini_service.is_ready,
+        "screen_resolution": f"{screen_w}x{screen_h}",
+        "screen_width": screen_w,
+        "screen_height": screen_h,
+        "tts_voice": DEFAULT_TTS_VOICE,
+        "pid": os.getpid(),
+    }
+
+
+
 # Helper: Extract clean JSON from Gemini's response
 def strip_citations(text: str) -> str:
     """Strip all [cite: ...] markers and citation badges returned by Gemini."""
@@ -469,9 +518,10 @@ async def process_user_command(user_command: str, voice: str = DEFAULT_TTS_VOICE
     # Direct fast-path: Voice intents to switch modes
     chat_mode_intents = (
         "chuyển sang chế độ chat", "chuyển qua chế độ chat", "bật chế độ chat",
-        "vào chế độ chat", "mở chế độ chat", "chế độ chat",
+        "vào chế độ chat", "mở chế độ chat", "chế độ chat", "sang chế độ chat",
         "chuyển sang chế độ trò chuyện", "chuyển qua chế độ trò chuyện",
-        "bật chế độ trò chuyện", "vào chế độ trò chuyện", "chế độ trò chuyện"
+        "bật chế độ trò chuyện", "vào chế độ trò chuyện", "chế độ trò chuyện",
+        "sang chế độ trò chuyện"
     )
     if any(intent in user_cmd_lower for intent in chat_mode_intents):
         await set_mode("chat", announce=speak)
@@ -480,11 +530,94 @@ async def process_user_command(user_command: str, voice: str = DEFAULT_TTS_VOICE
     control_mode_intents = (
         "chuyển sang chế độ điều khiển", "chuyển qua chế độ điều khiển",
         "bật chế độ điều khiển", "vào chế độ điều khiển", "chế độ điều khiển",
-        "chuyển sang chế độ máy tính", "chế độ điều khiển máy tính", "bật chế độ điều khiển máy tính"
+        "sang chế độ điều khiển", "chuyển sang chế độ máy tính", "chế độ điều khiển máy tính",
+        "bật chế độ điều khiển máy tính", "sang chế độ máy tính"
     )
     if any(intent in user_cmd_lower for intent in control_mode_intents):
         await set_mode("control", announce=speak)
         return {"success": True, "speech": "Đã chuyển sang chế độ điều khiển", "action_result": {"success": True, "action": "set_mode"}}
+
+    toggle_mode_intents = (
+        "đổi chế độ", "chuyển chế độ", "đổi trạng thái", "chuyển trạng thái"
+    )
+    if any(intent in user_cmd_lower for intent in toggle_mode_intents):
+        new_mode = await toggle_mode(announce=speak)
+        return {
+            "success": True,
+            "speech": f"Đã chuyển sang chế độ {'trò chuyện AI' if new_mode == 'chat' else 'điều khiển máy tính'}",
+            "action_result": {"success": True, "action": "toggle_mode", "mode": new_mode}
+        }
+
+    # Direct fast-path: Voice intent to check system status
+    status_intents = (
+        "kiểm tra trạng thái", "trạng thái hệ thống", "trạng thái máy",
+        "tình trạng máy", "trạng thái trợ lý", "tình trạng luga",
+        "kiểm tra luga", "luga có đang chạy không", "kiểm tra hoạt động",
+        "kiểm tra tình trạng"
+    )
+    if any(intent in user_cmd_lower for intent in status_intents):
+        mode_label = "Điều khiển máy tính" if current_mode == "control" else "Trò chuyện AI"
+        gemini_ready = gemini_service.is_ready or (hub.extension_client is not None)
+        gemini_text = "đã sẵn sàng" if gemini_ready else "đang chờ kết nối"
+        screen_w, screen_h = os_controller.get_screen_size()
+        speech = f"Luga Assist đang hoạt động bình thường ở chế độ {mode_label}. Kết nối Gemini {gemini_text}. Màn hình độ phân giải {screen_w} nhân {screen_h}."
+        sound_manager.play_done()
+        show_desktop_notification(
+            title="Luga Assist - Trạng thái",
+            message=f"Chế độ: {mode_label} | Gemini: {gemini_text}",
+            subtitle="Hệ thống đang hoạt động"
+        )
+        if speak:
+            await tts_service.speak(speech)
+        return {
+            "success": True,
+            "speech": speech,
+            "action_result": {
+                "success": True,
+                "action": "system_status",
+                "mode": current_mode,
+                "gemini_ready": gemini_ready,
+                "screen_size": (screen_w, screen_h),
+            }
+        }
+
+    # Direct fast-path: Voice intent to shut down / stop system
+    shutdown_intents = (
+        "tắt trợ lý", "dừng trợ lý", "tắt luga", "dừng luga",
+        "tắt app", "tắt ứng dụng", "dừng ứng dụng", "thoát chương trình",
+        "thoát luga", "nghỉ ngơi đi", "đóng trợ lý", "tắt hệ thống",
+        "dừng chương trình", "tắt chương trình"
+    )
+    if any(intent in user_cmd_lower for intent in shutdown_intents):
+        speech = "Đang tắt Luga Assist. Tạm biệt bạn!"
+        await trigger_graceful_shutdown(delay=1.0, speak=speak, goodbye_text=speech)
+        return {
+            "success": True,
+            "speech": speech,
+            "action_result": {
+                "success": True,
+                "action": "shutdown",
+                "details": "Đang tiến hành tắt hệ thống hoàn toàn"
+            }
+        }
+
+    # Direct fast-path: Voice intent to restart
+    restart_intents = (
+        "khởi động lại trợ lý", "khởi động lại luga", "restart luga",
+        "khởi động lại hệ thống", "khởi động lại app"
+    )
+    if any(intent in user_cmd_lower for intent in restart_intents):
+        speech = "Luga Assist đang khởi động lại. Vui lòng chờ giây lát."
+        await trigger_graceful_restart(delay=1.0)
+        return {
+            "success": True,
+            "speech": speech,
+            "action_result": {
+                "success": True,
+                "action": "restart",
+                "details": "Đang khởi động lại hệ thống"
+            }
+        }
 
     if pipeline_lock.locked():
         msg = "Hệ thống đang bận xử lý câu lệnh trước, vui lòng chờ."

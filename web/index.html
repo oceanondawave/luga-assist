@@ -17,14 +17,24 @@
     </div>
 
     <div class="badge-status-group">
-      <div class="status-chip" role="status" aria-live="polite">
+      <button id="btnSystemStatus" class="status-chip clickable-status" title="Bấm để xem bảng trạng thái và điều khiển hệ thống" aria-label="Xem trạng thái hệ thống">
         <span id="agentDot" class="dot"></span>
         <span id="agentStatusText">Local Agent: Đang kết nối...</span>
-      </div>
+      </button>
+
       <div class="status-chip" role="status" aria-live="polite">
         <span id="extDot" class="dot"></span>
-        <span id="extStatusText">Google Gemini: Đang kiểm tra...</span>
+        <span id="extStatusText">Gemini: Đang kiểm tra...</span>
       </div>
+
+      <button id="btnToggleMode" class="mode-badge-btn" title="Bấm để chuyển đổi giữa chế độ Điều khiển và Chat AI" aria-label="Chuyển đổi chế độ hoạt động">
+        <span id="modeIcon">🎮</span>
+        <span id="modeLabel">Điều khiển PC</span>
+      </button>
+
+      <button id="btnHeaderShutdown" class="btn-danger-header" title="Tắt hoàn toàn Luga Assist" aria-label="Tắt Luga Assist">
+        🛑 Tắt Luga
+      </button>
     </div>
   </header>
 
@@ -44,6 +54,12 @@
 
       <!-- Quick Action Shortcuts -->
       <div class="quick-chips-bar" role="toolbar" aria-label="Thao tác nhanh">
+        <button class="quick-chip" data-cmd="Kiểm tra trạng thái hệ thống">
+          🟢 Kiểm tra trạng thái
+        </button>
+        <button class="quick-chip" data-cmd="Đổi chế độ">
+          🔄 Chuyển chế độ
+        </button>
         <button class="quick-chip" data-cmd="Hãy miêu tả chi tiết những gì đang hiển thị trên màn hình máy tính của tôi.">
           👁️ Mô tả màn hình (F4)
         </button>
@@ -164,6 +180,88 @@
       </div>
     </section>
   </main>
+
+  <!-- Modal: System Status & Control Panel -->
+  <div id="statusModal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="statusModalTitle">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="statusModalTitle" class="modal-title">
+          <span>🟢</span> Bảng Trạng Thái & Quản Lý Hệ Thống
+        </h3>
+        <button id="btnCloseStatusModal" class="btn-close-modal" aria-label="Đóng">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="status-grid">
+          <div class="status-card-item">
+            <div class="status-card-label">Trạng thái Server:</div>
+            <div class="status-card-val" id="modalServerStatus">🟢 Đang chạy (Port 8000)</div>
+          </div>
+          <div class="status-card-item">
+            <div class="status-card-label">Chế độ hiện tại:</div>
+            <div class="status-card-val" id="modalCurrentMode">🎮 Điều khiển máy tính</div>
+            <button id="btnModalSwitchMode" class="btn-sm-action">🔄 Đổi sang Trò chuyện AI</button>
+          </div>
+          <div class="status-card-item">
+            <div class="status-card-label">Trí tuệ nhân tạo (Gemini):</div>
+            <div class="status-card-val" id="modalGeminiStatus">🟢 Đã sẵn sàng</div>
+          </div>
+          <div class="status-card-item">
+            <div class="status-card-label">Màn hình giám sát:</div>
+            <div class="status-card-val" id="modalScreenRes">🖥️ 2560x1440</div>
+          </div>
+          <div class="status-card-item">
+            <div class="status-card-label">Micro & Giọng nói:</div>
+            <div class="status-card-val">🎙️ Phím <span class="kbd">F8</span> hoặc <span class="kbd">Space</span></div>
+          </div>
+          <div class="status-card-item">
+            <div class="status-card-label">Tiến trình PID:</div>
+            <div class="status-card-val" id="modalPid">-</div>
+          </div>
+        </div>
+
+        <div class="modal-actions-box">
+          <h4 style="margin: 0 0 12px 0; font-size: 14px; color: var(--accent-cyan);">Thao tác nhanh cho người dùng:</h4>
+          <div class="action-buttons-row">
+            <button id="btnTestVoice" class="btn-action-outline">
+              🔊 Thử giọng nói (TTS)
+            </button>
+            <button id="btnModalRestart" class="btn-action-outline">
+              🔄 Khởi động lại
+            </button>
+            <button id="btnModalShutdown" class="btn-action-danger">
+              🛑 Tắt Luga Assist
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Shutdown Confirmation -->
+  <div id="shutdownModal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="shutdownModalTitle">
+    <div class="modal-content modal-danger">
+      <div class="modal-header">
+        <h3 id="shutdownModalTitle" class="modal-title" style="color: #ff6b6b;">
+          <span>🛑</span> Xác nhận tắt Luga Assist
+        </h3>
+        <button id="btnCloseShutdownModal" class="btn-close-modal" aria-label="Đóng">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 15px; line-height: 1.6; margin-bottom: 20px; color: #e0e0e0;">
+          Bạn có chắc chắn muốn <strong>tắt hoàn toàn Luga Assist</strong> không?<br>
+          Sau khi tắt, trợ lý giọng nói toàn cục (F8) và các thao tác tự động sẽ dừng hoạt động.
+        </p>
+        <div class="modal-footer-buttons">
+          <button id="btnCancelShutdown" class="btn-action-outline">
+            ✕ Hủy bỏ
+          </button>
+          <button id="btnConfirmShutdown" class="btn-action-danger">
+            🛑 Tắt Luga ngay
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
