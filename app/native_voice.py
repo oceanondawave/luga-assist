@@ -20,6 +20,7 @@ import speech_recognition as sr
 from pynput import keyboard
 from app.sound_effects import sound_manager
 from app.config import VOICE_RECOGNITION_LANG
+from app.audio_manager import audio_manager
 
 VI_DIACRITICS = set(
     "àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ"
@@ -189,8 +190,11 @@ class NativeVoiceListener:
         ambient_chunks = 0
         ambient_sum = 0
 
+        dev_idx, dev_name = audio_manager.get_active_device_index()
+        print(f"[NativeVoice] 🎙️ Đang thu âm từ Micro: [{dev_idx}] {dev_name}")
+
         try:
-            with sd.RawInputStream(samplerate=self.sample_rate, channels=self.channels, dtype="int16") as stream:
+            with sd.RawInputStream(samplerate=self.sample_rate, channels=self.channels, dtype="int16", device=dev_idx) as stream:
                 while self.is_recording and not self._stop_requested:
                     data, overflowed = stream.read(chunk_samples)
                     raw_bytes = bytes(data)

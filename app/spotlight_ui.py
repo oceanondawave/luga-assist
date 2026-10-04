@@ -62,13 +62,13 @@ class SpotlightHUD:
         self.root.configure(bg="#0f172a")
 
         # Dimensions & position at top center
-        win_w = 640
+        win_w = 700
         win_h = 240
         screen_w = self.root.winfo_screenwidth()
         x_pos = max(0, (screen_w - win_w) // 2)
         y_pos = 100
         self.root.geometry(f"{win_w}x{win_h}+{x_pos}+{y_pos}")
-        self.root.minsize(560, 200)
+        self.root.minsize(600, 200)
 
         # Build UI layout
         self._build_ui()
@@ -132,6 +132,23 @@ class SpotlightHUD:
             command=self.toggle_mode
         )
         self.btn_mode.pack(side="left", padx=(10, 0))
+
+        # Microphone selector button
+        self.btn_mic_select = tk.Button(
+            header,
+            text="🎤 Micro ▾",
+            font=("Arial", 11),
+            bg="#1e293b",
+            fg="#94a3b8",
+            activebackground="#334155",
+            activeforeground="#ffffff",
+            relief="flat",
+            padx=8,
+            pady=2,
+            cursor="hand2",
+            command=self.show_mic_menu
+        )
+        self.btn_mic_select.pack(side="left", padx=(8, 0))
 
         # Close button
         btn_close = tk.Button(
@@ -273,12 +290,16 @@ class SpotlightHUD:
         )
         hints.pack(side="left")
 
+        # Initial microphone badge label
+        self._update_mic_label()
+
     def show(self):
         """Show the HUD and immediately focus the input."""
         if not self.root:
             return
         def _do_show():
             try:
+                self._update_mic_label()
                 self.root.deiconify()
                 self.root.lift()
                 self.root.attributes("-topmost", True)
@@ -385,10 +406,122 @@ class SpotlightHUD:
         import webbrowser
         webbrowser.open(f"http://{self.host}:{self.port}")
 
+    def set_status(self, text: str, fg: str = "#94a3b8"):
+        """Safely set status label text and color."""
+        if hasattr(self, "status_lbl") and self.status_lbl:
+            self.status_lbl.config(text=text, fg=fg)
+
+    def _update_mic_label(self):
+        """Update the microphone button label with currently active device name."""
+        try:
+            from app.audio_manager import audio_manager
+            _, name = audio_manager.get_active_device_index()
+            short_name = name if len(name) <= 18 else (name[:16] + "…")
+            if hasattr(self, "btn_mic_select") and self.btn_mic_select:
+                self.btn_mic_select.config(text=f"🎤 {short_name} ▾")
+        except Exception:
+            pass
+
+    def show_mic_menu(self):
+        """Open popup dropdown menu allowing user to select or test their microphone."""
+        try:
+            from app.audio_manager import audio_manager
+            devices = audio_manager.list_input_devices(force_refresh=True)
+            active_id, active_name = audio_manager.get_active_device_index()
+
+            menu = tk.Menu(
+                self.root,
+                tearoff=0,
+                bg="#1e293b",
+                fg="#f8fafc",
+                activebackground="#0284c7",
+                activeforeground="#ffffff",
+                font=("Arial", 11)
+            )
+
+            for d in devices:
+                d_id = d["id"]
+                d_name = d["name"]
+                is_sel = (d_id == active_id or d_name == active_name)
+                mark = "✔ " if is_sel else "    "
+                label = f"{mark}{d_name}"
+                def _make_cmd(target_name=d_name):
+                    return lambda: self.select_microphone(target_name)
+                menu.add_command(label=label, command=_make_cmd())
+
+            menu.add_separator()
+            menu.add_command(label="📊 Thử tín hiệu Micro (Test Signal)", command=self.test_current_microphone)
+
+            x = self.btn_mic_select.winfo_rootx()
+            y = self.btn_mic_select.winfo_rooty() + self.btn_mic_select.winfo_height() + 4
+            menu.tk_popup(x, y)
+        except Exception as e:
+            logger.error(f"Error opening mic menu: {e}")
+
+    def select_microphone(self, name: str):
+        """Save selected microphone and update UI and server."""
+        try:
+            from app.audio_manager import audio_manager
+            audio_manager.set_active_device(name)
+            self._update_mic_label()
+            self.set_status(f"Đã chọn Micro: {name}", fg="#38bdf8")
+            sound_manager.play_click()
+
+            def _notify_server():
+                try:
+                    url = f"http://{self.host}:{self.port}/api/audio/device"
+                    req = urllib.request.Request(
+                        url,
+                        data=json.dumps({"device": name}).encode("utf-8"),
+                        headers={"Content-Type": "application/json"}
+                    )
+                    urllib.request.urlopen(req, timeout=1.0)
+                except Exception:
+                    pass
+            threading.Thread(target=_notify_server, daemon=True).start()
+        except Exception as e:
+            logger.error(f"Error selecting microphone: {e}")
+
+    def test_current_microphone(self):
+        """Record a brief sample to verify microphone is picking up voice."""
+        self.set_status("⏳ Đang thử micro (vui lòng nói gì đó vào mic trong 1 giây)...", fg="#fbbf24")
+        def _test_worker():
+            try:
+                from app.audio_manager import audio_manager
+                res = audio_manager.test_microphone_level(duration=0.8)
+                avg_rms = res.get("avg_rms", 0)
+                peak_rms = res.get("peak_rms", 0)
+                dev_name = res.get("device_name", "Micro")
+                has_signal = res.get("has_signal", False)
+                if has_signal:
+                    msg = f"✅ Micro hoạt động tốt! [{dev_name}] Tín hiệu RMS: {avg_rms} (Peak: {peak_rms})"
+                    color = "#4ade80"
+                    sound_manager.play_success()
+                else:
+                    msg = f"⚠️ Tín hiệu quá nhỏ hoặc im lặng [{dev_name}] (RMS: {avg_rms}). Vui lòng chọn Micro khác trong danh sách!"
+                    color = "#f87171"
+                    sound_manager.play_error()
+                self.root.after(0, lambda: self.set_status(msg, fg=color))
+            except Exception as e:
+                self.root.after(0, lambda: self.set_status(f"Lỗi kiểm tra micro: {e}", fg="#f87171"))
+        threading.Thread(target=_test_worker, daemon=True).start()
+
     def trigger_voice(self):
         """Trigger voice recognition via mic."""
-        self.status_lbl.config(text="🎙️ Bạn có thể nhấn phím F8 để nói trực tiếp qua Micro!", fg="#38bdf8")
+        self.set_status("🎙️ Đang lắng nghe... Hãy nói lệnh vào Micro!", fg="#38bdf8")
         sound_manager.play_start()
+        def _req():
+            try:
+                url = f"http://{self.host}:{self.port}/api/voice/trigger"
+                req = urllib.request.Request(
+                    url,
+                    data=b"{}",
+                    headers={"Content-Type": "application/json"}
+                )
+                urllib.request.urlopen(req, timeout=1.5)
+            except Exception:
+                pass
+        threading.Thread(target=_req, daemon=True).start()
 
     def quit_app(self):
         """Cleanly terminate the entire unified application and server without triggering crash reporters."""

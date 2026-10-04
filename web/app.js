@@ -518,8 +518,96 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  const selectMicDevice = document.getElementById("selectMicDevice");
+  const btnTestMicLevel = document.getElementById("btnTestMicLevel");
+  const micTestStatus = document.getElementById("micTestStatus");
+
+  async function fetchAudioDevices() {
+    if (!selectMicDevice) return;
+    try {
+      const res = await fetch("/api/audio/devices");
+      const data = await res.json();
+      if (data.status === "ok" && Array.isArray(data.devices)) {
+        selectMicDevice.innerHTML = "";
+        data.devices.forEach((dev) => {
+          const opt = document.createElement("option");
+          opt.value = dev.name;
+          opt.textContent = `${dev.name}${dev.is_default ? " (Mặc định)" : ""}`;
+          if (dev.name === data.active_name || dev.id === data.active_id) {
+            opt.selected = true;
+          }
+          selectMicDevice.appendChild(opt);
+        });
+      }
+    } catch (e) {
+      console.error("Failed to fetch audio devices:", e);
+    }
+  }
+
+  if (selectMicDevice) {
+    selectMicDevice.addEventListener("change", async () => {
+      const chosenName = selectMicDevice.value;
+      if (!chosenName) return;
+      if (micTestStatus) {
+        micTestStatus.textContent = "⏳ Đang chuyển đổi Microphone...";
+        micTestStatus.style.color = "#38bdf8";
+      }
+      try {
+        const res = await fetch("/api/audio/device", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ device: chosenName })
+        });
+        const data = await res.json();
+        if (micTestStatus) {
+          micTestStatus.textContent = `✅ Đã chọn: ${data.active_name || chosenName}`;
+          micTestStatus.style.color = "#4ade80";
+        }
+      } catch (e) {
+        if (micTestStatus) {
+          micTestStatus.textContent = "❌ Lỗi khi đổi micro";
+          micTestStatus.style.color = "#f87171";
+        }
+      }
+    });
+  }
+
+  if (btnTestMicLevel) {
+    btnTestMicLevel.addEventListener("click", async () => {
+      if (micTestStatus) {
+        micTestStatus.textContent = "⏳ Đang thử micro (vui lòng nói gì đó vào mic)...";
+        micTestStatus.style.color = "#fbbf24";
+      }
+      try {
+        const res = await fetch("/api/audio/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ duration: 0.8 })
+        });
+        const data = await res.json();
+        if (micTestStatus) {
+          if (data.has_signal) {
+            micTestStatus.textContent = `✅ Tín hiệu tốt! RMS: ${data.avg_rms} (Peak: ${data.peak_rms})`;
+            micTestStatus.style.color = "#4ade80";
+            soundSuccess();
+          } else {
+            micTestStatus.textContent = `⚠️ Tín hiệu quá nhỏ hoặc im lặng (RMS: ${data.avg_rms}). Hãy chọn Micro khác!`;
+            micTestStatus.style.color = "#f87171";
+            soundError();
+          }
+        }
+      } catch (e) {
+        if (micTestStatus) {
+          micTestStatus.textContent = "❌ Không thể kiểm tra tín hiệu micro.";
+          micTestStatus.style.color = "#f87171";
+        }
+      }
+    });
+  }
+
   function openStatusModal() {
     fetchSystemStatus();
+    fetchAudioDevices();
     if (statusModal) statusModal.style.display = "flex";
   }
 

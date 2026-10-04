@@ -74,8 +74,11 @@ def launch_spotlight_hud() -> Optional[subprocess.Popen]:
         print(f"[Lifespan] ⚠️ Không thể khởi động Spotlight HUD: {e}")
         return None
 
+native_voice_instance: Optional[NativeVoiceListener] = None
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global native_voice_instance
     # 1. Start Global Native Voice & Hotkey Listener IMMEDIATELY (Zero delay for F7/F8/F9!)
     loop = asyncio.get_running_loop()
 
@@ -95,12 +98,12 @@ async def lifespan(app: FastAPI):
         if hud:
             hud.toggle()
 
-    native_voice = NativeVoiceListener(
+    native_voice_instance = NativeVoiceListener(
         on_command_callback=handle_native_voice_command,
         on_mode_toggle_callback=handle_native_mode_toggle,
         on_spotlight_toggle_callback=handle_native_spotlight_toggle,
     )
-    native_voice.start_global_hotkeys()
+    native_voice_instance.start_global_hotkeys()
 
     # 2. Start Native Desktop Spotlight Floating Chat HUD (F7 Hotkey) if not already active
     global spotlight_process
@@ -384,6 +387,8 @@ async def api_system_status():
     """Detailed health report for WebUI status dialog and native inspectors."""
     screen_w, screen_h = os_controller.get_screen_size()
     gem_ready = gemini_service.is_ready or (hub.extension_client is not None)
+    from app.audio_manager import audio_manager
+    active_mic_id, active_mic_name = audio_manager.get_active_device_index()
     return {
         "status": "online",
         "app_name": "Luga Assist",
@@ -397,8 +402,66 @@ async def api_system_status():
         "screen_width": screen_w,
         "screen_height": screen_h,
         "tts_voice": DEFAULT_TTS_VOICE,
+        "active_microphone_id": active_mic_id,
+        "active_microphone": active_mic_name,
         "pid": os.getpid(),
     }
+
+
+class AudioDevicePayload(BaseModel):
+    device: Any
+
+
+class AudioTestPayload(BaseModel):
+    device_id: Optional[int] = None
+    duration: Optional[float] = 0.5
+
+
+@app.get("/api/audio/devices")
+async def api_audio_devices():
+    """List available microphones and get active device."""
+    from app.audio_manager import audio_manager
+    devices = audio_manager.list_input_devices(force_refresh=True)
+    active_id, active_name = audio_manager.get_active_device_index()
+    return {
+        "status": "ok",
+        "devices": devices,
+        "active_id": active_id,
+        "active_name": active_name
+    }
+
+
+@app.post("/api/audio/device")
+async def api_set_audio_device(payload: AudioDevicePayload):
+    """Set active microphone by name or id."""
+    from app.audio_manager import audio_manager
+    res = audio_manager.set_active_device(payload.device)
+    active_id, active_name = audio_manager.get_active_device_index()
+    return {
+        "status": "ok",
+        "selected": res,
+        "active_id": active_id,
+        "active_name": active_name
+    }
+
+
+@app.post("/api/audio/test")
+async def api_test_audio(payload: Optional[AudioTestPayload] = None):
+    """Test microphone signal level (RMS and peak)."""
+    from app.audio_manager import audio_manager
+    dev_id = payload.device_id if payload else None
+    dur = payload.duration if (payload and payload.duration) else 0.5
+    res = audio_manager.test_microphone_level(device_id=dev_id, duration=dur)
+    return {"status": "ok", **res}
+
+
+@app.post("/api/voice/trigger")
+async def api_voice_trigger():
+    """Trigger voice listening flow programmatically (e.g. from UI mic button)."""
+    if native_voice_instance:
+        threading.Thread(target=native_voice_instance.trigger_voice_flow, daemon=True).start()
+        return {"status": "ok", "message": "Voice trigger initiated"}
+    return {"status": "error", "message": "Native voice listener not available"}
 
 
 @app.get("/api/spotlight/show")

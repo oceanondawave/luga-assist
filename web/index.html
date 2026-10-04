@@ -213,8 +213,18 @@
             <div class="status-card-val" id="modalScreenRes">🖥️ 2560x1440</div>
           </div>
           <div class="status-card-item">
-            <div class="status-card-label">Micro & Giọng nói:</div>
-            <div class="status-card-val">🎙️ Phím <span class="kbd">F8</span> hoặc <span class="kbd">Space</span></div>
+            <div class="status-card-label">Microphone thu âm (F8):</div>
+            <div style="margin-top: 6px;">
+              <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <select id="selectMicDevice" style="background: #1e293b; color: #f1f5f9; border: 1px solid #334155; border-radius: 6px; padding: 6px 10px; font-size: 13px; max-width: 250px; outline: none; cursor: pointer;">
+                  <option value="">Đang tải thiết bị Micro...</option>
+                </select>
+                <button id="btnTestMicLevel" class="btn-sm-action" style="background: #0284c7; color: #ffffff; padding: 6px 12px; font-size: 12px; border-radius: 6px; border: none; cursor: pointer;">
+                  📊 Thử tín hiệu
+                </button>
+              </div>
+              <div id="micTestStatus" style="font-size: 12px; color: #94a3b8; margin-top: 6px;">Phím tắt toàn cục: <span class="kbd">F8</span> hoặc <span class="kbd">Space</span></div>
+            </div>
           </div>
           <div class="status-card-item">
             <div class="status-card-label">Tiến trình PID:</div>

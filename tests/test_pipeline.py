@@ -703,6 +703,53 @@ def test_spotlight_and_screen_capture_hooks():
 
     print("test_spotlight_and_screen_capture_hooks: PASSED")
 
+def test_audio_device_management():
+    import app.main as main_module
+    from app.audio_manager import audio_manager, AUDIO_CONFIG_FILE
+    import asyncio
+
+    # 1. Device enumeration
+    devices = audio_manager.list_input_devices(force_refresh=True)
+    assert isinstance(devices, list)
+    if devices:
+        for d in devices:
+            assert "id" in d
+            assert "name" in d
+            assert "channels" in d
+            assert "is_default" in d
+
+    # 2. Get active device (should not be None or fail)
+    dev_id, dev_name = audio_manager.get_active_device_index()
+    assert dev_name is not None
+    assert len(dev_name) > 0
+
+    # 3. Setting active device
+    if devices:
+        target = devices[0]["name"]
+        res = audio_manager.set_active_device(target)
+        assert res.get("name") == target
+        saved_name = audio_manager.get_saved_device_name()
+        assert saved_name == target
+
+    # 4. Test API endpoints
+    api_list = asyncio.run(main_module.api_audio_devices())
+    assert api_list["status"] == "ok"
+    assert "devices" in api_list
+    assert "active_name" in api_list
+
+    # 5. Test System status includes active_microphone
+    status = asyncio.run(main_module.api_system_status())
+    assert "active_microphone" in status
+    assert status["active_microphone"] is not None
+
+    # 6. Test set device endpoint
+    if devices:
+        payload = main_module.AudioDevicePayload(device=devices[0]["name"])
+        api_set = asyncio.run(main_module.api_set_audio_device(payload))
+        assert api_set["status"] == "ok"
+
+    print("test_audio_device_management: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -727,7 +774,8 @@ if __name__ == "__main__":
     test_chat_mode_and_endpoints()
     test_system_ui_and_lifecycle_controls()
     test_spotlight_and_screen_capture_hooks()
-    print("\n🎉 ALL TESTS (INCLUDING SPOTLIGHT HUD & ZERO-OBSTRUCTION CAPTURE) PASSED SUCCESSFULLY!")
+    test_audio_device_management()
+    print("\n🎉 ALL TESTS (INCLUDING AUDIO MANAGER & DEVICE SELECTION) PASSED SUCCESSFULLY!")
 
 
 
