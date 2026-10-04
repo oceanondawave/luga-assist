@@ -505,9 +505,11 @@ class SpotlightHUD:
                     msg = f"⚠️ Không có tiếng nói từ [{dev_name}] (RMS: {avg_rms}). Nếu dùng card ảo Loopback/Ocean Audio, hãy gắn Micro vào nó trong Loopback, hoặc chọn micro [LG UltraFine Display Audio]!"
                     color = "#f87171"
                     sound_manager.play_error()
-                self.root.after(0, lambda: self.set_status(msg, fg=color))
+                self.root.after(0, lambda m=msg, c=color: self.set_status(m, fg=c))
             except Exception as e:
-                self.root.after(0, lambda: self.set_status(f"Lỗi kiểm tra micro: {e}", fg="#f87171"))
+                err_str = str(e)
+                logger.error(f"Error testing microphone: {err_str}")
+                self.root.after(0, lambda err=err_str: self.set_status(f"Lỗi kiểm tra micro: {err}", fg="#f87171"))
         threading.Thread(target=_test_worker, daemon=True).start()
 
     def trigger_voice(self):

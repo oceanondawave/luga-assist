@@ -198,4 +198,13 @@ class SoundManager:
             self._play_file(str(self.snd_error), volume=0.5)
         print("[Sound] ⚠️ BASSO (Có lỗi xảy ra)")
 
+    def play_success(self):
+        """Alias for play_done sound."""
+        self.play_done()
+
+    def play_click(self):
+        """Short UI interaction click sound."""
+        self.play_chime()
+
+
 sound_manager = SoundManager()
