@@ -9,6 +9,10 @@ Automatically hides momentarily during screen capture so the AI sees 100% of the
 import sys
 import os
 import time
+
+if sys.platform == "darwin":
+    os.environ["ApplePersistence"] = "NO"
+
 import json
 import threading
 import urllib.request
@@ -387,9 +391,13 @@ class SpotlightHUD:
         sound_manager.play_start()
 
     def quit_app(self):
-        """Cleanly terminate the entire unified application and server."""
-        logger.info("SpotlightHUD: Quit requested.")
-        sound_manager.play_done()
+        """Cleanly terminate the entire unified application and server without triggering crash reporters."""
+        logger.info("SpotlightHUD: Graceful quit initiated.")
+        try:
+            sound_manager.play_done()
+        except Exception:
+            pass
+
         try:
             from app.system_ui import show_desktop_notification
             show_desktop_notification("Luga Assist", "Đã tắt hoàn toàn Luga Assist. Tạm biệt bạn!")
@@ -402,13 +410,28 @@ class SpotlightHUD:
         except Exception:
             pass
 
+        if self._hotkey_listener:
+            try:
+                self._hotkey_listener.stop()
+            except Exception:
+                pass
+
         if self.server:
             self.server.should_exit = True
 
-        if self.root:
-            self.root.destroy()
+        def _do_exit():
+            try:
+                if self.root:
+                    self.root.quit()
+                    self.root.destroy()
+            except Exception:
+                pass
+            sys.exit(0)
 
-        os._exit(0)
+        if self.root:
+            self.root.after(50, _do_exit)
+        else:
+            sys.exit(0)
 
     def submit_command(self):
         """Submit command from text entry box."""

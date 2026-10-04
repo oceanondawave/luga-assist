@@ -5,6 +5,10 @@ Coordinates Voice UI, Screen Capture, Gemini Web Extension, OS Controller, and T
 import re
 import os
 import sys
+
+if sys.platform == "darwin":
+    os.environ["ApplePersistence"] = "NO"
+
 import json
 import uuid
 import asyncio
@@ -1100,8 +1104,15 @@ def start():
         hud = SpotlightHUD(host=HOST, port=PORT, server=server, manage_hotkeys=False)
         try:
             hud.run(show_immediately=True)
-        except KeyboardInterrupt:
-            hud.quit_app()
+        except (KeyboardInterrupt, SystemExit):
+            pass
+        finally:
+            server.should_exit = True
+            try:
+                PID_FILE.unlink(missing_ok=True)
+            except Exception:
+                pass
+            sys.exit(0)
     else:
         uvicorn.run("app.main:app", host=HOST, port=PORT, reload=False, log_level="info")
 

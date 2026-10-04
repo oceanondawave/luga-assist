@@ -82,6 +82,12 @@ BASE_DIR="{BASE_DIR}"
 PYTHON_BIN="{python_bin}"
 export PYTHONPATH="$BASE_DIR"
 
+# Prevent macOS window restoration prompts from previous crashes
+defaults write org.python.python ApplePersistence -bool no 2>/dev/null || true
+defaults write org.python.python NSQuitAlwaysKeepsWindows -bool no 2>/dev/null || true
+defaults write com.luga.assist ApplePersistence -bool no 2>/dev/null || true
+defaults write com.luga.assist NSQuitAlwaysKeepsWindows -bool no 2>/dev/null || true
+
 # 1. Check if Luga Assist is already running in background
 if curl -s -m 1 "http://localhost:8000/api/status" >/dev/null 2>&1; then
     curl -s -m 1 -X POST "http://localhost:8000/api/spotlight/show" >/dev/null 2>&1
