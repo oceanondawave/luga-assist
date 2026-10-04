@@ -178,10 +178,12 @@ class AudioManager:
             try:
                 dev_info = sd.query_devices(dev_idx) if dev_idx is not None else {}
                 sample_rate = int(dev_info.get("default_samplerate", 44100)) if isinstance(dev_info, dict) else 44100
+                channels = min(2, int(dev_info.get("max_input_channels", 1))) if isinstance(dev_info, dict) else 1
                 if "name" in dev_info:
                     dev_name = dev_info["name"]
             except Exception:
                 sample_rate = 44100
+                channels = 1
 
             chunk_size = int(sample_rate * 0.1)  # 100ms chunks
             chunks_to_read = max(1, int(duration / 0.1))
@@ -196,7 +198,7 @@ class AudioManager:
 
             with sd.RawInputStream(
                 samplerate=sample_rate,
-                channels=1,
+                channels=channels,
                 dtype="int16",
                 device=dev_idx,
                 blocksize=chunk_size,
@@ -205,7 +207,11 @@ class AudioManager:
                 for _ in range(chunks_to_read):
                     try:
                         raw_data = audio_queue.get(timeout=0.35)
-                        chunk_rms = audioop.rms(raw_data, 2)
+                        if channels == 2:
+                            mono_data = audioop.tomono(raw_data, 2, 0.5, 0.5)
+                            chunk_rms = audioop.rms(mono_data, 2)
+                        else:
+                            chunk_rms = audioop.rms(raw_data, 2)
                         total_rms += chunk_rms
                         if chunk_rms > peak_rms:
                             peak_rms = chunk_rms
@@ -214,7 +220,7 @@ class AudioManager:
                         break
 
             avg_rms = (total_rms // chunks_received) if chunks_received > 0 else 0
-            has_signal = avg_rms > 15
+            has_signal = avg_rms > 0
             return {
                 "success": True,
                 "device_id": dev_idx,

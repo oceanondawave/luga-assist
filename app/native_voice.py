@@ -183,8 +183,10 @@ class NativeVoiceListener:
         try:
             dev_info = sd.query_devices(dev_idx) if dev_idx is not None else {}
             active_sr = int(dev_info.get("default_samplerate", 16000)) if isinstance(dev_info, dict) else 16000
+            input_channels = min(2, int(dev_info.get("max_input_channels", 1))) if isinstance(dev_info, dict) else 1
         except Exception:
             active_sr = 16000
+            input_channels = 1
 
         chunk_duration = 0.08  # 80ms chunks for rapid response
         chunk_samples = int(active_sr * chunk_duration)
@@ -202,12 +204,15 @@ class NativeVoiceListener:
 
         audio_queue = queue.Queue()
         def _voice_audio_callback(indata, frames, time_info, status):
-            audio_queue.put(bytes(indata))
+            raw = bytes(indata)
+            if input_channels == 2:
+                raw = audioop.tomono(raw, 2, 0.5, 0.5)
+            audio_queue.put(raw)
 
         try:
             with sd.RawInputStream(
                 samplerate=active_sr,
-                channels=self.channels,
+                channels=input_channels,
                 dtype="int16",
                 device=dev_idx,
                 blocksize=chunk_samples,

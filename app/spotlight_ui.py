@@ -506,12 +506,17 @@ class SpotlightHUD:
                 peak_rms = res.get("peak_rms", 0)
                 dev_name = res.get("device_name", "Micro")
                 success = res.get("success", False)
-                if success and avg_rms > 10:
-                    msg = f"✅ Bắt được tín hiệu âm thanh tốt! [{dev_name}] (RMS: {avg_rms}, Peak: {peak_rms})"
+                if success and avg_rms > 0:
+                    msg = f"✅ Đang nhận âm thanh từ [{dev_name}] (RMS: {avg_rms}, Peak: {peak_rms})"
                     color = "#4ade80"
                     sound_manager.play_success()
+                elif success:
+                    msg = f"ℹ️ Nguồn [{dev_name}] đã kết nối (chưa có âm thanh phát qua, RMS: 0)."
+                    color = "#38bdf8"
+                    sound_manager.play_click()
                 else:
-                    msg = f"❌ Không nhận được âm thanh từ [{dev_name}] (RMS: {avg_rms})! Thiết bị đang im lặng. Vui lòng bấm vào danh sách mic để chọn thiết bị khác (như LG UltraFine Display Audio)."
+                    err = res.get("error", "Lỗi thiết bị")
+                    msg = f"❌ Không thể truy cập nguồn âm thanh [{dev_name}]: {err}"
                     color = "#f87171"
                     sound_manager.play_error()
                 self.root.after(0, lambda m=msg, c=color: self.set_status(m, fg=c))
