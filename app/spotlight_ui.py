@@ -496,34 +496,59 @@ class SpotlightHUD:
             logger.error(f"Error selecting microphone: {e}")
 
     def test_current_microphone(self):
-        """Record a brief sample to verify microphone is picking up voice."""
-        self.set_status("⏳ Đang kiểm tra micro...", fg="#fbbf24")
+        """Record a live sample with real-time VU meter to verify audio signal from active device."""
+        self.set_status("⏳ Đang lắng nghe tín hiệu trực tiếp...", fg="#fbbf24")
         def _test_worker():
             try:
+                import sounddevice as sd
+                import audioop
+                import time
                 from app.audio_manager import audio_manager
-                res = audio_manager.test_microphone_level(duration=0.8)
-                avg_rms = res.get("avg_rms", 0)
-                peak_rms = res.get("peak_rms", 0)
-                dev_name = res.get("device_name", "Micro")
-                success = res.get("success", False)
-                if success and avg_rms > 0:
-                    msg = f"✅ Đang nhận âm thanh từ [{dev_name}] (RMS: {avg_rms}, Peak: {peak_rms})"
-                    color = "#4ade80"
+
+                dev_idx, dev_name = audio_manager.get_active_device_index()
+                dev_info = sd.query_devices(dev_idx) if dev_idx is not None else {}
+                sr = int(dev_info.get("default_samplerate", 44100)) if isinstance(dev_info, dict) else 44100
+                channels = min(2, int(dev_info.get("max_input_channels", 1))) if isinstance(dev_info, dict) else 1
+
+                chunk_samples = int(sr * 0.1)  # 100ms
+                peak_rms = 0
+                total_rms = 0
+                sample_count = 0
+                max_iterations = 15  # 1.5 seconds live test
+
+                with sd.RawInputStream(samplerate=sr, channels=channels, dtype="int16", device=dev_idx, blocksize=chunk_samples) as s:
+                    for _ in range(max_iterations):
+                        data, _ = s.read(chunk_samples)
+                        raw = bytes(data)
+                        if channels == 2:
+                            raw = audioop.tomono(raw, 2, 0.5, 0.5)
+                        chunk_rms = audioop.rms(raw, 2)
+                        total_rms += chunk_rms
+                        sample_count += 1
+                        if chunk_rms > peak_rms:
+                            peak_rms = chunk_rms
+
+                        bars = min(12, int(chunk_rms / 250))
+                        meter = "█" * bars if bars > 0 else "·"
+                        color = "#4ade80" if chunk_rms > 50 else "#38bdf8"
+                        self.root.after(0, lambda r=chunk_rms, m=meter, c=color: self.set_status(f"📊 Đang đo: {dev_name} | Mức: {r} [{m}]", fg=c))
+                        time.sleep(0.01)
+
+                avg_rms = total_rms // max(1, sample_count)
+                if peak_rms > 10:
+                    msg = f"✅ Nhận tín hiệu tốt từ [{dev_name}] (RMS: {avg_rms}, Đỉnh: {peak_rms})"
+                    col = "#4ade80"
                     sound_manager.play_success()
-                elif success:
-                    msg = f"ℹ️ Nguồn [{dev_name}] đã kết nối (chưa có âm thanh phát qua, RMS: 0)."
-                    color = "#38bdf8"
-                    sound_manager.play_click()
                 else:
-                    err = res.get("error", "Lỗi thiết bị")
-                    msg = f"❌ Không thể truy cập nguồn âm thanh [{dev_name}]: {err}"
-                    color = "#f87171"
-                    sound_manager.play_error()
-                self.root.after(0, lambda m=msg, c=color: self.set_status(m, fg=c))
+                    msg = f"ℹ️ Nguồn [{dev_name}] đã kết nối (chưa có âm thanh phát qua, RMS: 0)."
+                    col = "#38bdf8"
+                    sound_manager.play_click()
+
+                self.root.after(0, lambda m=msg, c=col: self.set_status(m, fg=c))
             except Exception as e:
                 err_str = str(e)
-                logger.error(f"Error testing microphone: {err_str}")
-                self.root.after(0, lambda err=err_str: self.set_status(f"Lỗi kiểm tra micro: {err}", fg="#f87171"))
+                logger.error(f"Error testing audio source: {err_str}")
+                self.root.after(0, lambda err=err_str: self.set_status(f"Lỗi kiểm tra: {err}", fg="#f87171"))
         threading.Thread(target=_test_worker, daemon=True).start()
 
     def trigger_voice(self):
