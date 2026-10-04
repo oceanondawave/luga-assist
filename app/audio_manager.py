@@ -41,24 +41,24 @@ class AudioManager:
             return []
 
         active_selection = self.get_saved_device_name()
-        is_auto = (active_selection is None or active_selection.lower() in ("auto", ""))
+        is_default = (active_selection is None or active_selection.lower() in ("default", "auto", "mặc định", "mặc định hệ thống", ""))
         devices = [
             {
                 "id": -1,
-                "name": "🎯 Tự động chọn Micro tốt nhất (Auto)",
+                "name": "⚙️ Mặc định hệ thống (System Default)",
                 "channels": 1,
                 "sample_rate": 44100.0,
                 "is_default": False,
-                "is_selected": is_auto,
+                "is_selected": is_default,
             }
         ]
         for i, d in enumerate(raw_devices):
             if d.get("max_input_channels", 0) > 0:
                 name = d.get("name", f"Microphone {i}")
                 is_selected = False
-                if not is_auto and active_selection:
+                if not is_default and active_selection:
                     is_selected = (name == active_selection or active_selection.lower() in name.lower())
-                elif not is_auto and default_in is not None and i == default_in:
+                elif is_default and default_in is not None and i == default_in:
                     is_selected = True
 
                 devices.append({
@@ -88,59 +88,33 @@ class AudioManager:
     def get_active_device_index(self) -> Tuple[Optional[int], str]:
         """
         Get the device index and name for recording.
-        Matches by saved device name if available.
-        In Auto mode, prioritizes physical studio/desktop microphones over virtual
-        cables or sleeping Bluetooth/Continuity devices without blocking audio probes.
+        Supports 100% of audio devices (hardware and virtual).
+        Uses exactly what the computer/OS is currently using (system default)
+        unless the user explicitly picked a specific device.
         """
         devices = self.list_input_devices(force_refresh=True)
         saved_name = self.get_saved_device_name()
 
-        VIRTUAL_KEYWORDS = ["ocean audio", "blackhole", "soundflower", "loopback", "cadisplay", "lg mic"]
-
-        # 1. User explicitly selected a specific real device (not Auto)
-        candidate = None
-        is_auto_saved = (not saved_name or "auto" in saved_name.lower() or "tự động" in saved_name.lower())
-        if not is_auto_saved:
+        # 1. If user explicitly selected a specific device (and not default/auto)
+        is_default_saved = (not saved_name or saved_name.lower() in ("default", "auto", "mặc định", "mặc định hệ thống", ""))
+        if not is_default_saved:
             for d in devices:
                 if d.get("id", -1) >= 0 and (d["name"] == saved_name or saved_name.lower() in d["name"].lower()):
-                    candidate = d
-                    break
-
-        if candidate:
-            return candidate["id"], candidate["name"]
-
-        # 2. In Auto mode (or no candidate): Rank all devices by physical microphone quality score
-        def _score_device(d: Dict[str, Any]) -> int:
-            dev_id = d.get("id", -1)
-            if dev_id < 0:
-                return -1000
-            name = d.get("name", "").lower()
-            if any(k in name for k in VIRTUAL_KEYWORDS):
-                return -100
-            if any(k in name for k in ["iphone", "ipad"]):
-                return -50
-            if any(k in name for k in ["ultrafine", "display audio", "maono", "yeti", "rode", "shure", "scarlett", "fifine", "elgato"]):
-                return 100
-            if "usb" in name:
-                return 80
-            if any(k in name for k in ["built-in", "internal", "macbook"]):
-                return 60
-            if any(k in name for k in ["headset", "airpods", "g9"]):
-                return 40
-            if d.get("is_default", False):
-                return 50
-            return 10
-
-        real_candidates = [d for d in devices if d.get("id", -1) >= 0]
-        if real_candidates:
-            ranked = sorted(real_candidates, key=_score_device, reverse=True)
-            best = ranked[0]
-            if _score_device(best) > 0:
-                return best["id"], best["name"]
-            for d in real_candidates:
-                if d.get("is_default", False):
                     return d["id"], d["name"]
-            return real_candidates[0]["id"], real_candidates[0]["name"]
+
+        # 2. Use system default device that the computer is currently using
+        try:
+            default_in = sd.default.device[0] if sd.default.device is not None else None
+            if default_in is not None and default_in >= 0:
+                def_info = sd.query_devices(default_in)
+                return default_in, def_info.get("name", f"Microphone {default_in}")
+        except Exception as e:
+            logger.error(f"Error getting default audio device: {e}")
+
+        # 3. Fallback to first available real device
+        for d in devices:
+            if d.get("id", -1) >= 0:
+                return d["id"], d["name"]
 
         return None, "Default Microphone"
 
@@ -149,15 +123,15 @@ class AudioManager:
         devices = self.list_input_devices(force_refresh=True)
         chosen = None
 
-        if name_or_id in (-1, "auto", "Auto") or "tự động" in str(name_or_id).lower():
+        if name_or_id in (-1, "auto", "Auto", "default", "Default") or "mặc định" in str(name_or_id).lower() or "tự động" in str(name_or_id).lower():
             try:
                 with open(AUDIO_CONFIG_FILE, "w", encoding="utf-8") as f:
-                    json.dump({"selected_device_name": "Auto", "selected_device_id": -1}, f, indent=2)
+                    json.dump({"selected_device_name": "Default", "selected_device_id": -1}, f, indent=2)
                 self._cached_devices = None
-                logger.info("Active microphone set to Auto-Detect")
-                return {"id": -1, "name": "🎯 Tự động chọn Micro tốt nhất (Auto)", "channels": 1, "is_default": False, "is_selected": True}
+                logger.info("Active microphone set to System Default")
+                return {"id": -1, "name": "⚙️ Mặc định hệ thống (System Default)", "channels": 1, "is_default": False, "is_selected": True}
             except Exception as e:
-                logger.error(f"Error saving auto config: {e}")
+                logger.error(f"Error saving default config: {e}")
 
         if isinstance(name_or_id, int):
             for d in devices:

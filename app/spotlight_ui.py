@@ -421,8 +421,8 @@ class SpotlightHUD:
             from app.audio_manager import audio_manager
             saved = audio_manager.get_saved_device_name()
             _, name = audio_manager.get_active_device_index()
-            if saved and saved.lower() in ("auto", ""):
-                short_name = f"Tự động ({name[:10]}…)" if len(name) > 10 else f"Tự động ({name})"
+            if saved and saved.lower() in ("default", "auto", "mặc định", ""):
+                short_name = f"Mặc định ({name[:10]}…)" if len(name) > 10 else f"Mặc định ({name})"
             else:
                 short_name = name if len(name) <= 16 else (name[:14] + "…")
             if hasattr(self, "btn_mic_select") and self.btn_mic_select:
@@ -437,7 +437,7 @@ class SpotlightHUD:
             devices = audio_manager.list_input_devices(force_refresh=True)
             active_id, active_name = audio_manager.get_active_device_index()
             saved = audio_manager.get_saved_device_name()
-            is_auto = (saved is None or saved.lower() in ("auto", ""))
+            is_default = (saved is None or saved.lower() in ("default", "auto", "mặc định", ""))
 
             menu = tk.Menu(
                 self.root,
@@ -453,9 +453,9 @@ class SpotlightHUD:
                 d_id = d["id"]
                 d_name = d["name"]
                 if d_id == -1:
-                    is_sel = is_auto
+                    is_sel = is_default
                 else:
-                    is_sel = not is_auto and (d_id == active_id or d_name == active_name)
+                    is_sel = not is_default and (d_id == active_id or d_name == active_name)
                 mark = "✔ " if is_sel else "    "
                 label = f"{mark}{d_name}"
                 def _make_cmd(target_name=d_name):
@@ -497,7 +497,7 @@ class SpotlightHUD:
 
     def test_current_microphone(self):
         """Record a brief sample to verify microphone is picking up voice."""
-        self.set_status("⏳ Đang thử micro (vui lòng nói gì đó vào mic trong 1 giây)...", fg="#fbbf24")
+        self.set_status("⏳ Đang kiểm tra micro...", fg="#fbbf24")
         def _test_worker():
             try:
                 from app.audio_manager import audio_manager
@@ -505,13 +505,19 @@ class SpotlightHUD:
                 avg_rms = res.get("avg_rms", 0)
                 peak_rms = res.get("peak_rms", 0)
                 dev_name = res.get("device_name", "Micro")
-                has_signal = res.get("has_signal", False)
-                if has_signal:
-                    msg = f"✅ Micro hoạt động tốt! [{dev_name}] Tín hiệu RMS: {avg_rms} (Peak: {peak_rms})"
-                    color = "#4ade80"
-                    sound_manager.play_success()
+                success = res.get("success", False)
+                if success:
+                    if avg_rms > 5:
+                        msg = f"✅ Micro hoạt động tốt! [{dev_name}] RMS: {avg_rms} (Peak: {peak_rms})"
+                        color = "#4ade80"
+                        sound_manager.play_success()
+                    else:
+                        msg = f"✅ Đã kết nối [{dev_name}] (RMS: {avg_rms}). Sẵn sàng nhận âm thanh!"
+                        color = "#38bdf8"
+                        sound_manager.play_click()
                 else:
-                    msg = f"⚠️ Không có tiếng nói từ [{dev_name}] (RMS: {avg_rms}). Nếu dùng card ảo Loopback/Ocean Audio, hãy gắn Micro vào nó trong Loopback, hoặc chọn micro [LG UltraFine Display Audio]!"
+                    err = res.get("error", "Lỗi thiết bị")
+                    msg = f"❌ Không thể truy cập [{dev_name}]: {err}"
                     color = "#f87171"
                     sound_manager.play_error()
                 self.root.after(0, lambda m=msg, c=color: self.set_status(m, fg=c))

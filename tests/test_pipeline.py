@@ -749,8 +749,8 @@ def test_audio_device_management():
         api_set = asyncio.run(main_module.api_set_audio_device(payload))
         assert api_set["status"] == "ok"
 
-    # 7. Restore active device to Auto
-    audio_manager.set_active_device("Auto")
+    # 7. Restore active device to Default
+    audio_manager.set_active_device("Default")
 
     print("test_audio_device_management: PASSED")
 
