@@ -27,6 +27,7 @@ from app.config import (
     PORT,
     WEB_DIR,
     DEFAULT_TTS_VOICE,
+    PID_FILE,
 )
 from app.logger import setup_logging, get_logger, read_recent_logs, clear_logs
 from app.browser_helper import ensure_background_browser
@@ -91,15 +92,24 @@ async def lifespan(app: FastAPI):
         print("\n[Global Handler] Đã nhận tín hiệu chuyển đổi chế độ từ phím F9!")
         asyncio.run_coroutine_threadsafe(toggle_mode(), loop)
 
+    def handle_native_spotlight_toggle():
+        from app.spotlight_ui import get_spotlight_hud
+        hud = get_spotlight_hud()
+        if hud:
+            hud.toggle()
+
     native_voice = NativeVoiceListener(
         on_command_callback=handle_native_voice_command,
         on_mode_toggle_callback=handle_native_mode_toggle,
+        on_spotlight_toggle_callback=handle_native_spotlight_toggle,
     )
     native_voice.start_global_hotkeys()
 
-    # 4. Start Native Desktop Spotlight Floating Chat HUD (F7 Hotkey)
+    # 4. Start Native Desktop Spotlight Floating Chat HUD (F7 Hotkey) if not already active
     global spotlight_process
-    spotlight_process = launch_spotlight_hud()
+    from app.spotlight_ui import get_spotlight_hud
+    if get_spotlight_hud() is None:
+        spotlight_process = launch_spotlight_hud()
 
     yield
 
@@ -110,6 +120,11 @@ async def lifespan(app: FastAPI):
             spotlight_process.wait(timeout=1.0)
         except Exception:
             pass
+
+    try:
+        PID_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 app = FastAPI(title="Luga Assist Local Server", version="1.0.0", lifespan=lifespan)
 
@@ -376,6 +391,47 @@ async def api_system_status():
         "tts_voice": DEFAULT_TTS_VOICE,
         "pid": os.getpid(),
     }
+
+
+@app.get("/api/spotlight/show")
+@app.post("/api/spotlight/show")
+async def api_spotlight_show():
+    from app.spotlight_ui import get_spotlight_hud
+    hud = get_spotlight_hud()
+    if hud:
+        hud.show()
+        return {"status": "ok", "visible": True}
+    return {"status": "error", "message": "Spotlight HUD not active"}
+
+@app.get("/api/spotlight/hide")
+@app.post("/api/spotlight/hide")
+async def api_spotlight_hide():
+    from app.spotlight_ui import get_spotlight_hud
+    hud = get_spotlight_hud()
+    if hud:
+        hud.hide()
+        return {"status": "ok", "visible": False}
+    return {"status": "error", "message": "Spotlight HUD not active"}
+
+@app.get("/api/spotlight/toggle")
+@app.post("/api/spotlight/toggle")
+async def api_spotlight_toggle():
+    from app.spotlight_ui import get_spotlight_hud
+    hud = get_spotlight_hud()
+    if hud:
+        hud.toggle()
+        return {"status": "ok"}
+    return {"status": "error", "message": "Spotlight HUD not active"}
+
+@app.get("/api/spotlight/quit")
+@app.post("/api/spotlight/quit")
+async def api_spotlight_quit():
+    from app.spotlight_ui import get_spotlight_hud
+    hud = get_spotlight_hud()
+    if hud:
+        hud.quit_app()
+        return {"status": "ok"}
+    return {"status": "error", "message": "Spotlight HUD not active"}
 
 
 
@@ -1008,13 +1064,42 @@ async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, s
 
 
 def start():
-    """Entry point for running server."""
+    """Entry point for running server and native Spotlight HUD."""
+    import threading
+
+    # Save PID so daemon commands / scripts know about this process
+    try:
+        with open(PID_FILE, "w") as f:
+            f.write(str(os.getpid()))
+    except Exception:
+        pass
+
     print("=" * 60)
-    print("      LUGA ASSIST - AI AGENT CHO NGƯỜI KHIẾM THỊ")
-    print(f"      Giao diện Web:   http://{HOST}:{PORT}")
-    print("      Trạng thái:      Sẵn sàng kết nối Extension")
+    print("      LUGA ASSIST - TRỢ LÝ ĐIỀU KHIỂN TOÀN DIỆN")
+    print(f"      Cổng API ngầm:   http://{HOST}:{PORT}")
+    print("      Phím tắt F7:     Bật / Tắt Cửa sổ Chat Nổi (Spotlight)")
+    print("      Phím tắt F8:     Nói trực tiếp qua Micro")
+    print("      Phím tắt F9:     Chuyển đổi Chế độ (Điều khiển <-> Chat)")
     print("=" * 60)
-    uvicorn.run("app.main:app", host=HOST, port=PORT, reload=False, log_level="info")
+
+    has_display = True
+    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
+        has_display = False
+
+    if has_display:
+        from app.spotlight_ui import SpotlightHUD
+        config = uvicorn.Config(app="app.main:app", host=HOST, port=PORT, reload=False, log_level="warning")
+        server = uvicorn.Server(config)
+        server_thread = threading.Thread(target=server.run, daemon=True)
+        server_thread.start()
+
+        hud = SpotlightHUD(host=HOST, port=PORT, server=server, manage_hotkeys=False)
+        try:
+            hud.run(show_immediately=True)
+        except KeyboardInterrupt:
+            hud.quit_app()
+    else:
+        uvicorn.run("app.main:app", host=HOST, port=PORT, reload=False, log_level="info")
 
 if __name__ == "__main__":
     start()

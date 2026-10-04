@@ -627,6 +627,7 @@ def test_system_ui_and_lifecycle_controls():
 
 def test_spotlight_and_screen_capture_hooks():
     import app.main as main_module
+    from unittest.mock import patch
     from app.screen_capture import screen_capturer
     from app.native_voice import NativeVoiceListener
 
@@ -672,6 +673,33 @@ def test_spotlight_and_screen_capture_hooks():
     assert listener.on_spotlight_toggle is not None
     listener.on_spotlight_toggle()
     assert len(toggled) == 1
+
+    # 5. Test Spotlight HUD API endpoints (show, hide, toggle)
+    res_toggle_off = asyncio.run(main_module.api_spotlight_toggle())
+    assert "status" in res_toggle_off
+    res_show_off = asyncio.run(main_module.api_spotlight_show())
+    assert "status" in res_show_off
+    res_hide_off = asyncio.run(main_module.api_spotlight_hide())
+    assert "status" in res_hide_off
+
+    # Test with mock HUD
+    class MockHUD:
+        def __init__(self):
+            self.shown = False
+            self.hidden = False
+            self.toggled = False
+        def show(self): self.shown = True
+        def hide(self): self.hidden = True
+        def toggle(self): self.toggled = True
+
+    mock_hud = MockHUD()
+    with patch("app.spotlight_ui.get_spotlight_hud", return_value=mock_hud):
+        res_show = asyncio.run(main_module.api_spotlight_show())
+        assert res_show["status"] == "ok" and mock_hud.shown
+        res_hide = asyncio.run(main_module.api_spotlight_hide())
+        assert res_hide["status"] == "ok" and mock_hud.hidden
+        res_tog = asyncio.run(main_module.api_spotlight_toggle())
+        assert res_tog["status"] == "ok" and mock_hud.toggled
 
     print("test_spotlight_and_screen_capture_hooks: PASSED")
 

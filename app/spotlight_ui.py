@@ -15,7 +15,7 @@ import urllib.request
 import urllib.error
 import tkinter as tk
 from tkinter import font as tkfont
-from typing import Optional, Callable
+from typing import Optional, Callable, Any
 
 from pynput import keyboard
 
@@ -30,21 +30,24 @@ logger = get_logger("SpotlightUI")
 class SpotlightHUD:
     _instance = None
 
-    def __init__(self, host: str = HOST, port: int = PORT):
+    def __init__(self, host: str = HOST, port: int = PORT, server: Optional[Any] = None, manage_hotkeys: bool = True):
         SpotlightHUD._instance = self
         self.host = host
         self.port = port
+        self.server = server
+        self.manage_hotkeys = manage_hotkeys
         self.root: Optional[tk.Tk] = None
         self.is_visible = False
         self.was_visible_before_capture = False
         self.current_mode = "control"
         self._keys_held = set()
         self._hotkey_listener = None
+        self._last_toggle_time = 0.0
 
         # Thread synchronization
         self.ready_event = threading.Event()
 
-    def run(self):
+    def run(self, show_immediately: bool = False):
         """Run the Tkinter GUI main loop on this thread."""
         logger.info("Initializing Spotlight Tkinter HUD...")
         self.root = tk.Tk()
@@ -70,16 +73,20 @@ class SpotlightHUD:
         self.root.bind("<Escape>", lambda e: self.hide())
         self.root.protocol("WM_DELETE_WINDOW", self.hide)
 
-        # Start hidden initially
-        self.root.withdraw()
-        self.is_visible = False
+        # Start hidden initially unless show_immediately is requested
+        if show_immediately:
+            self.show()
+        else:
+            self.root.withdraw()
+            self.is_visible = False
 
         # Register capture hooks with screen_capturer
         screen_capturer.register_pre_capture_hook(self.on_pre_screen_capture)
         screen_capturer.register_post_capture_hook(self.on_post_screen_capture)
 
-        # Start global hotkeys listener
-        self._start_global_hotkeys()
+        # Start global hotkeys listener if managing hotkeys
+        if self.manage_hotkeys:
+            self._start_global_hotkeys()
 
         self.ready_event.set()
         logger.info("Spotlight HUD ready! Press F7 or Ctrl+Alt+Space anywhere.")
@@ -98,7 +105,7 @@ class SpotlightHUD:
 
         title_lbl = tk.Label(
             header,
-            text="🎙️ Luga Assist - Chat Nhanh",
+            text="🎙️ Luga Assist",
             font=("Arial", 13, "bold"),
             fg="#38bdf8",
             bg="#0f172a"
@@ -120,12 +127,12 @@ class SpotlightHUD:
             cursor="hand2",
             command=self.toggle_mode
         )
-        self.btn_mode.pack(side="left", padx=(12, 0))
+        self.btn_mode.pack(side="left", padx=(10, 0))
 
         # Close button
         btn_close = tk.Button(
             header,
-            text="✕ Đóng (Esc)",
+            text="✕ Ẩn (Esc)",
             font=("Arial", 11),
             bg="#0f172a",
             fg="#94a3b8",
@@ -137,9 +144,60 @@ class SpotlightHUD:
         )
         btn_close.pack(side="right")
 
+        # Shutdown app button
+        btn_stop = tk.Button(
+            header,
+            text="🛑 Tắt Luga",
+            font=("Arial", 11, "bold"),
+            bg="#7f1d1d",
+            fg="#fca5a5",
+            activebackground="#ef4444",
+            activeforeground="#ffffff",
+            relief="flat",
+            padx=6,
+            pady=2,
+            cursor="hand2",
+            command=self.quit_app
+        )
+        btn_stop.pack(side="right", padx=(6, 6))
+
+        # Open Web dashboard button
+        btn_web = tk.Button(
+            header,
+            text="🌐 Web",
+            font=("Arial", 11),
+            bg="#1e293b",
+            fg="#94a3b8",
+            activebackground="#334155",
+            activeforeground="#ffffff",
+            relief="flat",
+            padx=6,
+            pady=2,
+            cursor="hand2",
+            command=self.open_web
+        )
+        btn_web.pack(side="right", padx=(0, 6))
+
         # Input Row Container (Surface Card)
         input_box = tk.Frame(self.card, bg="#1e293b", padx=10, pady=8, relief="flat", highlightthickness=1, highlightbackground="#334155")
         input_box.pack(fill="x")
+
+        # Mic button
+        btn_mic = tk.Button(
+            input_box,
+            text="🎙️",
+            font=("Arial", 12),
+            bg="#0f172a",
+            fg="#ffffff",
+            activebackground="#334155",
+            activeforeground="#ffffff",
+            relief="flat",
+            padx=6,
+            pady=2,
+            cursor="hand2",
+            command=self.trigger_voice
+        )
+        btn_mic.pack(side="left", padx=(0, 6))
 
         self.txt_input = tk.Entry(
             input_box,
@@ -236,7 +294,11 @@ class SpotlightHUD:
         self.root.after(0, _do_hide)
 
     def toggle(self):
-        """Toggle HUD visibility."""
+        """Toggle HUD visibility with debounce."""
+        now = time.time()
+        if now - self._last_toggle_time < 0.35:
+            return
+        self._last_toggle_time = now
         if self.is_visible:
             self.hide()
         else:
@@ -249,9 +311,15 @@ class SpotlightHUD:
         """
         if self.root and self.is_visible:
             self.was_visible_before_capture = True
-            self.root.withdraw()
-            self.root.update()
-            # Brief pause for display compositor
+            done_evt = threading.Event()
+            def _hide():
+                try:
+                    self.root.withdraw()
+                    self.root.update_idletasks()
+                finally:
+                    done_evt.set()
+            self.root.after(0, _hide)
+            done_evt.wait(timeout=0.1)
             time.sleep(0.04)
 
     def on_post_screen_capture(self):
@@ -291,6 +359,40 @@ class SpotlightHUD:
             except Exception as e:
                 logger.error(f"Failed to toggle mode via HTTP: {e}")
         threading.Thread(target=_req, daemon=True).start()
+
+    def open_web(self):
+        """Open web dashboard in browser."""
+        import webbrowser
+        webbrowser.open(f"http://{self.host}:{self.port}")
+
+    def trigger_voice(self):
+        """Trigger voice recognition via mic."""
+        self.status_lbl.config(text="🎙️ Bạn có thể nhấn phím F8 để nói trực tiếp qua Micro!", fg="#38bdf8")
+        sound_manager.play_start()
+
+    def quit_app(self):
+        """Cleanly terminate the entire unified application and server."""
+        logger.info("SpotlightHUD: Quit requested.")
+        sound_manager.play_done()
+        try:
+            from app.system_ui import show_desktop_notification
+            show_desktop_notification("Luga Assist", "Đã tắt hoàn toàn Luga Assist. Tạm biệt bạn!")
+        except Exception:
+            pass
+
+        try:
+            from app.config import PID_FILE
+            PID_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+        if self.server:
+            self.server.should_exit = True
+
+        if self.root:
+            self.root.destroy()
+
+        os._exit(0)
 
     def submit_command(self):
         """Submit command from text entry box."""

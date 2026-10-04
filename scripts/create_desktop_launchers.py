@@ -1,16 +1,19 @@
 """
 Cross-Platform Desktop Launcher & Shortcut Generator for Luga Assist.
-Creates 100% GUI double-clickable application launchers on the user's Desktop
+Creates 100% GUI single unified application launcher on the user's Desktop
 for macOS, Windows, and Linux.
 
-Zero Terminal required for end users:
-1. "Luga Assist" -> Starts background engine + Opens WebUI + Audio chime
-2. "Dừng Luga" -> Stops background engine + Shows notification
-3. "Trạng thái Luga" -> Shows native status dialog / alert
+Strictly 1 Single App on Desktop:
+- "Luga Assist" -> Starts unified app + Spotlight Chat HUD + Voice & Hotkeys (F7, F8, F9).
+- Zero terminal window required.
+- Zero browser tabs opened automatically.
+- All controls (Stop app, Change mode, Chat, Voice, Web) are accessible right inside
+  the Spotlight HUD (F7) and global hotkeys!
 """
 import sys
 import os
 import stat
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -20,7 +23,6 @@ def get_desktop_dir() -> Path:
     desktop = Path.home() / "Desktop"
     if desktop.exists():
         return desktop
-    # Fallback to home if Desktop folder doesn't exist
     return Path.home()
 
 
@@ -28,9 +30,26 @@ def create_macos_apps():
     desktop = get_desktop_dir()
     python_bin = sys.executable
 
-    # 1. Luga Assist.app (Start & Open WebUI)
-    app_start = desktop / "Luga Assist.app"
-    macos_dir = app_start / "Contents" / "MacOS"
+    # 1. Clean up any fragmented legacy desktop apps
+    legacy_apps = [
+        desktop / "Chat Nhanh (Spotlight).app",
+        desktop / "Dừng Luga.app",
+        desktop / "Trạng thái Luga.app",
+    ]
+    for old_app in legacy_apps:
+        if old_app.exists():
+            try:
+                if old_app.is_dir():
+                    shutil.rmtree(old_app)
+                else:
+                    old_app.unlink(missing_ok=True)
+                print(f"🧹 Đã dọn dẹp ứng dụng phân mảnh: {old_app.name}")
+            except Exception as e:
+                print(f"⚠️ Không thể xóa {old_app.name}: {e}")
+
+    # 2. Unified "Luga Assist.app"
+    app_target = desktop / "Luga Assist.app"
+    macos_dir = app_target / "Contents" / "MacOS"
     macos_dir.mkdir(parents=True, exist_ok=True)
 
     info_plist = """<?xml version="1.0" encoding="UTF-8"?>
@@ -52,83 +71,37 @@ def create_macos_apps():
 </dict>
 </plist>
 """
-    with open(app_start / "Contents" / "Info.plist", "w", encoding="utf-8") as f:
+    with open(app_target / "Contents" / "Info.plist", "w", encoding="utf-8") as f:
         f.write(info_plist)
 
-    launcher_start_script = f"""#!/bin/bash
-cd "{BASE_DIR}"
-"{python_bin}" -m app.daemon start >/dev/null 2>&1
-open "http://localhost:8000"
-osascript -e 'display notification "Luga Assist đã sẵn sàng phục vụ!" with title "Luga Assist" subtitle "Đang hoạt động"'
+    # Launcher checks if Luga is already running. If so, simply triggers HUD show.
+    # Otherwise, starts python -m app.main directly.
+    launcher_script = f"""#!/bin/bash
+BASE_DIR="{BASE_DIR}"
+PYTHON_BIN="{python_bin}"
+
+# 1. Check if Luga Assist is already running in background
+if curl -s -m 1 "http://localhost:8000/api/status" >/dev/null 2>&1; then
+    curl -s -m 1 -X POST "http://localhost:8000/api/spotlight/show" >/dev/null 2>&1
+    osascript -e 'display notification "Luga Assist đã hoạt động. Bấm F7 để Chat, F8 để Nói, F9 để Đổi chế độ." with title "Luga Assist"' >/dev/null 2>&1
+    exit 0
+fi
+
+# 2. Start unified Luga Assist process
+cd "$BASE_DIR"
+exec "$PYTHON_BIN" -m app.main
 """
     launcher_file = macos_dir / "launcher"
     with open(launcher_file, "w", encoding="utf-8") as f:
-        f.write(launcher_start_script)
+        f.write(launcher_script)
     launcher_file.chmod(launcher_file.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-    # 2. Dừng Luga.app (Stop)
-    app_stop = desktop / "Dừng Luga.app"
-    macos_stop_dir = app_stop / "Contents" / "MacOS"
-    macos_stop_dir.mkdir(parents=True, exist_ok=True)
-
-    with open(app_stop / "Contents" / "Info.plist", "w", encoding="utf-8") as f:
-        f.write(info_plist.replace("Luga Assist", "Dừng Luga").replace("com.luga.assist", "com.luga.stop"))
-
-    launcher_stop_script = f"""#!/bin/bash
-cd "{BASE_DIR}"
-"{python_bin}" -m app.daemon stop >/dev/null 2>&1
-osascript -e 'display notification "Luga Assist đã dừng hoàn toàn." with title "Luga Assist" subtitle "Đã tắt"'
-"""
-    launcher_stop_file = macos_stop_dir / "launcher"
-    with open(launcher_stop_file, "w", encoding="utf-8") as f:
-        f.write(launcher_stop_script)
-    launcher_stop_file.chmod(launcher_stop_file.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-    # 3. Trạng thái Luga.app (Check Status)
-    app_status = desktop / "Trạng thái Luga.app"
-    macos_status_dir = app_status / "Contents" / "MacOS"
-    macos_status_dir.mkdir(parents=True, exist_ok=True)
-
-    with open(app_status / "Contents" / "Info.plist", "w", encoding="utf-8") as f:
-        f.write(info_plist.replace("Luga Assist", "Trạng thái Luga").replace("com.luga.assist", "com.luga.status"))
-
-    launcher_status_script = f"""#!/bin/bash
-cd "{BASE_DIR}"
-STATUS=$("{python_bin}" -c "
-import urllib.request, json
-try:
-    with urllib.request.urlopen('http://localhost:8000/api/system/status', timeout=1.5) as r:
-        d = json.loads(r.read())
-        mode = d.get('mode_label', 'Không rõ')
-        gem = 'Sẵn sàng' if d.get('gemini_ready') else 'Chưa kết nối'
-        print(f'🟢 Luga Assist đang HOẠT ĐỘNG!\\\\n\\\\n• Chế độ: {{mode}}\\\\n• Gemini AI: {{gem}}\\\\n• Độ phân giải: {{d.get(\"screen_resolution\")}}\\\\n• Tiến trình PID: {{d.get(\"pid\")}}\\\\n\\\\n🎙️ Phím tắt Micro: F8 hoặc phím Space\\\\n🌐 Giao diện Web: http://localhost:8000')
-except Exception:
-    print('🔴 Luga Assist hiện ĐANG DỪNG (Không chạy ngầm).\\\\n\\\\nHãy bấm đôi vào Luga Assist trên Desktop để khởi động.')
-")
-osascript -e "display dialog \\"$STATUS\\" with title \\"Luga Assist - Trạng thái hệ thống\\" buttons {{\\"OK\\"}} default button \\"OK\\""
-"""
-    # 4. Chat Nhanh (Spotlight).app (Popup Chat)
-    app_chat = desktop / "Chat Nhanh (Spotlight).app"
-    macos_chat_dir = app_chat / "Contents" / "MacOS"
-    macos_chat_dir.mkdir(parents=True, exist_ok=True)
-
-    with open(app_chat / "Contents" / "Info.plist", "w", encoding="utf-8") as f:
-        f.write(info_plist.replace("Luga Assist", "Chat Nhanh (Spotlight)").replace("com.luga.assist", "com.luga.spotlight"))
-
-    launcher_chat_script = f"""#!/bin/bash
-cd "{BASE_DIR}"
-"{python_bin}" -m app.spotlight_ui >/dev/null 2>&1 &
-"""
-    launcher_chat_file = macos_chat_dir / "launcher"
-    with open(launcher_chat_file, "w", encoding="utf-8") as f:
-        f.write(launcher_chat_script)
-    launcher_chat_file.chmod(launcher_chat_file.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-    print("✅ [macOS] Đã tạo thành công các ứng dụng Desktop:")
-    print(f"   • {app_start}")
-    print(f"   • {app_chat}")
-    print(f"   • {app_stop}")
-    print(f"   • {app_status}")
+    print("✅ [macOS] Đã thiết lập 1 ứng dụng DUY NHẤT trên Desktop:")
+    print(f"   • {app_target}")
+    print("👉 Khi mở Luga Assist:")
+    print("   - Cửa sổ Chat Nổi (F7) sẽ hiển thị ngay lập tức để nhập lệnh.")
+    print("   - Nhấn F7 để Bật/Tắt chat, Esc để ẩn hoàn toàn, F8 để nói qua Micro, F9 để đổi chế độ.")
+    print("   - Nút '🛑 Tắt Luga' có sẵn ngay trên thanh chat để thoát hoàn toàn.")
 
 
 def create_windows_launchers():
@@ -136,80 +109,59 @@ def create_windows_launchers():
     scripts_dir = BASE_DIR / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Start VBS script (Zero cmd window)
+    # Clean up legacy shortcuts
+    legacy_shortcuts = [
+        desktop / "Chat Nhanh (Spotlight).lnk",
+        desktop / "Dừng Luga.lnk",
+        desktop / "Trạng thái Luga.lnk",
+    ]
+    for old_s in legacy_shortcuts:
+        if old_s.exists():
+            try:
+                old_s.unlink(missing_ok=True)
+                print(f"🧹 Đã dọn dẹp shortcut cũ: {old_s.name}")
+            except Exception:
+                pass
+
+    # Clean up obsolete vbs files in scripts/
+    for obsolete in ["stop_luga_desktop.vbs", "status_luga_desktop.vbs", "start_spotlight_desktop.vbs"]:
+        (scripts_dir / obsolete).unlink(missing_ok=True)
+
+    # Determine pythonw executable to suppress console window
+    python_cmd = "python"
+    pythonw = Path(sys.executable).parent / "pythonw.exe"
+    if pythonw.exists():
+        python_cmd = f'"{pythonw}"'
+
     vbs_start = scripts_dir / "start_luga_desktop.vbs"
     with open(vbs_start, "w", encoding="utf-8") as f:
         f.write(f'''Set WshShell = CreateObject("WScript.Shell")
 WshShell.CurrentDirectory = "{BASE_DIR}"
-WshShell.Run "python -m app.daemon start", 0, True
-WshShell.Run "http://localhost:8000", 1, False
-''')
 
-    # 2. Stop VBS script
-    vbs_stop = scripts_dir / "stop_luga_desktop.vbs"
-    with open(vbs_stop, "w", encoding="utf-8") as f:
-        f.write(f'''Set WshShell = CreateObject("WScript.Shell")
-WshShell.CurrentDirectory = "{BASE_DIR}"
-WshShell.Run "python -m app.daemon stop", 0, True
-MsgBox "Luga Assist đã dừng hoàn toàn.", 64, "Luga Assist"
-''')
+On Error Resume Next
+Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+http.setTimeouts 500, 500, 500, 500
+http.Open "GET", "http://127.0.0.1:8000/api/status", False
+http.Send
 
-    # 3. Status VBS script
-    vbs_status = scripts_dir / "status_luga_desktop.vbs"
-    with open(vbs_status, "w", encoding="utf-8") as f:
-        f.write(f'''Set WshShell = CreateObject("WScript.Shell")
-WshShell.CurrentDirectory = "{BASE_DIR}"
-Set objExec = WshShell.Exec("python -c ""import urllib.request, json; (lambda: print('🟢 Luga Assist đang HOẠT ĐỘNG!\\n\\nChế độ: ' + json.loads(urllib.request.urlopen('http://localhost:8000/api/system/status').read().decode())['mode_label'] + '\\nMicro: Phím F8'))()"" ")
-strOut = ""
-Do While Not objExec.StdOut.AtEndOfStream
-    strOut = strOut & objExec.StdOut.ReadLine() & vbCrLf
-Loop
-If strOut = "" Then
-    strOut = "🔴 Luga Assist hiện ĐANG DỪNG.\\n\\nHãy bấm vào Luga Assist để khởi động."
+If Err.Number = 0 And http.Status = 200 Then
+    http.Open "POST", "http://127.0.0.1:8000/api/spotlight/show", False
+    http.Send
+Else
+    WshShell.Run {python_cmd} & " -m app.main", 0, False
 End If
-MsgBox strOut, 64, "Luga Assist - Trạng thái"
 ''')
 
-    # 4. Spotlight Chat VBS script
-    vbs_chat = scripts_dir / "start_spotlight_desktop.vbs"
-    with open(vbs_chat, "w", encoding="utf-8") as f:
-        f.write(f'''Set WshShell = CreateObject("WScript.Shell")
-WshShell.CurrentDirectory = "{BASE_DIR}"
-WshShell.Run "python -m app.spotlight_ui", 0, False
-''')
-
-    # Create Shortcuts on Desktop via PowerShell
+    # Create single shortcut on Desktop via PowerShell
     ps_cmd = f'''
 $wsh = New-Object -ComObject WScript.Shell;
 $desktop = [Environment]::GetFolderPath('Desktop');
-
-$s1 = $wsh.CreateShortcut("$desktop\\Luga Assist.lnk");
-$s1.TargetPath = "wscript.exe";
-$s1.Arguments = '"{vbs_start}"';
-$s1.WorkingDirectory = '{BASE_DIR}';
-$s1.Description = "Khởi động Luga Assist";
-$s1.Save();
-
-$s2 = $wsh.CreateShortcut("$desktop\\Dừng Luga.lnk");
-$s2.TargetPath = "wscript.exe";
-$s2.Arguments = '"{vbs_stop}"';
-$s2.WorkingDirectory = '{BASE_DIR}';
-$s2.Description = "Dừng Luga Assist";
-$s2.Save();
-
-$s3 = $wsh.CreateShortcut("$desktop\\Trạng thái Luga.lnk");
-$s3.TargetPath = "wscript.exe";
-$s3.Arguments = '"{vbs_status}"';
-$s3.WorkingDirectory = '{BASE_DIR}';
-$s3.Description = "Kiểm tra trạng thái Luga Assist";
-$s3.Save();
-
-$s4 = $wsh.CreateShortcut("$desktop\\Chat Nhanh (Spotlight).lnk");
-$s4.TargetPath = "wscript.exe";
-$s4.Arguments = '"{vbs_chat}"';
-$s4.WorkingDirectory = '{BASE_DIR}';
-$s4.Description = "Cửa sổ Chat Nổi Spotlight";
-$s4.Save();
+$s = $wsh.CreateShortcut("$desktop\\Luga Assist.lnk");
+$s.TargetPath = "wscript.exe";
+$s.Arguments = '"{vbs_start}"';
+$s.WorkingDirectory = '{BASE_DIR}';
+$s.Description = "Khởi động Luga Assist - Nhấn F7 để Chat, F8 để Nói";
+$s.Save();
 '''
     flags = 0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
     subprocess.run(
@@ -218,11 +170,8 @@ $s4.Save();
         capture_output=True,
         creationflags=flags
     )
-    print("✅ [Windows] Đã tạo thành công các Shortcut Desktop:")
+    print("✅ [Windows] Đã tạo thành công 1 Shortcut DUY NHẤT trên Desktop:")
     print(f"   • {desktop / 'Luga Assist.lnk'}")
-    print(f"   • {desktop / 'Chat Nhanh (Spotlight).lnk'}")
-    print(f"   • {desktop / 'Dừng Luga.lnk'}")
-    print(f"   • {desktop / 'Trạng thái Luga.lnk'}")
 
 
 def main():

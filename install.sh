@@ -85,11 +85,11 @@ fi
 echo -e "${GREEN}✓ Lệnh 'luga' đã được cấu hình toàn cầu!${NC}"
 echo -e "  Từ bây giờ, bạn có thể mở bất kỳ terminal nào và gõ lệnh ${CYAN}luga${NC} mà không cần 'cd'."
 
-# 4. Create Desktop Applications (Zero Terminal Required)
+# 4. Create Desktop Application (Zero Terminal Required)
 echo ""
-echo -e "${YELLOW}[4/6] Đang tạo các ứng dụng lối tắt trên Màn hình chính (Desktop)...${NC}"
+echo -e "${YELLOW}[4/6] Đang tạo ứng dụng duy nhất trên Màn hình chính (Desktop)...${NC}"
 python3 scripts/create_desktop_launchers.py
-echo -e "${GREEN}✓ Đã tạo thành công các app 'Luga Assist', 'Dừng Luga', 'Trạng thái Luga' trên Desktop!${NC}"
+echo -e "${GREEN}✓ Đã tạo thành công ứng dụng duy nhất 'Luga Assist' trên Desktop!${NC}"
 echo -e "  Người dùng thông thường chỉ cần bấm đúp chuột vào Desktop mà không cần mở terminal."
 
 # 5. Check Google Chrome
@@ -124,12 +124,13 @@ echo ""
 echo -e "${CYAN}${BOLD}======================================================================${NC}"
 echo -e "${GREEN}${BOLD}             🎉 CÀI ĐẶT LUGA ASSIST HOÀN TẤT THÀNH CÔNG!             ${NC}"
 echo -e "${CYAN}${BOLD}======================================================================${NC}"
-echo -e "${BOLD}DÀNH CHO NGƯỜI DÙNG THÔNG THƯỜNG (KHÔNG CẦN TERMINAL):${NC}"
-echo -e "  🖱️ ${CYAN}Bấm đôi 'Luga Assist.app' trên Desktop${NC}    : Bật app và mở giao diện Web"
-echo -e "  🛑 ${CYAN}Bấm đôi 'Dừng Luga.app' trên Desktop${NC}      : Tắt app ngay lập tức"
-echo -e "  ℹ️ ${CYAN}Bấm đôi 'Trạng thái Luga.app' trên Desktop${NC} : Xem nhanh trạng thái hệ thống"
-echo -e "  🌐 ${CYAN}Nút '🛑 Tắt Luga' trên góc WebUI${NC}          : Tắt app bằng 1 cú nhấp chuột"
-echo -e "  🎙️ ${CYAN}Phím F8 (Nói qua Micro)${NC}                   : 'Kiểm tra trạng thái', 'Tắt trợ lý', 'Đổi chế độ'"
+echo -e "${BOLD}CHỈ 1 ỨNG DỤNG DUY NHẤT - ĐIỀU KHIỂN TOÀN BỘ QUA PHÍM TẮT:${NC}"
+echo -e "  🖱️ ${CYAN}Mở 'Luga Assist' trên Desktop${NC}         : Khởi động app và hiện ngay thanh Chat Nổi"
+echo -e "  ⌨️ ${CYAN}Phím F7 (hoặc Ctrl+Alt+Space)${NC}         : Bật / Tắt thanh Chat Nổi (Tự động lấy nét gõ lệnh)"
+echo -e "  ⌨️ ${CYAN}Phím Esc${NC}                              : Ẩn thanh chat để màn hình thông thoáng cho AI"
+echo -e "  🎙️ ${CYAN}Phím F8${NC}                               : Nhấn để nói trực tiếp qua Micro"
+echo -e "  🔄 ${CYAN}Phím F9${NC}                               : Chuyển đổi giữa [Điều khiển PC] và [Trò chuyện AI]"
+echo -e "  🛑 ${CYAN}Nút '🛑 Tắt Luga' trên thanh chat${NC}     : Tắt hoàn toàn ứng dụng"
 echo ""
 echo -e "${BOLD}DÀNH CHO LẬP TRÌNH VIÊN / TERMINAL (Toàn cục ở mọi thư mục):${NC}"
 echo -e "  • ${CYAN}luga start${NC}    : Khởi động app chạy ngầm"

@@ -59,12 +59,13 @@ echo.
 echo ======================================================================
 echo              🎉 CÀI ĐẶT LUGA ASSIST HOÀN TẤT THÀNH CÔNG!              
 echo ======================================================================
-echo DÀNH CHO NGƯỜI DÙNG THÔNG THƯỜNG (KHÔNG CẦN TERMINAL/CMD):
-echo   🖱️ Bấm đôi 'Luga Assist' trên Desktop     : Bật app và mở Web
-echo   🛑 Bấm đôi 'Dừng Luga' trên Desktop       : Tắt app ngay lập tức
-echo   ℹ️ Bấm đôi 'Trạng thái Luga' trên Desktop : Xem trạng thái app
-echo   🌐 Nút '🛑 Tắt Luga' trên góc WebUI       : Tắt app bằng 1 click
-echo   🎙️ Phím F8 (Nói qua Micro)                : 'Kiểm tra trạng thái', 'Tắt trợ lý', 'Đổi chế độ'
+echo CHỈ 1 ỨNG DỤNG DUY NHẤT - ĐIỀU KHIỂN TOÀN BỘ QUA PHÍM TẮT:
+echo   🖱️ Bấm đôi 'Luga Assist' trên Desktop : Khởi động app và hiện thanh Chat Nổi
+echo   ⌨️ Phím F7 (hoặc Ctrl+Alt+Space)       : Bật / Tắt thanh Chat Nổi (Auto focus)
+echo   ⌨️ Phím Esc                            : Ẩn thanh chat để màn hình thông thoáng cho AI
+echo   🎙️ Phím F8                             : Nhấn để nói trực tiếp qua Micro
+echo   🔄 Phím F9                             : Chuyển đổi giữa [Điều khiển PC] và [Trò chuyện AI]
+echo   🛑 Nút '🛑 Tắt Luga' trên thanh chat   : Tắt hoàn toàn ứng dụng
 echo.
 echo DÀNH CHO LẬP TRÌNH VIÊN / CMD (Toàn cục ở mọi thư mục):
 echo   • luga start    : Khởi động app chạy ngầm
