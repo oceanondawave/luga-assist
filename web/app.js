@@ -1,27 +1,45 @@
 /**
  * Luga Assist - Web Interface Logic
+ * Supports Computer Control Mode & Conversational AI Chat Mode.
  * Handles Web Speech API (Vietnamese), WebSockets, Sound Earcons, and Accessible Hotkeys.
  */
 
 document.addEventListener("DOMContentLoaded", () => {
-  // DOM Elements
-  const btnMic = document.getElementById("btnMic");
-  const speechDisplay = document.getElementById("speechDisplay");
+  // DOM Elements - Header & Status
+  const tabBtnControl = document.getElementById("tabBtnControl");
+  const tabBtnChat = document.getElementById("tabBtnChat");
+  const panelControl = document.getElementById("panelControl");
+  const panelChat = document.getElementById("panelChat");
   const agentDot = document.getElementById("agentDot");
   const agentStatusText = document.getElementById("agentStatusText");
   const extDot = document.getElementById("extDot");
   const extStatusText = document.getElementById("extStatusText");
+
+  // DOM Elements - Control Mode
+  const btnMic = document.getElementById("btnMic");
+  const speechDisplay = document.getElementById("speechDisplay");
   const activityLog = document.getElementById("activityLog");
   const previewPlaceholder = document.getElementById("previewPlaceholder");
   const lastActionImg = document.getElementById("lastActionImg");
   const selectVoice = document.getElementById("selectVoice");
   const btnReadScreen = document.getElementById("btnReadScreen");
 
+  // DOM Elements - Chat Mode
+  const chatThread = document.getElementById("chatThread");
+  const chatThinking = document.getElementById("chatThinking");
+  const chatForm = document.getElementById("chatForm");
+  const chatInput = document.getElementById("chatInput");
+  const btnChatMic = document.getElementById("btnChatMic");
+  const btnChatClear = document.getElementById("btnChatClear");
+  const chkChatTTS = document.getElementById("chkChatTTS");
+
   let ws = null;
   let isListening = false;
+  let isChatListening = false;
   let recognition = null;
   let audioCtx = null;
   let continuousMode = false;
+  let currentMode = "control"; // "control" or "chat"
 
   // Initialize Web Audio API for Earcons
   function getAudioContext() {
@@ -66,21 +84,62 @@ document.addEventListener("DOMContentLoaded", () => {
     playTone(220, "sawtooth", 0.25);
   }
 
-  // 1. Initialize Web Speech API for Vietnamese
+  // 1. Mode Switch Handler
+  function switchMode(newMode, notifyServer = true) {
+    if (newMode !== "control" && newMode !== "chat") return;
+    currentMode = newMode;
+
+    if (currentMode === "control") {
+      tabBtnControl.classList.add("active");
+      tabBtnControl.setAttribute("aria-selected", "true");
+      tabBtnChat.classList.remove("active");
+      tabBtnChat.setAttribute("aria-selected", "false");
+
+      panelControl.style.display = "grid";
+      panelChat.style.display = "none";
+    } else {
+      tabBtnChat.classList.add("active");
+      tabBtnChat.setAttribute("aria-selected", "true");
+      tabBtnControl.classList.remove("active");
+      tabBtnControl.setAttribute("aria-selected", "false");
+
+      panelControl.style.display = "none";
+      panelChat.style.display = "flex";
+      chatInput?.focus();
+    }
+
+    if (notifyServer && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: "SWITCH_MODE",
+        mode: currentMode,
+        announce: true,
+      }));
+    }
+  }
+
+  tabBtnControl.addEventListener("click", () => switchMode("control"));
+  tabBtnChat.addEventListener("click", () => switchMode("chat"));
+
+  // 2. Web Speech API for Vietnamese
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
   if (SpeechRecognition) {
     recognition = new SpeechRecognition();
-    recognition.lang = "vi-VN"; // Vietnamese language
+    recognition.lang = "vi-VN";
     recognition.continuous = false;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
       isListening = true;
-      btnMic.classList.add("listening");
-      speechDisplay.innerText = "Đang lắng nghe giọng nói của bạn...";
-      speechDisplay.style.borderColor = "var(--accent-red)";
+      if (isChatListening) {
+        btnChatMic.classList.add("listening");
+        chatInput.placeholder = "Đang lắng nghe giọng nói của bạn...";
+      } else {
+        btnMic.classList.add("listening");
+        speechDisplay.innerText = "Đang lắng nghe giọng nói của bạn...";
+        speechDisplay.style.borderColor = "var(--accent-red)";
+      }
       soundStartListening();
     };
 
@@ -96,21 +155,30 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
 
-      if (interimTranscript) {
-        speechDisplay.innerText = interimTranscript;
-      }
-
-      if (finalTranscript) {
-        finalTranscript = finalTranscript.trim();
-        speechDisplay.innerText = `"${finalTranscript}"`;
-        sendVoiceCommand(finalTranscript);
+      if (isChatListening) {
+        if (interimTranscript) chatInput.value = interimTranscript;
+        if (finalTranscript) {
+          chatInput.value = finalTranscript.trim();
+          sendChatMessage(finalTranscript.trim());
+        }
+      } else {
+        if (interimTranscript) speechDisplay.innerText = interimTranscript;
+        if (finalTranscript) {
+          finalTranscript = finalTranscript.trim();
+          speechDisplay.innerText = `"${finalTranscript}"`;
+          sendVoiceCommand(finalTranscript);
+        }
       }
     };
 
     recognition.onerror = (event) => {
       console.warn("[SpeechRecognition] Error:", event.error);
       if (event.error !== "no-speech") {
-        speechDisplay.innerText = `Lỗi nhận diện âm thanh: ${event.error}`;
+        if (isChatListening) {
+          chatInput.placeholder = `Lỗi nhận diện: ${event.error}`;
+        } else {
+          speechDisplay.innerText = `Lỗi nhận diện âm thanh: ${event.error}`;
+        }
         soundError();
       }
       stopListening();
@@ -118,16 +186,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     recognition.onend = () => {
       stopListening();
-      if (continuousMode) {
+      if (continuousMode && currentMode === "control") {
         setTimeout(startListening, 1000);
       }
     };
   } else {
-    speechDisplay.innerText = "Trình duyệt của bạn không hỗ trợ Web Speech API. Vui lòng mở bằng Google Chrome.";
+    speechDisplay.innerText = "Trình duyệt không hỗ trợ Web Speech API. Vui lòng mở trên Google Chrome.";
   }
 
-  function startListening() {
+  function startListening(forChat = false) {
     if (!recognition || isListening) return;
+    isChatListening = forChat;
     try {
       recognition.start();
     } catch (e) {
@@ -138,7 +207,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function stopListening() {
     isListening = false;
     btnMic.classList.remove("listening");
+    btnChatMic.classList.remove("listening");
     speechDisplay.style.borderColor = "var(--border)";
+    chatInput.placeholder = "Nhập câu hỏi hoặc nhấn nút Micro bên phải để nói...";
     soundStopListening();
   }
 
@@ -147,11 +218,20 @@ document.addEventListener("DOMContentLoaded", () => {
       recognition.stop();
       stopListening();
     } else {
-      startListening();
+      startListening(false);
     }
   });
 
-  // 2. Connect WebSocket to Local Agent
+  btnChatMic.addEventListener("click", () => {
+    if (isListening) {
+      recognition.stop();
+      stopListening();
+    } else {
+      startListening(true);
+    }
+  });
+
+  // 3. Connect WebSocket to Local Agent
   function connectWebSocket() {
     const loc = window.location;
     const wsUrl = `ws://${loc.hostname || "127.0.0.1"}:${loc.port || "8000"}/ws/webui`;
@@ -181,14 +261,23 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function handleServerMessage(msg) {
+    // Mode Changed Notification
+    if (msg.type === "MODE_CHANGED") {
+      switchMode(msg.mode, false);
+      return;
+    }
+
     if (msg.type === "STATUS_UPDATE") {
-      // Update Gemini connection status
       if (msg.gemini_ready || msg.extension_connected) {
         extDot.classList.add("online");
         extStatusText.innerText = "Google Gemini: Đã sẵn sàng (Chạy ngầm)";
       } else {
         extDot.classList.remove("online");
         extStatusText.innerText = "Google Gemini: Đang chờ Extension";
+      }
+
+      if (msg.mode && msg.mode !== currentMode) {
+        switchMode(msg.mode, false);
       }
     } else if (msg.type === "ACTION_PROGRESS") {
       speechDisplay.innerText = msg.message;
@@ -202,13 +291,36 @@ document.addEventListener("DOMContentLoaded", () => {
         lastActionImg.style.display = "block";
         previewPlaceholder.style.display = "none";
       }
+    } else if (msg.type === "CHAT_PROGRESS") {
+      chatThinking.style.display = "flex";
+      chatThread.scrollTop = chatThread.scrollHeight;
+    } else if (msg.type === "CHAT_RESPONSE") {
+      chatThinking.style.display = "none";
+      appendChatBubble("ai", msg.response);
+      soundSuccess();
+    } else if (msg.type === "CHAT_CLEARED") {
+      chatThread.innerHTML = `
+        <div class="chat-bubble ai">
+          <div class="chat-avatar" aria-hidden="true">🤖</div>
+          <div class="chat-content">
+            <div class="chat-sender">Gemini Assistant</div>
+            <div class="chat-text">✨ Phiên trò chuyện đã được làm mới. Hãy đặt câu hỏi bất kỳ cho tôi nhé!</div>
+          </div>
+        </div>
+      `;
     } else if (msg.type === "ERROR") {
+      chatThinking.style.display = "none";
       speechDisplay.innerText = `Lỗi: ${msg.message}`;
       soundError();
-      appendLog(msg.user_command || "Thao tác", msg.message, { success: false });
+      if (currentMode === "control") {
+        appendLog(msg.user_command || "Thao tác", msg.message, { success: false });
+      } else {
+        appendChatBubble("ai", `⚠️ Lỗi: ${msg.message}`);
+      }
     }
   }
 
+  // 4. Send Commands & Chat Messages
   function sendVoiceCommand(text) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       speechDisplay.innerText = "Chưa kết nối tới Local Agent. Hãy chắc chắn server đang chạy!";
@@ -227,6 +339,87 @@ document.addEventListener("DOMContentLoaded", () => {
     );
   }
 
+  function sendChatMessage(text) {
+    if (!text) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      appendChatBubble("ai", "⚠️ Chưa kết nối tới Local Agent. Vui lòng kiểm tra lại server.");
+      soundError();
+      return;
+    }
+
+    appendChatBubble("user", text);
+    chatInput.value = "";
+    chatThinking.style.display = "flex";
+    chatThread.scrollTop = chatThread.scrollHeight;
+
+    ws.send(
+      JSON.stringify({
+        type: "CHAT_MESSAGE",
+        message: text,
+        voice: selectVoice.value,
+        speak: chkChatTTS.checked,
+      })
+    );
+  }
+
+  function appendChatBubble(sender, text) {
+    const bubble = document.createElement("div");
+    bubble.className = `chat-bubble ${sender}`;
+
+    const isAI = sender === "ai";
+    const avatar = isAI ? "🤖" : "🗣️";
+    const senderName = isAI ? "Gemini Assistant" : "Bạn";
+
+    // Escape HTML but preserve basic breaks
+    const escaped = text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\n/g, "<br>");
+
+    let actionButton = "";
+    if (isAI) {
+      actionButton = `
+        <button class="btn-speak-again" onclick="window.speakAgain('${encodeURIComponent(text)}')">
+          🔊 Nghe lại
+        </button>
+      `;
+    }
+
+    bubble.innerHTML = `
+      <div class="chat-avatar" aria-hidden="true">${avatar}</div>
+      <div class="chat-content">
+        <div class="chat-sender">${senderName}</div>
+        <div class="chat-text">${escaped}</div>
+        ${actionButton}
+      </div>
+    `;
+
+    chatThread.appendChild(bubble);
+    chatThread.scrollTop = chatThread.scrollHeight;
+  }
+
+  window.speakAgain = function (encodedText) {
+    const text = decodeURIComponent(encodedText);
+    fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text, speak: true }),
+    }).catch(console.error);
+  };
+
+  chatForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const val = chatInput.value.trim();
+    if (val) sendChatMessage(val);
+  });
+
+  btnChatClear.addEventListener("click", () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "CLEAR_CHAT" }));
+    }
+  });
+
   function appendLog(userCmd, aiReply, actionResult) {
     const item = document.createElement("div");
     const isSuccess = actionResult?.success !== false;
@@ -241,20 +434,32 @@ document.addEventListener("DOMContentLoaded", () => {
     activityLog.insertBefore(item, activityLog.firstChild);
   }
 
-  // 3. Hotkey Accessibility Handlers
+  // 5. Accessible Hotkeys Handlers
   window.addEventListener("keydown", (e) => {
-    // Avoid triggering when focused on select or inputs
-    if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
-
-    if (e.code === "Space" && !e.repeat) {
+    // F9: Toggle between Computer Control and Chat Mode
+    if (e.code === "F9") {
       e.preventDefault();
-      if (!isListening) startListening();
-    } else if (e.code === "Escape") {
+      const nextMode = currentMode === "control" ? "chat" : "control";
+      switchMode(nextMode, true);
+      return;
+    }
+
+    // Escape: Cancel listening or speech
+    if (e.code === "Escape") {
       e.preventDefault();
       if (isListening) stopListening();
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "STOP_SPEECH" }));
       }
+      return;
+    }
+
+    // Ignore other keys if user is typing in input fields
+    if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA") return;
+
+    if (e.code === "Space" && !e.repeat) {
+      e.preventDefault();
+      if (!isListening) startListening(currentMode === "chat");
     } else if (e.code === "F2") {
       e.preventDefault();
       continuousMode = !continuousMode;
@@ -267,6 +472,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.addEventListener("keyup", (e) => {
     if (e.code === "Space" && isListening && !continuousMode) {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
       e.preventDefault();
       setTimeout(() => {
         if (recognition && isListening) recognition.stop();
@@ -274,7 +480,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Read screen button
   function triggerReadScreen() {
     sendVoiceCommand("Hãy miêu tả chi tiết những gì đang hiển thị trên màn hình máy tính của tôi.");
   }

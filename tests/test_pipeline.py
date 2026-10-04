@@ -512,6 +512,65 @@ def test_browser_helper():
     assert isinstance(running, bool)
     print("test_browser_helper: PASSED (chrome_exe:", exe, ", running:", running, ")")
 
+def test_chat_mode_and_endpoints():
+    import app.main as main_module
+    from app.native_voice import NativeVoiceListener
+    from app.gemini_service import gemini_service
+
+    # 1. Test mode toggle & set_mode
+    asyncio.run(main_module.set_mode("control", announce=False))
+    assert main_module.current_mode == "control"
+
+    mode1 = asyncio.run(main_module.set_mode("chat", announce=False))
+    assert mode1 == "chat"
+    assert main_module.current_mode == "chat"
+
+    mode2 = asyncio.run(main_module.toggle_mode(announce=False))
+    assert mode2 == "control"
+    assert main_module.current_mode == "control"
+
+    # 2. Test voice intents to switch modes
+    asyncio.run(main_module.process_user_command("Bật chế độ trò chuyện", "vi-VN-HoaiMyNeural"))
+    assert main_module.current_mode == "chat"
+
+    asyncio.run(main_module.process_user_command("Chuyển sang chế độ điều khiển máy tính", "vi-VN-HoaiMyNeural"))
+    assert main_module.current_mode == "control"
+
+    # 3. Test REST endpoint handlers directly
+    res_mode = asyncio.run(main_module.get_current_mode())
+    assert res_mode["status"] == "ok"
+    assert res_mode["mode"] == "control"
+
+    res_set = asyncio.run(main_module.api_set_mode(main_module.SetModePayload(mode="chat", announce=False)))
+    assert res_set["status"] == "ok"
+    assert res_set["mode"] == "chat"
+    assert main_module.current_mode == "chat"
+
+    res_clear = asyncio.run(main_module.api_chat_clear())
+    assert res_clear["status"] == "ok"
+
+    # Reset mode back to control
+    asyncio.run(main_module.api_set_mode(main_module.SetModePayload(mode="control", announce=False)))
+    assert main_module.current_mode == "control"
+
+    # 4. Test NativeVoiceListener with mode toggle callback
+    toggled = []
+    def dummy_toggle():
+        toggled.append(True)
+
+    listener = NativeVoiceListener(
+        on_command_callback=lambda x: None,
+        on_mode_toggle_callback=dummy_toggle
+    )
+    assert listener.on_mode_toggle is dummy_toggle
+    listener.on_mode_toggle()
+    assert len(toggled) == 1
+
+    # 5. Test gemini_service conversation reset
+    gemini_service.reset_conversation()
+
+    print("test_chat_mode_and_endpoints: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -533,7 +592,8 @@ if __name__ == "__main__":
     test_logger_and_file_persistence()
     test_daemon_utilities()
     test_browser_helper()
-    print("\n🎉 ALL TESTS (INCLUDING LOGGING, DAEMON & BACKGROUND BROWSER) PASSED SUCCESSFULLY!")
+    test_chat_mode_and_endpoints()
+    print("\n🎉 ALL TESTS (INCLUDING CHAT MODE & ALL FEATURES) PASSED SUCCESSFULLY!")
 
 
 

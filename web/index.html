@@ -12,9 +12,31 @@
       <div class="logo-icon" aria-hidden="true">🎙️</div>
       <div>
         <h1>Luga Assist</h1>
-        <p style="font-size: 13px; color: var(--text-muted);">Trợ lý AI hỗ trợ người khiếm thị điều khiển máy tính bằng giọng nói</p>
+        <p style="font-size: 13px; color: var(--text-muted);">Trợ lý AI hỗ trợ người khiếm thị điều khiển máy tính & trò chuyện tự nhiên</p>
       </div>
     </div>
+
+    <!-- Mode Selector Bar (F9 to toggle) -->
+    <nav class="mode-tabs" role="tablist" aria-label="Chế độ hoạt động">
+      <button
+        id="tabBtnControl"
+        class="tab-btn active"
+        role="tab"
+        aria-selected="true"
+        aria-controls="panelControl"
+      >
+        <span class="tab-icon">🤖</span> Điều khiển máy tính <span class="tab-badge">F9</span>
+      </button>
+      <button
+        id="tabBtnChat"
+        class="tab-btn"
+        role="tab"
+        aria-selected="false"
+        aria-controls="panelChat"
+      >
+        <span class="tab-icon">💬</span> Trò chuyện AI <span class="tab-badge">F9</span>
+      </button>
+    </nav>
 
     <div class="badge-status-group">
       <div class="status-chip" role="status" aria-live="polite">
@@ -28,18 +50,19 @@
     </div>
   </header>
 
-  <main>
+  <!-- PANEL 1: COMPUTER CONTROL MODE -->
+  <main id="panelControl" class="tab-panel active" role="tabpanel" aria-labelledby="tabBtnControl">
     <!-- Left Column: Voice Interaction & Hotkeys -->
     <section class="card">
       <h2 class="card-title">
-        <span>🎤</span> Tương tác Giọng nói
+        <span>🎤</span> Tương tác Giọng nói (Điều khiển)
       </h2>
 
       <div class="voice-hero">
         <button
           id="btnMic"
           class="mic-button"
-          aria-label="Bấm vào đây hoặc giữ phím cách Space để nói"
+          aria-label="Bấm vào đây hoặc giữ phím cách Space để nói lệnh"
           title="Bấm hoặc giữ phím Space"
         >
           🎙️
@@ -51,12 +74,12 @@
           role="status"
           aria-live="assertive"
         >
-          Nhấn phím Space hoặc bấm Mic để nói lệnh của bạn...
+          Nhấn phím Space hoặc phím F8 để ra lệnh điều khiển...
         </div>
 
         <div class="hotkey-hints">
-          <div><span class="kbd">Phím Space</span> Bấm để nói</div>
-          <div><span class="kbd">Phím F2</span> Bật/tắt nghe liên tục</div>
+          <div><span class="kbd">Phím F8</span> Nói lệnh từ bất cứ đâu</div>
+          <div><span class="kbd">Phím F9</span> Chuyển sang Trò chuyện AI</div>
           <div><span class="kbd">Phím F4</span> Đọc nội dung màn hình</div>
           <div><span class="kbd">Phím Esc</span> Hủy / Dừng đọc</div>
         </div>
@@ -68,16 +91,9 @@
           <option value="vi-VN-HoaiMyNeural" selected>Hoài My (Nữ - Tự nhiên, truyền cảm)</option>
           <option value="vi-VN-NamMinhNeural">Nam Minh (Nam - Giọng đọc chuẩn)</option>
         </select>
-        <button id="btnReadScreen" style="
-          margin-left: auto;
-          background: #1e293b;
-          color: #38bdf8;
-          border: 1px solid #334155;
-          padding: 8px 14px;
-          border-radius: 8px;
-          cursor: pointer;
-          font-weight: 600;
-        ">👁️ Đọc màn hình (F4)</button>
+        <button id="btnReadScreen" class="btn-secondary" style="margin-left: auto;">
+          👁️ Đọc màn hình (F4)
+        </button>
       </div>
     </section>
 
@@ -97,6 +113,86 @@
       <div style="margin-top: 14px; font-weight: 700; font-size: 14px; color: var(--accent-cyan);">Lịch sử thao tác:</div>
       <div class="activity-log" id="activityLog" role="log" aria-live="polite">
         <!-- Log items injected via JS -->
+      </div>
+    </section>
+  </main>
+
+  <!-- PANEL 2: AI CHAT MODE -->
+  <main id="panelChat" class="tab-panel" role="tabpanel" aria-labelledby="tabBtnChat" style="display: none;">
+    <section class="card chat-card">
+      <div class="chat-header">
+        <div class="chat-header-info">
+          <h2>💬 Trò chuyện AI cùng Google Gemini</h2>
+          <p>Hỏi đáp tri thức, tra cứu, dịch thuật, trò chuyện tự nhiên (Màn hình không bị can thiệp)</p>
+        </div>
+        <div class="chat-header-actions">
+          <button id="btnChatClear" class="btn-danger" title="Xóa toàn bộ tin nhắn và bắt đầu hội thoại mới">
+            🗑️ Xóa hội thoại
+          </button>
+        </div>
+      </div>
+
+      <!-- Chat Thread Messages -->
+      <div class="chat-thread" id="chatThread" role="log" aria-live="polite">
+        <div class="chat-bubble ai">
+          <div class="chat-avatar" aria-hidden="true">🤖</div>
+          <div class="chat-content">
+            <div class="chat-sender">Gemini Assistant</div>
+            <div class="chat-text">
+              Xin chào bạn! Đây là <strong>Chế độ Trò chuyện AI (Chat Mode)</strong>. Bạn có thể hỏi đáp mọi thông tin, dịch thuật, tóm tắt hoặc tâm sự tự nhiên. Hệ thống sẽ không chụp màn hình hay điều khiển chuột/bàn phím.
+              <br><br>
+              👉 Bạn có thể gõ câu hỏi vào ô bên dưới hoặc nhấn <strong>F8</strong> để nói trực tiếp!
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Thinking Indicator -->
+      <div class="chat-thinking" id="chatThinking" style="display: none;">
+        <span class="spinner-dot"></span>
+        <span class="spinner-dot"></span>
+        <span class="spinner-dot"></span>
+        <span>Gemini đang suy nghĩ câu trả lời...</span>
+      </div>
+
+      <!-- Chat Input Area -->
+      <div class="chat-composer">
+        <div class="chat-options-row">
+          <label class="checkbox-label">
+            <input type="checkbox" id="chkChatTTS" checked>
+            <span>🔊 Đọc câu trả lời bằng giọng nói (TTS)</span>
+          </label>
+          <span class="composer-hint">💡 Nhấn <strong>F9</strong> để quay lại Chế độ Điều khiển máy tính</span>
+        </div>
+
+        <form id="chatForm" class="chat-input-bar">
+          <input
+            type="text"
+            id="chatInput"
+            class="chat-input"
+            placeholder="Nhập câu hỏi hoặc nhấn nút Micro bên phải để nói..."
+            autocomplete="off"
+            aria-label="Nội dung tin nhắn trò chuyện"
+          >
+          <button
+            type="button"
+            id="btnChatMic"
+            class="chat-mic-btn"
+            title="Nói trực tiếp bằng giọng nói"
+            aria-label="Nói trực tiếp bằng Micro"
+          >
+            🎙️
+          </button>
+          <button
+            type="submit"
+            id="btnChatSend"
+            class="chat-send-btn"
+            title="Gửi tin nhắn"
+            aria-label="Gửi tin nhắn"
+          >
+            Gửi ➔
+          </button>
+        </form>
       </div>
     </section>
   </main>

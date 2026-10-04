@@ -143,8 +143,13 @@ def select_best_transcript(
     return vi_text
 
 class NativeVoiceListener:
-    def __init__(self, on_command_callback: Optional[Callable[[str], None]] = None):
+    def __init__(
+        self,
+        on_command_callback: Optional[Callable[[str], None]] = None,
+        on_mode_toggle_callback: Optional[Callable[[], None]] = None,
+    ):
         self.on_command = on_command_callback
+        self.on_mode_toggle = on_mode_toggle_callback
         self.recognizer = sr.Recognizer()
         self.is_recording = False
         self.is_processing = False
@@ -312,13 +317,20 @@ class NativeVoiceListener:
         """
         def on_press(key):
             try:
-                # F8
+                # F8: Voice trigger
                 if key == keyboard.Key.f8:
                     print("\n[Global Hotkey] Đã nhấn F8 -> Bắt đầu lắng nghe!")
                     self.trigger_voice_flow()
                     return
 
-                # Ctrl + Space
+                # F9: Toggle Mode (Control Mode <-> Chat Mode)
+                if key == keyboard.Key.f9:
+                    print("\n[Global Hotkey] Đã nhấn F9 -> Chuyển đổi chế độ (Điều khiển <-> Trò chuyện AI)!")
+                    if self.on_mode_toggle:
+                        self.on_mode_toggle()
+                    return
+
+                # Ctrl + Space: Alternative voice trigger
                 if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
                     self._current_keys.add("ctrl")
                 elif key == keyboard.Key.space:
@@ -341,6 +353,7 @@ class NativeVoiceListener:
         self._hotkey_listener.start()
         print("\n" + "=" * 65)
         print("🎙️ GLOBAL WAY - TRỢ LÝ TOÀN HỆ THỐNG ĐÃ SẴN SÀNG!")
-        print("👉 Nhấn phím F8 (hoặc Ctrl + Space) BẤT CỨ ĐÂU để nói lệnh.")
+        print("👉 F8 (hoặc Ctrl + Space) : Nói lệnh điều khiển / hỏi đáp")
+        print("👉 F9                     : Chuyển đổi Chế độ Điều khiển <-> Chat Mode")
         print("👉 KHÔNG CẦN MỞ TRÌNH DUYỆT - MÀN HÌNH HOÀN TOÀN THOÁNG ĐÃNG.")
         print("=" * 65 + "\n")

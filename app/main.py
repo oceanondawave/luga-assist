@@ -56,7 +56,14 @@ async def lifespan(app: FastAPI):
             process_user_command(cmd_text, DEFAULT_TTS_VOICE), loop
         )
 
-    native_voice = NativeVoiceListener(on_command_callback=handle_native_voice_command)
+    def handle_native_mode_toggle():
+        print("\n[Global Handler] Đã nhận tín hiệu chuyển đổi chế độ từ phím F9!")
+        asyncio.run_coroutine_threadsafe(toggle_mode(), loop)
+
+    native_voice = NativeVoiceListener(
+        on_command_callback=handle_native_voice_command,
+        on_mode_toggle_callback=handle_native_mode_toggle,
+    )
     native_voice.start_global_hotkeys()
     yield
 
@@ -108,6 +115,7 @@ class ConnectionHub:
             "type": "STATUS_UPDATE",
             "extension_connected": ext_connected,
             "gemini_ready": gemini_service.is_ready or ext_connected,
+            "mode": current_mode,
         }
         dead_clients = []
         for client in self.webui_clients:
@@ -128,7 +136,45 @@ class ConnectionHub:
         for dc in dead_clients:
             self.webui_clients.discard(dc)
 
+# Operating Mode: "control" (Computer Control) or "chat" (AI Conversational Mode)
+current_mode: str = "control"
+
 hub = ConnectionHub()
+
+# Mode Payloads
+class SetModePayload(BaseModel):
+    mode: str
+    announce: Optional[bool] = True
+
+class ChatPayload(BaseModel):
+    message: str
+    voice: Optional[str] = DEFAULT_TTS_VOICE
+    speak: Optional[bool] = True
+
+async def set_mode(mode: str, announce: bool = True) -> str:
+    global current_mode
+    cleaned = (mode or "").strip().lower()
+    if cleaned not in ("control", "chat"):
+        cleaned = "control"
+    current_mode = cleaned
+    print(f"\n[Mode] 🔄 Đã chuyển sang chế độ: {current_mode.upper()}")
+    sound_manager.play_done()
+    await hub.broadcast_webui({
+        "type": "MODE_CHANGED",
+        "mode": current_mode,
+    })
+    if announce:
+        if current_mode == "chat":
+            speech = "Đã chuyển sang chế độ trò chuyện AI. Bạn có thể hỏi đáp tự nhiên mà không cần thao tác màn hình."
+        else:
+            speech = "Đã chuyển sang chế độ điều khiển máy tính."
+        await tts_service.speak(speech)
+    return current_mode
+
+async def toggle_mode(announce: bool = True) -> str:
+    global current_mode
+    new_mode = "chat" if current_mode == "control" else "control"
+    return await set_mode(new_mode, announce=announce)
 
 
 # Session payload from Chrome Extension
@@ -157,8 +203,33 @@ async def get_status():
         "gemini_ready": gemini_service.is_ready or (hub.extension_client is not None),
         "gemini_background_mode": gemini_service.is_ready,
         "extension_connected": hub.extension_client is not None,
+        "mode": current_mode,
         "screen_size": os_controller.get_screen_size(),
     }
+
+@app.get("/api/mode")
+async def get_current_mode():
+    return {"status": "ok", "mode": current_mode}
+
+@app.post("/api/set_mode")
+async def api_set_mode(payload: SetModePayload):
+    mode = await set_mode(payload.mode, announce=payload.announce if payload.announce is not None else True)
+    return {"status": "ok", "mode": mode}
+
+@app.post("/api/chat")
+async def api_chat(payload: ChatPayload):
+    reply = await process_chat_message(
+        payload.message,
+        voice=payload.voice or DEFAULT_TTS_VOICE,
+        speak=payload.speak if payload.speak is not None else True
+    )
+    return {"status": "ok", "response": reply}
+
+@app.post("/api/chat/clear")
+async def api_chat_clear():
+    gemini_service.reset_conversation()
+    await hub.broadcast_webui({"type": "CHAT_CLEARED"})
+    return {"status": "ok"}
 
 @app.post("/api/set_session")
 async def set_session(payload: SessionPayload):
@@ -299,6 +370,22 @@ async def websocket_webui(ws: WebSocket):
                     # Run command processing asynchronously
                     asyncio.create_task(process_user_command(command, voice))
 
+            elif msg_type == "CHAT_MESSAGE":
+                message = data.get("message", "").strip()
+                voice = data.get("voice", DEFAULT_TTS_VOICE)
+                speak = data.get("speak", True)
+                if message:
+                    asyncio.create_task(process_chat_message(message, voice=voice, speak=speak))
+
+            elif msg_type == "SWITCH_MODE":
+                mode = data.get("mode", "control")
+                announce = data.get("announce", True)
+                asyncio.create_task(set_mode(mode, announce=announce))
+
+            elif msg_type == "CLEAR_CHAT":
+                gemini_service.reset_conversation()
+                await hub.broadcast_webui({"type": "CHAT_CLEARED"})
+
             elif msg_type == "STOP_SPEECH":
                 tts_service.stop_speaking()
 
@@ -333,6 +420,85 @@ async def websocket_extension(ws: WebSocket):
         await hub.unregister_extension()
 
 
+# Chat Mode Message Processor (Natural conversation, NO screenshot / OS control)
+async def process_chat_message(message: str, voice: str = DEFAULT_TTS_VOICE, speak: bool = True) -> str:
+    message = (message or "").strip()
+    if not message:
+        return ""
+
+    print(f"\n[Chat Mode] 💬 Nhận tin nhắn: '{message}'")
+    sound_manager.start_pulsing()
+
+    is_gemini_ready = gemini_service.is_ready or (hub.extension_client is not None)
+    if not is_gemini_ready:
+        ensure_background_browser()
+        sound_manager.play_error()
+        err_msg = "Chưa kết nối được với session Google Gemini. Đang tự động kết nối lại ngầm..."
+        await hub.broadcast_webui({
+            "type": "ERROR",
+            "message": err_msg,
+            "user_command": message,
+        })
+        if speak:
+            await tts_service.speak(err_msg)
+        return err_msg
+
+    await hub.broadcast_webui({
+        "type": "CHAT_PROGRESS",
+        "message": "Đang suy nghĩ câu trả lời...",
+        "user_message": message,
+    })
+
+    try:
+        if gemini_service.is_ready:
+            raw_reply = await gemini_service.send_chat_message(message)
+        elif hub.extension_client is not None:
+            task_id = str(uuid.uuid4())
+            loop = asyncio.get_running_loop()
+            future = loop.create_future()
+            hub.pending_tasks[task_id] = future
+            await hub.extension_client.send_json({
+                "type": "EXECUTE_COMMAND",
+                "id": task_id,
+                "prompt": message,
+            })
+            resp_data = await asyncio.wait_for(future, timeout=40.0)
+            raw_reply = resp_data.get("result", "")
+        else:
+            raw_reply = "Chưa có kết nối Google Gemini khả dụng."
+    except Exception as e:
+        sound_manager.play_error()
+        err_text = f"Lỗi khi gửi tin nhắn trò chuyện: {e}"
+        print(f"[Chat Mode] ❌ {err_text}")
+        await hub.broadcast_webui({
+            "type": "ERROR",
+            "message": err_text,
+            "user_command": message,
+        })
+        if speak:
+            await tts_service.speak("Có lỗi khi kết nối với Gemini. Vui lòng thử lại.")
+        return err_text
+
+    sound_manager.play_done()
+
+    # Clean response from citation badges & format for speech
+    clean_reply = strip_citations(raw_reply)
+    speech_to_say = clean_text_for_speech(clean_reply)
+
+    print(f"[Chat Mode] 🤖 Gemini: {clean_reply[:120]}...")
+
+    await hub.broadcast_webui({
+        "type": "CHAT_RESPONSE",
+        "user_message": message,
+        "response": clean_reply,
+    })
+
+    if speak:
+        await tts_service.speak(speech_to_say)
+
+    return clean_reply
+
+
 # Master Pipeline Execution: Autonomous Multi-Step Goal Loop
 MAX_AUTONOMOUS_STEPS = 5
 
@@ -341,6 +507,7 @@ pipeline_lock = asyncio.Lock()
 
 async def process_user_command(user_command: str, voice: str):
     user_cmd_lower = user_command.lower().strip()
+
     # Direct fast-path: voice control for processing sound
     if any(k in user_cmd_lower for k in ("tắt tiếng processing", "ngắt tiếng processing", "tắt âm thanh xử lý", "tắt tiếng bíp", "tắt pulsing", "tắt tiếng nhịp tim")):
         sound_manager.set_pulse_enabled(False)
@@ -354,6 +521,32 @@ async def process_user_command(user_command: str, voice: str):
         sound_manager.play_done()
         msg = "Đã bật lại âm thanh khi xử lý cho bạn."
         await tts_service.speak(msg)
+        return
+
+    # Direct fast-path: Voice intents to switch to Chat Mode
+    chat_mode_intents = (
+        "chuyển sang chế độ chat", "chuyển qua chế độ chat", "bật chế độ chat",
+        "vào chế độ chat", "mở chế độ chat", "chế độ chat",
+        "chuyển sang chế độ trò chuyện", "chuyển qua chế độ trò chuyện",
+        "bật chế độ trò chuyện", "vào chế độ trò chuyện", "chế độ trò chuyện"
+    )
+    if any(intent in user_cmd_lower for intent in chat_mode_intents):
+        await set_mode("chat", announce=True)
+        return
+
+    # Direct fast-path: Voice intents to switch to Control Mode
+    control_mode_intents = (
+        "chuyển sang chế độ điều khiển", "chuyển qua chế độ điều khiển",
+        "bật chế độ điều khiển", "vào chế độ điều khiển", "chế độ điều khiển",
+        "chuyển sang chế độ máy tính", "chế độ điều khiển máy tính", "bật chế độ điều khiển máy tính"
+    )
+    if any(intent in user_cmd_lower for intent in control_mode_intents):
+        await set_mode("control", announce=True)
+        return
+
+    # If currently in Chat Mode, route voice command directly to Chat Mode
+    if current_mode == "chat":
+        await process_chat_message(user_command, voice=voice, speak=True)
         return
 
     if pipeline_lock.locked():

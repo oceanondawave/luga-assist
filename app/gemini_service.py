@@ -23,6 +23,7 @@ class GeminiSessionService:
     def __init__(self):
         self.client: Optional[GeminiClient] = None
         self.chat_session = None
+        self.conversation_session = None
         self.is_ready = False
         self._current_psid: str = ""
         self._current_psidts: str = ""
@@ -150,5 +151,45 @@ class GeminiSessionService:
         if self.client:
             self.chat_session = self._start_chat_safe()
             print("[GeminiSessionService] Đã tạo phiên chat mới thành công.")
+
+    async def send_chat_message(self, message: str) -> str:
+        """
+        Send a natural conversational message to Gemini in Chat Mode.
+        Maintains conversational context across turns with zero screen clutter.
+        """
+        if not self.is_ready or not self.client:
+            raise RuntimeError(
+                "Chưa kết nối được với session Google Gemini. "
+                "Vui lòng đảm bảo Extension đã bật và bạn đã đăng nhập tài khoản Google trên Chrome."
+            )
+
+        if self.conversation_session is None:
+            self.conversation_session = self._start_chat_safe()
+
+        try:
+            print(f"[GeminiSessionService] [Chat Mode] Gửi tin nhắn: \"{message[:60]}...\"")
+            output = await self.conversation_session.send_message(message)
+            response_text = output.text if hasattr(output, "text") else str(output)
+            # Remove any citation badges
+            response_text = re.sub(r"\[\s*cite[^\]]*\]", "", response_text, flags=re.IGNORECASE)
+            return response_text.strip()
+        except Exception as e:
+            err_str = str(e).lower()
+            if "unauthenticated" in err_str or "permission denied" in err_str or "cookie" in err_str:
+                self.is_ready = False
+                self.client = None
+                self.conversation_session = None
+            elif "exhausted" in err_str or "too long" in err_str or "context window" in err_str:
+                self.conversation_session = self._start_chat_safe()
+                output = await self.conversation_session.send_message(message)
+                response_text = output.text if hasattr(output, "text") else str(output)
+                return re.sub(r"\[\s*cite[^\]]*\]", "", response_text, flags=re.IGNORECASE).strip()
+            raise e
+
+    def reset_conversation(self):
+        """Reset conversational chat session."""
+        if self.client:
+            self.conversation_session = self._start_chat_safe()
+            print("[GeminiSessionService] Đã làm mới phiên trò chuyện (Chat Mode).")
 
 gemini_service = GeminiSessionService()
