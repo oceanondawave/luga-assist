@@ -38,7 +38,7 @@ echo.
 echo [3/3] Đang xóa các biểu tượng lối tắt trên Desktop...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$desktop = [Environment]::GetFolderPath('Desktop'); " ^
-    "@('Luga Assist.lnk', 'Dừng Luga.lnk', 'Trạng thái Luga.lnk') | ForEach-Object { " ^
+    "@('Luga Assist.lnk', 'Chat Nhanh (Spotlight).lnk', 'Dừng Luga.lnk', 'Trạng thái Luga.lnk') | ForEach-Object { " ^
     "    $f = Join-Path $desktop $_; " ^
     "    if (Test-Path $f) { Remove-Item $f -Force; Write-Host ('    [✓] Đã xóa ' + $_) -ForegroundColor Green; } " ^
     "}"

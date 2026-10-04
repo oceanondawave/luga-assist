@@ -585,6 +585,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  const btnOpenPopup = document.getElementById("btnOpenPopup");
+  if (btnOpenPopup) {
+    btnOpenPopup.addEventListener("click", () => {
+      window.open('/popup', 'LugaMiniPopup', 'width=460,height=600,top=100,left=100,resizable=yes');
+    });
+  }
+
   // Close modals when clicking backdrop
   window.addEventListener("click", (e) => {
     if (e.target === statusModal) closeStatusModal();

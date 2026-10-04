@@ -20,6 +20,16 @@ class ScreenCapturer:
         self.last_screen_size: Tuple[int, int] = (1920, 1080)
         self.screenshot_path = TEMP_DIR / "current_screen.jpg"
         self.annotated_path = TEMP_DIR / "last_action.jpg"
+        self.pre_capture_hooks = []
+        self.post_capture_hooks = []
+
+    def register_pre_capture_hook(self, hook):
+        if hook not in self.pre_capture_hooks:
+            self.pre_capture_hooks.append(hook)
+
+    def register_post_capture_hook(self, hook):
+        if hook not in self.post_capture_hooks:
+            self.post_capture_hooks.append(hook)
 
     def get_primary_monitor(self, sct: mss.mss) -> Dict[str, Any]:
         """Get the primary monitor specification."""
@@ -33,14 +43,29 @@ class ScreenCapturer:
         Capture the screen, optionally overlay coordinate grid, and return:
         (base64_data_uri, (physical_width, physical_height))
         """
-        with mss.mss() as sct:
-            monitor = self.get_primary_monitor(sct)
-            sct_img = sct.grab(monitor)
-            
-            # Convert to PIL Image
-            img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-            self.last_screen_size = img.size  # (width, height)
-        orig_w, orig_h = img.size
+        # Execute pre-capture hooks (e.g. momentarily hide chat popup for 100% clean screen view)
+        for hook in self.pre_capture_hooks:
+            try:
+                hook()
+            except Exception:
+                pass
+
+        try:
+            with mss.mss() as sct:
+                monitor = self.get_primary_monitor(sct)
+                sct_img = sct.grab(monitor)
+                
+                # Convert to PIL Image
+                img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+                self.last_screen_size = img.size  # (width, height)
+            orig_w, orig_h = img.size
+        finally:
+            # Restore any hidden popup
+            for hook in self.post_capture_hooks:
+                try:
+                    hook()
+                except Exception:
+                    pass
 
         # 1. High-speed scale down first (reduces memory & drawing time by 75%)
         if orig_w > SCREENSHOT_MAX_WIDTH:

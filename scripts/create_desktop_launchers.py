@@ -107,13 +107,26 @@ except Exception:
 ")
 osascript -e "display dialog \\"$STATUS\\" with title \\"Luga Assist - Trạng thái hệ thống\\" buttons {{\\"OK\\"}} default button \\"OK\\""
 """
-    launcher_status_file = macos_status_dir / "launcher"
-    with open(launcher_status_file, "w", encoding="utf-8") as f:
-        f.write(launcher_status_script)
-    launcher_status_file.chmod(launcher_status_file.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    # 4. Chat Nhanh (Spotlight).app (Popup Chat)
+    app_chat = desktop / "Chat Nhanh (Spotlight).app"
+    macos_chat_dir = app_chat / "Contents" / "MacOS"
+    macos_chat_dir.mkdir(parents=True, exist_ok=True)
+
+    with open(app_chat / "Contents" / "Info.plist", "w", encoding="utf-8") as f:
+        f.write(info_plist.replace("Luga Assist", "Chat Nhanh (Spotlight)").replace("com.luga.assist", "com.luga.spotlight"))
+
+    launcher_chat_script = f"""#!/bin/bash
+cd "{BASE_DIR}"
+"{python_bin}" -m app.spotlight_ui >/dev/null 2>&1 &
+"""
+    launcher_chat_file = macos_chat_dir / "launcher"
+    with open(launcher_chat_file, "w", encoding="utf-8") as f:
+        f.write(launcher_chat_script)
+    launcher_chat_file.chmod(launcher_chat_file.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
     print("✅ [macOS] Đã tạo thành công các ứng dụng Desktop:")
     print(f"   • {app_start}")
+    print(f"   • {app_chat}")
     print(f"   • {app_stop}")
     print(f"   • {app_status}")
 
@@ -157,6 +170,14 @@ End If
 MsgBox strOut, 64, "Luga Assist - Trạng thái"
 ''')
 
+    # 4. Spotlight Chat VBS script
+    vbs_chat = scripts_dir / "start_spotlight_desktop.vbs"
+    with open(vbs_chat, "w", encoding="utf-8") as f:
+        f.write(f'''Set WshShell = CreateObject("WScript.Shell")
+WshShell.CurrentDirectory = "{BASE_DIR}"
+WshShell.Run "python -m app.spotlight_ui", 0, False
+''')
+
     # Create Shortcuts on Desktop via PowerShell
     ps_cmd = f'''
 $wsh = New-Object -ComObject WScript.Shell;
@@ -182,6 +203,13 @@ $s3.Arguments = '"{vbs_status}"';
 $s3.WorkingDirectory = '{BASE_DIR}';
 $s3.Description = "Kiểm tra trạng thái Luga Assist";
 $s3.Save();
+
+$s4 = $wsh.CreateShortcut("$desktop\\Chat Nhanh (Spotlight).lnk");
+$s4.TargetPath = "wscript.exe";
+$s4.Arguments = '"{vbs_chat}"';
+$s4.WorkingDirectory = '{BASE_DIR}';
+$s4.Description = "Cửa sổ Chat Nổi Spotlight";
+$s4.Save();
 '''
     flags = 0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
     subprocess.run(
@@ -192,6 +220,7 @@ $s3.Save();
     )
     print("✅ [Windows] Đã tạo thành công các Shortcut Desktop:")
     print(f"   • {desktop / 'Luga Assist.lnk'}")
+    print(f"   • {desktop / 'Chat Nhanh (Spotlight).lnk'}")
     print(f"   • {desktop / 'Dừng Luga.lnk'}")
     print(f"   • {desktop / 'Trạng thái Luga.lnk'}")
 

@@ -61,7 +61,7 @@ echo -e "${GREEN}✓ Đã dọn dẹp biến môi trường shell.${NC}"
 
 echo ""
 echo -e "${YELLOW}[4/5] Đang xóa các ứng dụng Luga trên Màn hình chính (Desktop)...${NC}"
-rm -rf "$HOME/Desktop/Luga Assist.app" "$HOME/Desktop/Dừng Luga.app" "$HOME/Desktop/Trạng thái Luga.app" 2>/dev/null || true
+rm -rf "$HOME/Desktop/Luga Assist.app" "$HOME/Desktop/Chat Nhanh (Spotlight).app" "$HOME/Desktop/Dừng Luga.app" "$HOME/Desktop/Trạng thái Luga.app" 2>/dev/null || true
 echo -e "${GREEN}✓ Đã dọn dẹp các ứng dụng trên Desktop.${NC}"
 
 echo ""

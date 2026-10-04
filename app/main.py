@@ -17,10 +17,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+import subprocess
 import uvicorn
 import webbrowser
 
 from app.config import (
+    BASE_DIR,
     HOST,
     PORT,
     WEB_DIR,
@@ -44,6 +46,28 @@ from app.system_ui import (
 
 # Initialize persistent logging and stdout teeing
 setup_logging()
+
+spotlight_process: Optional[subprocess.Popen] = None
+
+def launch_spotlight_hud() -> Optional[subprocess.Popen]:
+    """Launch native Spotlight Floating Chat HUD in background."""
+    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
+        return None
+    try:
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(BASE_DIR)
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "app.spotlight_ui"],
+            cwd=str(BASE_DIR),
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        print(f"[Lifespan] 🚀 Đã khởi động Cửa sổ Chat Nổi Spotlight HUD (PID: {proc.pid})")
+        return proc
+    except Exception as e:
+        print(f"[Lifespan] ⚠️ Không thể khởi động Spotlight HUD: {e}")
+        return None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -72,7 +96,20 @@ async def lifespan(app: FastAPI):
         on_mode_toggle_callback=handle_native_mode_toggle,
     )
     native_voice.start_global_hotkeys()
+
+    # 4. Start Native Desktop Spotlight Floating Chat HUD (F7 Hotkey)
+    global spotlight_process
+    spotlight_process = launch_spotlight_hud()
+
     yield
+
+    # Clean up Spotlight HUD on server shutdown
+    if spotlight_process:
+        try:
+            spotlight_process.terminate()
+            spotlight_process.wait(timeout=1.0)
+        except Exception:
+            pass
 
 app = FastAPI(title="Luga Assist Local Server", version="1.0.0", lifespan=lifespan)
 
@@ -202,6 +239,14 @@ async def serve_css():
 @app.get("/app.js")
 async def serve_js():
     return FileResponse(str(WEB_DIR / "app.js"))
+
+@app.get("/popup")
+async def serve_popup():
+    return FileResponse(str(WEB_DIR / "popup.html"))
+
+@app.get("/popup.js")
+async def serve_popup_js():
+    return FileResponse(str(WEB_DIR / "popup.js"))
 
 @app.get("/api/status")
 async def get_status():
@@ -579,6 +624,23 @@ async def process_user_command(user_command: str, voice: str = DEFAULT_TTS_VOICE
                 "gemini_ready": gemini_ready,
                 "screen_size": (screen_w, screen_h),
             }
+        }
+
+    # Direct fast-path: Voice intent to explain/open spotlight floating chat
+    spotlight_intents = (
+        "bật chat nhanh", "mở chat nhanh", "bật spotlight", "mở spotlight",
+        "bật popup chat", "mở popup chat", "cửa sổ chat nổi", "bật cửa sổ chat"
+    )
+    if any(intent in user_cmd_lower for intent in spotlight_intents):
+        speech = "Bạn có thể nhấn phím F7 từ bất kỳ đâu trên bàn phím để bật hoặc tắt cửa sổ Chat nổi Luga."
+        sound_manager.play_done()
+        show_desktop_notification("Luga Assist - Chat Nổi", "Nhấn phím F7 để bật/tắt Chat nổi bất cứ lúc nào.")
+        if speak:
+            await tts_service.speak(speech)
+        return {
+            "success": True,
+            "speech": speech,
+            "action_result": {"success": True, "action": "spotlight_info"}
         }
 
     # Direct fast-path: Voice intent to shut down / stop system

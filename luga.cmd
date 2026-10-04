@@ -29,6 +29,10 @@ if "%1"=="start" (
     python scripts\create_desktop_launchers.py
 ) else if "%1"=="shortcuts" (
     python scripts\create_desktop_launchers.py
+) else if "%1"=="spotlight" (
+    python -m app.spotlight_ui
+) else if "%1"=="popup" (
+    python -m app.spotlight_ui
 ) else (
     echo ==========================================================
     echo               LỆNH ĐIỀU KHIỂN LUGA ASSIST (WINDOWS)

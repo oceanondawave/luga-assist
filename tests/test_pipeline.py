@@ -625,6 +625,56 @@ def test_system_ui_and_lifecycle_controls():
 
     print("test_system_ui_and_lifecycle_controls: PASSED")
 
+def test_spotlight_and_screen_capture_hooks():
+    import app.main as main_module
+    from app.screen_capture import screen_capturer
+    from app.native_voice import NativeVoiceListener
+
+    # 1. Test ScreenCapturer pre & post capture hooks (ensuring screen is clean for AI)
+    events = []
+    def dummy_pre():
+        events.append("pre")
+    def dummy_post():
+        events.append("post")
+
+    screen_capturer.register_pre_capture_hook(dummy_pre)
+    screen_capturer.register_post_capture_hook(dummy_post)
+
+    uri, size = screen_capturer.capture(with_grid=False)
+    assert "pre" in events
+    assert "post" in events
+    assert events.index("pre") < events.index("post")
+
+    # Clean up hooks
+    screen_capturer.pre_capture_hooks.remove(dummy_pre)
+    screen_capturer.post_capture_hooks.remove(dummy_post)
+
+    # 2. Test Voice Intent: "mở chat nhanh" / "bật spotlight"
+    res = asyncio.run(main_module.process_user_command("mở chat nhanh", speak=False))
+    assert res["success"] is True
+    assert "F7" in res["speech"]
+    assert res["action_result"]["action"] == "spotlight_info"
+
+    # 3. Test Web popup routes
+    resp_popup = asyncio.run(main_module.serve_popup())
+    assert resp_popup.status_code == 200
+    assert "popup.html" in str(resp_popup.path)
+
+    resp_popup_js = asyncio.run(main_module.serve_popup_js())
+    assert resp_popup_js.status_code == 200
+    assert "popup.js" in str(resp_popup_js.path)
+
+    # 4. Test NativeVoiceListener with spotlight toggle callback
+    toggled = []
+    listener = NativeVoiceListener(
+        on_spotlight_toggle_callback=lambda: toggled.append(True)
+    )
+    assert listener.on_spotlight_toggle is not None
+    listener.on_spotlight_toggle()
+    assert len(toggled) == 1
+
+    print("test_spotlight_and_screen_capture_hooks: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -648,7 +698,8 @@ if __name__ == "__main__":
     test_browser_helper()
     test_chat_mode_and_endpoints()
     test_system_ui_and_lifecycle_controls()
-    print("\n🎉 ALL TESTS (INCLUDING ZERO-TERMINAL UI & LIFECYCLE CONTROLS) PASSED SUCCESSFULLY!")
+    test_spotlight_and_screen_capture_hooks()
+    print("\n🎉 ALL TESTS (INCLUDING SPOTLIGHT HUD & ZERO-OBSTRUCTION CAPTURE) PASSED SUCCESSFULLY!")
 
 
 

@@ -35,6 +35,9 @@ case "$1" in
   desktop|shortcuts)
     python3 scripts/create_desktop_launchers.py
     ;;
+  spotlight|popup)
+    PYTHONPATH=. python3 -m app.spotlight_ui
+    ;;
   *)
     echo "=========================================================="
     echo "               LỆNH ĐIỀU KHIỂN LUGA ASSIST                "

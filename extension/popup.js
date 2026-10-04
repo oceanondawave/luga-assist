@@ -63,4 +63,46 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   });
+
+  // 4. Mini Chat in Extension Popup (Zero Tab Needed!)
+  const extChatForm = document.getElementById("extChatForm");
+  const extChatInput = document.getElementById("extChatInput");
+  const extChatResult = document.getElementById("extChatResult");
+  const extBtnSend = document.getElementById("extBtnSend");
+
+  if (extChatInput) {
+    extChatInput.focus();
+  }
+
+  if (extChatForm) {
+    extChatForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const val = extChatInput.value.trim();
+      if (!val) return;
+
+      extBtnSend.disabled = true;
+      extBtnSend.innerText = "...";
+      extChatResult.style.display = "block";
+      extChatResult.innerHTML = "⏳ <em>Luga đang phân tích và thực thi...</em>";
+
+      fetch("http://127.0.0.1:8000/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: val, speak: true })
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          extBtnSend.disabled = false;
+          extBtnSend.innerText = "Gửi";
+          extChatInput.value = "";
+          const reply = data.response || data.speech || "Đã hoàn thành.";
+          extChatResult.innerHTML = `<strong>🤖 Luga:</strong> ${reply}`;
+        })
+        .catch((err) => {
+          extBtnSend.disabled = false;
+          extBtnSend.innerText = "Gửi";
+          extChatResult.innerHTML = `<span style="color:#ef4444;">⚠️ Lỗi: ${err.message}</span>`;
+        });
+    });
+  }
 });

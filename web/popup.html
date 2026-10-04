@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Luga Assist - Cửa sổ Chat Nổi</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* Compact Popup-specific styles */
+    body {
+      margin: 0;
+      padding: 0;
+      background: #0f172a;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .popup-header {
+      background: #1e293b;
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #334155;
+      flex-shrink: 0;
+    }
+
+    .popup-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .popup-tools {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .popup-badge {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      cursor: pointer;
+    }
+
+    .popup-badge:hover {
+      border-color: #38bdf8;
+      color: #38bdf8;
+    }
+
+    .popup-chat-thread {
+      flex: 1;
+      padding: 12px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #0f172a;
+    }
+
+    .popup-bubble {
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.5;
+      max-width: 90%;
+      word-break: break-word;
+    }
+
+    .popup-bubble.user {
+      align-self: flex-end;
+      background: #0284c7;
+      color: #ffffff;
+      border-bottom-right-radius: 2px;
+    }
+
+    .popup-bubble.ai {
+      align-self: flex-start;
+      background: #1e293b;
+      color: #f1f5f9;
+      border-bottom-left-radius: 2px;
+      border: 1px solid #334155;
+    }
+
+    .popup-thinking {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #38bdf8;
+      padding: 6px 12px;
+      background: rgba(56, 189, 248, 0.1);
+      border-radius: 8px;
+      margin: 4px 12px;
+    }
+
+    .popup-composer {
+      background: #1e293b;
+      padding: 10px 12px;
+      border-top: 1px solid #334155;
+      flex-shrink: 0;
+    }
+
+    .popup-input-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .popup-input {
+      flex: 1;
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #ffffff;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .popup-input:focus {
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+    }
+
+    .popup-btn-mic {
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #f8fafc;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+
+    .popup-btn-mic.listening {
+      background: #ef4444;
+      border-color: #ef4444;
+      animation: pulse 1.2s infinite;
+    }
+
+    .popup-btn-send {
+      background: #0284c7;
+      border: none;
+      color: #ffffff;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .popup-btn-send:hover {
+      background: #0369a1;
+    }
+
+    .popup-sub-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+      font-size: 11px;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <div class="popup-header">
+    <div class="popup-title">
+      <span>🎙️</span> Luga Assist Mini
+    </div>
+    <div class="popup-tools">
+      <button id="btnPopupMode" class="popup-badge" title="Chuyển chế độ hoạt động">
+        <span id="popupModeLabel">🎮 Điều khiển PC</span>
+      </button>
+      <span id="popupStatusDot" style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block;" title="Đang kết nối"></span>
+    </div>
+  </div>
+
+  <div class="popup-chat-thread" id="popupChatThread" role="log" aria-live="polite">
+    <div class="popup-bubble ai">
+      Xin chào! Đây là <strong>Cửa sổ Chat Mini</strong>. Cửa sổ này có kích thước nhỏ gọn để <strong>không che màn hình máy tính của bạn</strong>.
+      <br><br>
+      👉 Bạn có thể kéo cửa sổ này sang góc màn hình, hoặc nhấn <strong>F7</strong> để bật/tắt Spotlight HUD bất cứ lúc nào!
+    </div>
+  </div>
+
+  <div class="popup-thinking" id="popupThinking" style="display: none;">
+    <span>⏳</span>
+    <span id="popupThinkingText">Luga đang phân tích màn hình...</span>
+  </div>
+
+  <div class="popup-composer">
+    <form id="popupChatForm" class="popup-input-row">
+      <input
+        type="text"
+        id="popupChatInput"
+        class="popup-input"
+        placeholder="Nhập lệnh hoặc câu hỏi (Enter để gửi)..."
+        autocomplete="off"
+        autofocus
+      >
+      <button type="button" id="btnPopupMic" class="popup-btn-mic" title="Nói qua Micro">
+        🎙️
+      </button>
+      <button type="submit" class="popup-btn-send">
+        Gửi
+      </button>
+    </form>
+
+    <div class="popup-sub-row">
+      <label style="cursor: pointer; display: flex; align-items: center; gap: 4px;">
+        <input type="checkbox" id="chkPopupTTS" checked>
+        <span>🔊 Đọc giọng nói (TTS)</span>
+      </label>
+      <span>Phím tắt toàn cục: <strong style="color: #38bdf8;">F7</strong></span>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

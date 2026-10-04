@@ -147,9 +147,11 @@ class NativeVoiceListener:
         self,
         on_command_callback: Optional[Callable[[str], None]] = None,
         on_mode_toggle_callback: Optional[Callable[[], None]] = None,
+        on_spotlight_toggle_callback: Optional[Callable[[], None]] = None,
     ):
         self.on_command = on_command_callback
         self.on_mode_toggle = on_mode_toggle_callback
+        self.on_spotlight_toggle = on_spotlight_toggle_callback
         self.recognizer = sr.Recognizer()
         self.is_recording = False
         self.is_processing = False
@@ -317,6 +319,13 @@ class NativeVoiceListener:
         """
         def on_press(key):
             try:
+                # F7: Spotlight Floating Chat Popup trigger
+                if key == keyboard.Key.f7:
+                    print("\n[Global Hotkey] Đã nhấn F7 -> Bật/Tắt Cửa sổ Chat Nổi (Spotlight)!")
+                    if self.on_spotlight_toggle:
+                        self.on_spotlight_toggle()
+                    return
+
                 # F8: Voice trigger
                 if key == keyboard.Key.f8:
                     print("\n[Global Hotkey] Đã nhấn F8 -> Bắt đầu lắng nghe!")
@@ -353,6 +362,7 @@ class NativeVoiceListener:
         self._hotkey_listener.start()
         print("\n" + "=" * 65)
         print("🎙️ GLOBAL WAY - TRỢ LÝ TOÀN HỆ THỐNG ĐÃ SẴN SÀNG!")
+        print("👉 F7                     : Bật/Tắt Cửa sổ Chat Nổi (Spotlight)")
         print("👉 F8 (hoặc Ctrl + Space) : Nói lệnh điều khiển / hỏi đáp")
         print("👉 F9                     : Chuyển đổi Chế độ Điều khiển <-> Chat Mode")
         print("👉 KHÔNG CẦN MỞ TRÌNH DUYỆT - MÀN HÌNH HOÀN TOÀN THOÁNG ĐÃNG.")
