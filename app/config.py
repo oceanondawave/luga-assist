@@ -14,6 +14,12 @@ PORT = int(os.getenv("LUGA_PORT", "8000"))
 WEB_DIR = BASE_DIR / "web"
 TEMP_DIR = BASE_DIR / "temp"
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
+LOGS_DIR = BASE_DIR / "logs"
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+LOG_FILE = LOGS_DIR / "luga_assist.log"
+ERROR_LOG_FILE = LOGS_DIR / "error.log"
+PID_FILE = TEMP_DIR / "luga_assist.pid"
 
 # TTS Settings (Edge TTS & fallback)
 # Vietnamese Neural Voices:

@@ -24,6 +24,8 @@ from app.config import (
     WEB_DIR,
     DEFAULT_TTS_VOICE,
 )
+from app.logger import setup_logging, get_logger, read_recent_logs, clear_logs
+from app.browser_helper import ensure_background_browser
 from app.screen_capture import screen_capturer
 from app.os_controller import os_controller
 from app.tts_service import tts_service
@@ -33,12 +35,19 @@ from app.native_voice import NativeVoiceListener
 from app.sound_effects import sound_manager
 from app.accessibility import accessibility_manager
 
+# Initialize persistent logging and stdout teeing
+setup_logging()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 1. Try restoring saved session from disk
     await gemini_service.auto_init_from_disk()
 
-    # 2. Start Global Native Voice & Hotkey Listener (Zero browser needed!)
+    # 2. If Google session is not yet ready, ensure Chrome runs silently in background (--no-startup-window)
+    if not gemini_service.is_ready and hub.extension_client is None:
+        ensure_background_browser()
+
+    # 3. Start Global Native Voice & Hotkey Listener (Zero browser needed!)
     loop = asyncio.get_running_loop()
 
     def handle_native_voice_command(cmd_text: str):
@@ -157,6 +166,26 @@ async def set_session(payload: SessionPayload):
     ok = await gemini_service.init_session(payload.secure_1psid, payload.secure_1psidts)
     await hub.broadcast_status()
     return {"status": "ok" if ok else "error", "ready": gemini_service.is_ready}
+
+@app.get("/api/logs")
+async def get_system_logs(lines: int = 150):
+    """Fetch recent system logs for debugging."""
+    return {
+        "status": "ok",
+        "lines": read_recent_logs(lines)
+    }
+
+@app.post("/api/logs/clear")
+async def clear_system_logs():
+    """Clear debug logs."""
+    ok = clear_logs()
+    return {"status": "ok" if ok else "error"}
+
+@app.post("/api/ensure_browser")
+async def api_ensure_browser():
+    """Trigger background Chrome launch if needed."""
+    ok = ensure_background_browser(force=True)
+    return {"status": "ok" if ok else "error"}
 
 
 # Helper: Extract clean JSON from Gemini's response
@@ -307,9 +336,10 @@ async def websocket_extension(ws: WebSocket):
 # Master Pipeline Execution: Autonomous Multi-Step Goal Loop
 MAX_AUTONOMOUS_STEPS = 5
 
-async def process_user_command(user_command: str, voice: str):
-    print(f"\n[Pipeline] 🎯 Nhận mục tiêu mới: '{user_command}'")
+# Concurrency Lock: ensures only one autonomous goal runs at any given time
+pipeline_lock = asyncio.Lock()
 
+async def process_user_command(user_command: str, voice: str):
     user_cmd_lower = user_command.lower().strip()
     # Direct fast-path: voice control for processing sound
     if any(k in user_cmd_lower for k in ("tắt tiếng processing", "ngắt tiếng processing", "tắt âm thanh xử lý", "tắt tiếng bíp", "tắt pulsing", "tắt tiếng nhịp tim")):
@@ -326,16 +356,27 @@ async def process_user_command(user_command: str, voice: str):
         await tts_service.speak(msg)
         return
 
+    if pipeline_lock.locked():
+        print(f"[Pipeline] ⚠️ Đang xử lý câu lệnh trước, vui lòng chờ: '{user_command}'")
+        return
+
+    async with pipeline_lock:
+        await _execute_pipeline(user_command, voice)
+
+async def _execute_pipeline(user_command: str, voice: str):
+    print(f"\n[Pipeline] 🎯 Nhận mục tiêu mới: '{user_command}'")
     # Start pulsing audio feedback for the user (only if enabled)
     sound_manager.start_pulsing()
 
     # Step 1: Check Connection (Gemini Background Service or Extension)
     is_gemini_ready = gemini_service.is_ready or (hub.extension_client is not None)
     if not is_gemini_ready:
+        # Wake background Chrome quietly without opening any tab
+        ensure_background_browser()
         sound_manager.play_error()
         error_msg = (
             "Chưa nhận được session Google Gemini! "
-            "Vui lòng đảm bảo Chrome đã bật Extension Luga Assist và bạn đã đăng nhập tài khoản Google."
+            "Đang tự động khởi động kết nối ngầm qua Chrome Extension..."
         )
         await hub.broadcast_webui({
             "type": "ERROR",

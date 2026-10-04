@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 temp/
+logs/
 .DS_Store
 *.swp
 *.egg-info/

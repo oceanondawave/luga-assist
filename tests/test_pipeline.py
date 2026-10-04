@@ -478,6 +478,40 @@ def test_web_element_selection_and_matching():
 
     print("test_web_element_selection_and_matching: PASSED")
 
+def test_logger_and_file_persistence():
+    import os
+    from app.logger import setup_logging, get_logger, read_recent_logs, clear_logs
+    from app.config import LOG_FILE, LOGS_DIR
+
+    assert LOGS_DIR.exists()
+    logger = setup_logging()
+    test_msg = "TEST_LOG_VERIFICATION_MESSAGE_12345"
+    logger.info(test_msg)
+
+    # Verify log content can be read
+    recent = "".join(read_recent_logs(20))
+    assert test_msg in recent
+    print("test_logger_and_file_persistence: PASSED")
+
+def test_daemon_utilities():
+    import os
+    from app.daemon import is_pid_running
+
+    current_pid = os.getpid()
+    assert is_pid_running(current_pid) is True
+    assert is_pid_running(99999999) is False
+    assert is_pid_running(-1) is False
+    print("test_daemon_utilities: PASSED")
+
+def test_browser_helper():
+    from app.browser_helper import find_chrome_executable, is_chrome_running
+    # On macOS or developer workstation, chrome should be detectable or handled gracefully
+    exe = find_chrome_executable()
+    # is_chrome_running should return boolean without throwing
+    running = is_chrome_running()
+    assert isinstance(running, bool)
+    print("test_browser_helper: PASSED (chrome_exe:", exe, ", running:", running, ")")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -496,7 +530,10 @@ if __name__ == "__main__":
     test_narrative_extraction_and_speech_cleanup()
     test_citation_stripping()
     test_web_element_selection_and_matching()
-    print("\n🎉 ALL TESTS (INCLUDING WEB ELEMENT SELECTION & CITATION STRIPPING) PASSED SUCCESSFULLY!")
+    test_logger_and_file_persistence()
+    test_daemon_utilities()
+    test_browser_helper()
+    print("\n🎉 ALL TESTS (INCLUDING LOGGING, DAEMON & BACKGROUND BROWSER) PASSED SUCCESSFULLY!")
 
 
 
