@@ -569,6 +569,18 @@ def test_chat_mode_and_endpoints():
     # 5. Test gemini_service conversation reset
     gemini_service.reset_conversation()
 
+    # 6. Test api_command with text command (test fast-path without network)
+    res_cmd = asyncio.run(main_module.api_command(main_module.CommandPayload(command="tắt tiếng processing", speak=False)))
+    assert res_cmd["status"] == "ok"
+    assert res_cmd["success"] is True
+    assert "Đã tắt âm thanh" in res_cmd["speech"]
+
+    # 7. Test api_chat with text command
+    res_chat = asyncio.run(main_module.api_chat(main_module.ChatPayload(message="bật tiếng processing", speak=False)))
+    assert res_chat["status"] == "ok"
+    assert res_chat["success"] is True
+    assert "Đã bật lại âm thanh" in res_chat["response"]
+
     print("test_chat_mode_and_endpoints: PASSED")
 
 if __name__ == "__main__":

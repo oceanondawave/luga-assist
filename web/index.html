@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Luga Assist - Trợ lý AI khiếm thị</title>
+  <title>Luga Assist - Trợ lý AI Điều khiển Máy tính</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,31 +12,9 @@
       <div class="logo-icon" aria-hidden="true">🎙️</div>
       <div>
         <h1>Luga Assist</h1>
-        <p style="font-size: 13px; color: var(--text-muted);">Trợ lý AI hỗ trợ người khiếm thị điều khiển máy tính & trò chuyện tự nhiên</p>
+        <p style="font-size: 13px; color: var(--text-muted);">Trợ lý AI điều khiển máy tính bằng Giọng nói & Chat Text cho người khiếm thị</p>
       </div>
     </div>
-
-    <!-- Mode Selector Bar (F9 to toggle) -->
-    <nav class="mode-tabs" role="tablist" aria-label="Chế độ hoạt động">
-      <button
-        id="tabBtnControl"
-        class="tab-btn active"
-        role="tab"
-        aria-selected="true"
-        aria-controls="panelControl"
-      >
-        <span class="tab-icon">🤖</span> Điều khiển máy tính <span class="tab-badge">F9</span>
-      </button>
-      <button
-        id="tabBtnChat"
-        class="tab-btn"
-        role="tab"
-        aria-selected="false"
-        aria-controls="panelChat"
-      >
-        <span class="tab-icon">💬</span> Trò chuyện AI <span class="tab-badge">F9</span>
-      </button>
-    </nav>
 
     <div class="badge-status-group">
       <div class="status-chip" role="status" aria-live="polite">
@@ -50,86 +28,34 @@
     </div>
   </header>
 
-  <!-- PANEL 1: COMPUTER CONTROL MODE -->
-  <main id="panelControl" class="tab-panel active" role="tabpanel" aria-labelledby="tabBtnControl">
-    <!-- Left Column: Voice Interaction & Hotkeys -->
-    <section class="card">
-      <h2 class="card-title">
-        <span>🎤</span> Tương tác Giọng nói (Điều khiển)
-      </h2>
-
-      <div class="voice-hero">
-        <button
-          id="btnMic"
-          class="mic-button"
-          aria-label="Bấm vào đây hoặc giữ phím cách Space để nói lệnh"
-          title="Bấm hoặc giữ phím Space"
-        >
-          🎙️
-        </button>
-
-        <div
-          id="speechDisplay"
-          class="live-speech-box"
-          role="status"
-          aria-live="assertive"
-        >
-          Nhấn phím Space hoặc phím F8 để ra lệnh điều khiển...
-        </div>
-
-        <div class="hotkey-hints">
-          <div><span class="kbd">Phím F8</span> Nói lệnh từ bất cứ đâu</div>
-          <div><span class="kbd">Phím F9</span> Chuyển sang Trò chuyện AI</div>
-          <div><span class="kbd">Phím F4</span> Đọc nội dung màn hình</div>
-          <div><span class="kbd">Phím Esc</span> Hủy / Dừng đọc</div>
-        </div>
-      </div>
-
-      <div class="settings-row">
-        <label for="selectVoice" style="font-size: 14px; font-weight: 600;">Giọng đọc tiếng Việt:</label>
-        <select id="selectVoice">
-          <option value="vi-VN-HoaiMyNeural" selected>Hoài My (Nữ - Tự nhiên, truyền cảm)</option>
-          <option value="vi-VN-NamMinhNeural">Nam Minh (Nam - Giọng đọc chuẩn)</option>
-        </select>
-        <button id="btnReadScreen" class="btn-secondary" style="margin-left: auto;">
-          👁️ Đọc màn hình (F4)
-        </button>
-      </div>
-    </section>
-
-    <!-- Right Column: Verification & Activity History -->
-    <section class="card">
-      <h2 class="card-title">
-        <span>📋</span> Nhật ký Hành động & Xác minh
-      </h2>
-
-      <div class="visual-viewer">
-        <div class="screen-preview-container" id="previewContainer">
-          <span class="screen-placeholder" id="previewPlaceholder">Ảnh chụp hành động gần nhất sẽ hiển thị tại đây</span>
-          <img id="lastActionImg" src="" alt="Ảnh chụp màn hình có đánh dấu vị trí click" style="display: none;">
-        </div>
-      </div>
-
-      <div style="margin-top: 14px; font-weight: 700; font-size: 14px; color: var(--accent-cyan);">Lịch sử thao tác:</div>
-      <div class="activity-log" id="activityLog" role="log" aria-live="polite">
-        <!-- Log items injected via JS -->
-      </div>
-    </section>
-  </main>
-
-  <!-- PANEL 2: AI CHAT MODE -->
-  <main id="panelChat" class="tab-panel" role="tabpanel" aria-labelledby="tabBtnChat" style="display: none;">
-    <section class="card chat-card">
-      <div class="chat-header">
-        <div class="chat-header-info">
-          <h2>💬 Trò chuyện AI cùng Google Gemini</h2>
-          <p>Hỏi đáp tri thức, tra cứu, dịch thuật, trò chuyện tự nhiên (Màn hình không bị can thiệp)</p>
-        </div>
-        <div class="chat-header-actions">
-          <button id="btnChatClear" class="btn-danger" title="Xóa toàn bộ tin nhắn và bắt đầu hội thoại mới">
+  <main class="main-layout">
+    <!-- Left Column: Interactive Chat & Command Hub -->
+    <section class="card chat-hub-card">
+      <div class="card-header-clean">
+        <h2 class="card-title">
+          <span>💬</span> Hội thoại & Điều khiển Hệ thống
+        </h2>
+        <div class="header-tools">
+          <button id="btnChatClear" class="btn-danger-sm" title="Xóa toàn bộ tin nhắn trong hội thoại">
             🗑️ Xóa hội thoại
           </button>
         </div>
+      </div>
+
+      <!-- Quick Action Shortcuts -->
+      <div class="quick-chips-bar" role="toolbar" aria-label="Thao tác nhanh">
+        <button class="quick-chip" data-cmd="Hãy miêu tả chi tiết những gì đang hiển thị trên màn hình máy tính của tôi.">
+          👁️ Mô tả màn hình (F4)
+        </button>
+        <button class="quick-chip" data-cmd="Tắt tiếng âm thanh hệ thống">
+          🔇 Tắt tiếng
+        </button>
+        <button class="quick-chip" data-cmd="Bật lại âm thanh hệ thống">
+          🔊 Bật tiếng
+        </button>
+        <button class="quick-chip" data-cmd="Tìm các file báo cáo hoặc tài liệu gần đây">
+          📁 Tìm file
+        </button>
       </div>
 
       <!-- Chat Thread Messages -->
@@ -137,49 +63,48 @@
         <div class="chat-bubble ai">
           <div class="chat-avatar" aria-hidden="true">🤖</div>
           <div class="chat-content">
-            <div class="chat-sender">Gemini Assistant</div>
+            <div class="chat-sender">Luga Assist</div>
             <div class="chat-text">
-              Xin chào bạn! Đây là <strong>Chế độ Trò chuyện AI (Chat Mode)</strong>. Bạn có thể hỏi đáp mọi thông tin, dịch thuật, tóm tắt hoặc tâm sự tự nhiên. Hệ thống sẽ không chụp màn hình hay điều khiển chuột/bàn phím.
+              Xin chào bạn! Tôi là <strong>Luga Assist</strong> - Trợ lý AI điều khiển máy tính.
               <br><br>
-              👉 Bạn có thể gõ câu hỏi vào ô bên dưới hoặc nhấn <strong>F8</strong> để nói trực tiếp!
+              Bạn có thể <strong>gõ lệnh bằng text</strong> vào ô bên dưới hoặc <strong>nói qua micro</strong> để:
+              <ul style="margin: 8px 0 0 18px; line-height: 1.6;">
+                <li>Mở ứng dụng & trình duyệt (<em>"mở Chrome và vào YouTube"</em>)</li>
+                <li>Điều khiển máy tính (<em>"tắt tiếng", "cho máy ngủ", "tăng âm lượng"</em>)</li>
+                <li>Tìm kiếm & mở file (<em>"tìm file báo cáo trong Downloads"</em>)</li>
+                <li>Đọc & tóm tắt màn hình (<em>"mô tả màn hình hiện tại", "tóm tắt video này"</em>)</li>
+                <li>Soạn gửi email hoặc chạy lệnh terminal...</li>
+              </ul>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Thinking Indicator -->
+      <!-- Thinking & Progress Indicator -->
       <div class="chat-thinking" id="chatThinking" style="display: none;">
         <span class="spinner-dot"></span>
         <span class="spinner-dot"></span>
         <span class="spinner-dot"></span>
-        <span>Gemini đang suy nghĩ câu trả lời...</span>
+        <span id="chatThinkingText">Luga đang phân tích màn hình và thực thi...</span>
       </div>
 
-      <!-- Chat Input Area -->
+      <!-- Bottom Chat Composer -->
       <div class="chat-composer">
-        <div class="chat-options-row">
-          <label class="checkbox-label">
-            <input type="checkbox" id="chkChatTTS" checked>
-            <span>🔊 Đọc câu trả lời bằng giọng nói (TTS)</span>
-          </label>
-          <span class="composer-hint">💡 Nhấn <strong>F9</strong> để quay lại Chế độ Điều khiển máy tính</span>
-        </div>
-
         <form id="chatForm" class="chat-input-bar">
           <input
             type="text"
             id="chatInput"
             class="chat-input"
-            placeholder="Nhập câu hỏi hoặc nhấn nút Micro bên phải để nói..."
+            placeholder="Nhập lệnh điều khiển hệ thống (VD: mở Spotify, tắt tiếng, tìm file, mô tả màn hình...)..."
             autocomplete="off"
-            aria-label="Nội dung tin nhắn trò chuyện"
+            aria-label="Nhập lệnh điều khiển máy tính"
           >
           <button
             type="button"
-            id="btnChatMic"
+            id="btnMic"
             class="chat-mic-btn"
-            title="Nói trực tiếp bằng giọng nói"
-            aria-label="Nói trực tiếp bằng Micro"
+            title="Bấm hoặc giữ phím Space / phím F8 để nói lệnh"
+            aria-label="Nói lệnh qua micro"
           >
             🎙️
           </button>
@@ -187,12 +112,55 @@
             type="submit"
             id="btnChatSend"
             class="chat-send-btn"
-            title="Gửi tin nhắn"
-            aria-label="Gửi tin nhắn"
+            title="Gửi lệnh điều khiển (Enter)"
+            aria-label="Gửi lệnh điều khiển"
           >
             Gửi ➔
           </button>
         </form>
+
+        <div class="composer-settings-row">
+          <label class="checkbox-label">
+            <input type="checkbox" id="chkTTS" checked>
+            <span>🔊 Đọc câu trả lời bằng giọng nói (TTS)</span>
+          </label>
+
+          <div class="voice-picker-inline">
+            <label for="selectVoice" style="font-size: 13px; color: var(--text-muted);">Giọng đọc:</label>
+            <select id="selectVoice">
+              <option value="vi-VN-HoaiMyNeural" selected>Hoài My (Nữ)</option>
+              <option value="vi-VN-NamMinhNeural">Nam Minh (Nam)</option>
+            </select>
+          </div>
+
+          <div class="kbd-hints">
+            <span><span class="kbd">F8</span> Nói từ bất cứ đâu</span>
+            <span><span class="kbd">Esc</span> Dừng đọc</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Column: Visual Verification & Activity Monitor -->
+    <section class="card monitor-card">
+      <h2 class="card-title">
+        <span>👁️</span> Giám sát Màn hình & Thao tác
+      </h2>
+
+      <div class="visual-viewer">
+        <div class="screen-preview-container" id="previewContainer">
+          <span class="screen-placeholder" id="previewPlaceholder">Ảnh chụp thao tác gần nhất sẽ hiển thị tại đây</span>
+          <img id="lastActionImg" src="" alt="Ảnh chụp màn hình có đánh dấu vị trí click" style="display: none;">
+        </div>
+      </div>
+
+      <div style="margin-top: 14px; font-weight: 700; font-size: 14px; color: var(--accent-cyan); display: flex; justify-content: space-between; align-items: center;">
+        <span>Nhật ký thực thi OS:</span>
+        <button id="btnReadScreen" class="btn-secondary-sm">👁️ Đọc màn hình (F4)</button>
+      </div>
+
+      <div class="activity-log" id="activityLog" role="log" aria-live="polite">
+        <!-- Log items injected via JS -->
       </div>
     </section>
   </main>

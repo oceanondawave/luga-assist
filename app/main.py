@@ -216,14 +216,40 @@ async def api_set_mode(payload: SetModePayload):
     mode = await set_mode(payload.mode, announce=payload.announce if payload.announce is not None else True)
     return {"status": "ok", "mode": mode}
 
-@app.post("/api/chat")
-async def api_chat(payload: ChatPayload):
-    reply = await process_chat_message(
-        payload.message,
+class CommandPayload(BaseModel):
+    command: str
+    voice: Optional[str] = DEFAULT_TTS_VOICE
+    speak: Optional[bool] = True
+
+@app.post("/api/command")
+async def api_command(payload: CommandPayload):
+    """Execute a text command to control the computer or query the system."""
+    cmd = (payload.command or "").strip()
+    if not cmd:
+        return {"status": "error", "message": "Command cannot be empty"}
+    res = await process_user_command(
+        cmd,
         voice=payload.voice or DEFAULT_TTS_VOICE,
         speak=payload.speak if payload.speak is not None else True
     )
-    return {"status": "ok", "response": reply}
+    return {"status": "ok", **res}
+
+@app.post("/api/chat")
+async def api_chat(payload: ChatPayload):
+    """Chat endpoint to instruct the system via text and receive action/answer."""
+    cmd = (payload.message or "").strip()
+    if not cmd:
+        return {"status": "error", "response": ""}
+    res = await process_user_command(
+        cmd,
+        voice=payload.voice or DEFAULT_TTS_VOICE,
+        speak=payload.speak if payload.speak is not None else True
+    )
+    speech = res.get("speech", "")
+    dyn = res.get("action_result", {}).get("speech_result")
+    if dyn and dyn != speech:
+        speech = f"{speech}\n{dyn}"
+    return {"status": "ok", "response": speech, **res}
 
 @app.post("/api/chat/clear")
 async def api_chat_clear():
@@ -363,24 +389,18 @@ async def websocket_webui(ws: WebSocket):
             data = json.loads(msg_str)
             msg_type = data.get("type")
 
-            if msg_type == "VOICE_COMMAND":
-                command = data.get("command", "").strip()
-                voice = data.get("voice", DEFAULT_TTS_VOICE)
-                if command:
-                    # Run command processing asynchronously
-                    asyncio.create_task(process_user_command(command, voice))
-
-            elif msg_type == "CHAT_MESSAGE":
-                message = data.get("message", "").strip()
+            if msg_type in ("VOICE_COMMAND", "TEXT_COMMAND", "CHAT_MESSAGE", "COMMAND"):
+                command = (data.get("command") or data.get("message") or "").strip()
                 voice = data.get("voice", DEFAULT_TTS_VOICE)
                 speak = data.get("speak", True)
-                if message:
-                    asyncio.create_task(process_chat_message(message, voice=voice, speak=speak))
-
-            elif msg_type == "SWITCH_MODE":
-                mode = data.get("mode", "control")
-                announce = data.get("announce", True)
-                asyncio.create_task(set_mode(mode, announce=announce))
+                if command:
+                    # Echo command to all WebUI clients so it appears in the chat thread
+                    await hub.broadcast_webui({
+                        "type": "USER_CHAT_MESSAGE",
+                        "command": command,
+                    })
+                    # Run command processing asynchronously
+                    asyncio.create_task(process_user_command(command, voice=voice, speak=speak))
 
             elif msg_type == "CLEAR_CHAT":
                 gemini_service.reset_conversation()
@@ -420,92 +440,13 @@ async def websocket_extension(ws: WebSocket):
         await hub.unregister_extension()
 
 
-# Chat Mode Message Processor (Natural conversation, NO screenshot / OS control)
-async def process_chat_message(message: str, voice: str = DEFAULT_TTS_VOICE, speak: bool = True) -> str:
-    message = (message or "").strip()
-    if not message:
-        return ""
-
-    print(f"\n[Chat Mode] 💬 Nhận tin nhắn: '{message}'")
-    sound_manager.start_pulsing()
-
-    is_gemini_ready = gemini_service.is_ready or (hub.extension_client is not None)
-    if not is_gemini_ready:
-        ensure_background_browser()
-        sound_manager.play_error()
-        err_msg = "Chưa kết nối được với session Google Gemini. Đang tự động kết nối lại ngầm..."
-        await hub.broadcast_webui({
-            "type": "ERROR",
-            "message": err_msg,
-            "user_command": message,
-        })
-        if speak:
-            await tts_service.speak(err_msg)
-        return err_msg
-
-    await hub.broadcast_webui({
-        "type": "CHAT_PROGRESS",
-        "message": "Đang suy nghĩ câu trả lời...",
-        "user_message": message,
-    })
-
-    try:
-        if gemini_service.is_ready:
-            raw_reply = await gemini_service.send_chat_message(message)
-        elif hub.extension_client is not None:
-            task_id = str(uuid.uuid4())
-            loop = asyncio.get_running_loop()
-            future = loop.create_future()
-            hub.pending_tasks[task_id] = future
-            await hub.extension_client.send_json({
-                "type": "EXECUTE_COMMAND",
-                "id": task_id,
-                "prompt": message,
-            })
-            resp_data = await asyncio.wait_for(future, timeout=40.0)
-            raw_reply = resp_data.get("result", "")
-        else:
-            raw_reply = "Chưa có kết nối Google Gemini khả dụng."
-    except Exception as e:
-        sound_manager.play_error()
-        err_text = f"Lỗi khi gửi tin nhắn trò chuyện: {e}"
-        print(f"[Chat Mode] ❌ {err_text}")
-        await hub.broadcast_webui({
-            "type": "ERROR",
-            "message": err_text,
-            "user_command": message,
-        })
-        if speak:
-            await tts_service.speak("Có lỗi khi kết nối với Gemini. Vui lòng thử lại.")
-        return err_text
-
-    sound_manager.play_done()
-
-    # Clean response from citation badges & format for speech
-    clean_reply = strip_citations(raw_reply)
-    speech_to_say = clean_text_for_speech(clean_reply)
-
-    print(f"[Chat Mode] 🤖 Gemini: {clean_reply[:120]}...")
-
-    await hub.broadcast_webui({
-        "type": "CHAT_RESPONSE",
-        "user_message": message,
-        "response": clean_reply,
-    })
-
-    if speak:
-        await tts_service.speak(speech_to_say)
-
-    return clean_reply
-
-
 # Master Pipeline Execution: Autonomous Multi-Step Goal Loop
 MAX_AUTONOMOUS_STEPS = 5
 
 # Concurrency Lock: ensures only one autonomous goal runs at any given time
 pipeline_lock = asyncio.Lock()
 
-async def process_user_command(user_command: str, voice: str):
+async def process_user_command(user_command: str, voice: str = DEFAULT_TTS_VOICE, speak: bool = True) -> Dict[str, Any]:
     user_cmd_lower = user_command.lower().strip()
 
     # Direct fast-path: voice control for processing sound
@@ -513,17 +454,19 @@ async def process_user_command(user_command: str, voice: str):
         sound_manager.set_pulse_enabled(False)
         sound_manager.play_done()
         msg = "Đã tắt âm thanh khi xử lý cho bạn."
-        await tts_service.speak(msg)
-        return
+        if speak:
+            await tts_service.speak(msg)
+        return {"success": True, "speech": msg, "action_result": {"success": True, "action": "sound_config"}}
 
     if any(k in user_cmd_lower for k in ("bật tiếng processing", "bật âm thanh xử lý", "bật pulsing", "bật tiếng nhịp tim")):
         sound_manager.set_pulse_enabled(True)
         sound_manager.play_done()
         msg = "Đã bật lại âm thanh khi xử lý cho bạn."
-        await tts_service.speak(msg)
-        return
+        if speak:
+            await tts_service.speak(msg)
+        return {"success": True, "speech": msg, "action_result": {"success": True, "action": "sound_config"}}
 
-    # Direct fast-path: Voice intents to switch to Chat Mode
+    # Direct fast-path: Voice intents to switch modes
     chat_mode_intents = (
         "chuyển sang chế độ chat", "chuyển qua chế độ chat", "bật chế độ chat",
         "vào chế độ chat", "mở chế độ chat", "chế độ chat",
@@ -531,32 +474,27 @@ async def process_user_command(user_command: str, voice: str):
         "bật chế độ trò chuyện", "vào chế độ trò chuyện", "chế độ trò chuyện"
     )
     if any(intent in user_cmd_lower for intent in chat_mode_intents):
-        await set_mode("chat", announce=True)
-        return
+        await set_mode("chat", announce=speak)
+        return {"success": True, "speech": "Đã chuyển sang chế độ trò chuyện", "action_result": {"success": True, "action": "set_mode"}}
 
-    # Direct fast-path: Voice intents to switch to Control Mode
     control_mode_intents = (
         "chuyển sang chế độ điều khiển", "chuyển qua chế độ điều khiển",
         "bật chế độ điều khiển", "vào chế độ điều khiển", "chế độ điều khiển",
         "chuyển sang chế độ máy tính", "chế độ điều khiển máy tính", "bật chế độ điều khiển máy tính"
     )
     if any(intent in user_cmd_lower for intent in control_mode_intents):
-        await set_mode("control", announce=True)
-        return
-
-    # If currently in Chat Mode, route voice command directly to Chat Mode
-    if current_mode == "chat":
-        await process_chat_message(user_command, voice=voice, speak=True)
-        return
+        await set_mode("control", announce=speak)
+        return {"success": True, "speech": "Đã chuyển sang chế độ điều khiển", "action_result": {"success": True, "action": "set_mode"}}
 
     if pipeline_lock.locked():
-        print(f"[Pipeline] ⚠️ Đang xử lý câu lệnh trước, vui lòng chờ: '{user_command}'")
-        return
+        msg = "Hệ thống đang bận xử lý câu lệnh trước, vui lòng chờ."
+        print(f"[Pipeline] ⚠️ {msg}: '{user_command}'")
+        return {"success": False, "speech": msg, "action_result": {"success": False, "action": "busy"}}
 
     async with pipeline_lock:
-        await _execute_pipeline(user_command, voice)
+        return await _execute_pipeline(user_command, voice, speak=speak)
 
-async def _execute_pipeline(user_command: str, voice: str):
+async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, speak: bool = True) -> Dict[str, Any]:
     print(f"\n[Pipeline] 🎯 Nhận mục tiêu mới: '{user_command}'")
     # Start pulsing audio feedback for the user (only if enabled)
     sound_manager.start_pulsing()
@@ -576,8 +514,14 @@ async def _execute_pipeline(user_command: str, voice: str):
             "message": error_msg,
             "user_command": user_command,
         })
-        await tts_service.speak(error_msg)
-        return
+        if speak:
+            await tts_service.speak(error_msg)
+        return {
+            "success": False,
+            "speech": error_msg,
+            "action_result": {"success": False, "error": error_msg},
+            "done": True,
+        }
 
     step = 0
     last_actions_summary = ""
@@ -779,8 +723,11 @@ async def _execute_pipeline(user_command: str, voice: str):
         # Step 5: Annotate Screenshot for Visual Feedback
         annotated_b64 = screen_capturer.annotate_actions(actions_list)
 
-        # Step 6: Speak Spoken Response to User Concurrently
-        speak_task = asyncio.create_task(tts_service.speak(speech_for_tts))
+        # Step 6: Speak Spoken Response to User Concurrently (if speak=True)
+        if speak:
+            speak_task = asyncio.create_task(tts_service.speak(speech_for_tts))
+        else:
+            speak_task = asyncio.sleep(0)
 
         # Step 7: Execute Action Sequence on OS (if active actions exist)
         action_result = {"success": True, "action": "none", "details": "Verified state"}
@@ -830,7 +777,8 @@ async def _execute_pipeline(user_command: str, voice: str):
         dynamic_speech = action_result.get("speech_result")
         if dynamic_speech and dynamic_speech != speech_to_say:
             print(f"[Pipeline] 🗣️ Báo cáo kết quả trực tiếp: \"{dynamic_speech}\"")
-            await tts_service.speak(dynamic_speech)
+            if speak:
+                await tts_service.speak(dynamic_speech)
 
         # Check termination condition
         if is_goal_verified_completed:
@@ -849,7 +797,17 @@ async def _execute_pipeline(user_command: str, voice: str):
     else:
         sound_manager.play_error()
         print(f"\n[Pipeline] ⚠️ Đã dừng sau {MAX_AUTONOMOUS_STEPS} bước mà chưa xác minh được kết quả hoàn tất.")
-        await tts_service.speak("Chưa thể xác nhận hoàn tất thao tác. Bạn vui lòng kiểm tra lại màn hình.")
+        if speak:
+            await tts_service.speak("Chưa thể xác nhận hoàn tất thao tác. Bạn vui lòng kiểm tra lại màn hình.")
+
+    return {
+        "success": is_goal_verified_completed,
+        "speech": speech_to_say,
+        "action_result": action_result,
+        "annotated_image": annotated_b64,
+        "step": step,
+        "done": is_goal_verified_completed,
+    }
 
 
 

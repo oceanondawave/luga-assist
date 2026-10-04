@@ -1,47 +1,39 @@
 /**
  * Luga Assist - Web Interface Logic
- * Supports Computer Control Mode & Conversational AI Chat Mode.
- * Handles Web Speech API (Vietnamese), WebSockets, Sound Earcons, and Accessible Hotkeys.
+ * Interactive Chat & Voice Command Center for PC Control.
  */
 
 document.addEventListener("DOMContentLoaded", () => {
-  // DOM Elements - Header & Status
-  const tabBtnControl = document.getElementById("tabBtnControl");
-  const tabBtnChat = document.getElementById("tabBtnChat");
-  const panelControl = document.getElementById("panelControl");
-  const panelChat = document.getElementById("panelChat");
+  // DOM Elements - Status
   const agentDot = document.getElementById("agentDot");
   const agentStatusText = document.getElementById("agentStatusText");
   const extDot = document.getElementById("extDot");
   const extStatusText = document.getElementById("extStatusText");
 
-  // DOM Elements - Control Mode
+  // DOM Elements - Chat Hub
+  const chatThread = document.getElementById("chatThread");
+  const chatThinking = document.getElementById("chatThinking");
+  const chatThinkingText = document.getElementById("chatThinkingText");
+  const chatForm = document.getElementById("chatForm");
+  const chatInput = document.getElementById("chatInput");
   const btnMic = document.getElementById("btnMic");
-  const speechDisplay = document.getElementById("speechDisplay");
+  const btnChatClear = document.getElementById("btnChatClear");
+  const chkTTS = document.getElementById("chkTTS");
+  const selectVoice = document.getElementById("selectVoice");
+
+  // DOM Elements - Monitor Panel
   const activityLog = document.getElementById("activityLog");
   const previewPlaceholder = document.getElementById("previewPlaceholder");
   const lastActionImg = document.getElementById("lastActionImg");
-  const selectVoice = document.getElementById("selectVoice");
   const btnReadScreen = document.getElementById("btnReadScreen");
-
-  // DOM Elements - Chat Mode
-  const chatThread = document.getElementById("chatThread");
-  const chatThinking = document.getElementById("chatThinking");
-  const chatForm = document.getElementById("chatForm");
-  const chatInput = document.getElementById("chatInput");
-  const btnChatMic = document.getElementById("btnChatMic");
-  const btnChatClear = document.getElementById("btnChatClear");
-  const chkChatTTS = document.getElementById("chkChatTTS");
 
   let ws = null;
   let isListening = false;
-  let isChatListening = false;
   let recognition = null;
   let audioCtx = null;
-  let continuousMode = false;
-  let currentMode = "control"; // "control" or "chat"
+  let lastUserCommandRendered = "";
 
-  // Initialize Web Audio API for Earcons
+  // Web Audio Earcons
   function getAudioContext() {
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -84,43 +76,7 @@ document.addEventListener("DOMContentLoaded", () => {
     playTone(220, "sawtooth", 0.25);
   }
 
-  // 1. Mode Switch Handler
-  function switchMode(newMode, notifyServer = true) {
-    if (newMode !== "control" && newMode !== "chat") return;
-    currentMode = newMode;
-
-    if (currentMode === "control") {
-      tabBtnControl.classList.add("active");
-      tabBtnControl.setAttribute("aria-selected", "true");
-      tabBtnChat.classList.remove("active");
-      tabBtnChat.setAttribute("aria-selected", "false");
-
-      panelControl.style.display = "grid";
-      panelChat.style.display = "none";
-    } else {
-      tabBtnChat.classList.add("active");
-      tabBtnChat.setAttribute("aria-selected", "true");
-      tabBtnControl.classList.remove("active");
-      tabBtnControl.setAttribute("aria-selected", "false");
-
-      panelControl.style.display = "none";
-      panelChat.style.display = "flex";
-      chatInput?.focus();
-    }
-
-    if (notifyServer && ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: "SWITCH_MODE",
-        mode: currentMode,
-        announce: true,
-      }));
-    }
-  }
-
-  tabBtnControl.addEventListener("click", () => switchMode("control"));
-  tabBtnChat.addEventListener("click", () => switchMode("chat"));
-
-  // 2. Web Speech API for Vietnamese
+  // 1. Web Speech API for Vietnamese
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
   if (SpeechRecognition) {
@@ -132,14 +88,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     recognition.onstart = () => {
       isListening = true;
-      if (isChatListening) {
-        btnChatMic.classList.add("listening");
-        chatInput.placeholder = "Đang lắng nghe giọng nói của bạn...";
-      } else {
-        btnMic.classList.add("listening");
-        speechDisplay.innerText = "Đang lắng nghe giọng nói của bạn...";
-        speechDisplay.style.borderColor = "var(--accent-red)";
-      }
+      btnMic.classList.add("listening");
+      chatInput.placeholder = "Đang lắng nghe giọng nói của bạn...";
       soundStartListening();
     };
 
@@ -155,30 +105,20 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
 
-      if (isChatListening) {
-        if (interimTranscript) chatInput.value = interimTranscript;
-        if (finalTranscript) {
-          chatInput.value = finalTranscript.trim();
-          sendChatMessage(finalTranscript.trim());
-        }
-      } else {
-        if (interimTranscript) speechDisplay.innerText = interimTranscript;
-        if (finalTranscript) {
-          finalTranscript = finalTranscript.trim();
-          speechDisplay.innerText = `"${finalTranscript}"`;
-          sendVoiceCommand(finalTranscript);
-        }
+      if (interimTranscript) {
+        chatInput.value = interimTranscript;
+      }
+
+      if (finalTranscript) {
+        chatInput.value = finalTranscript.trim();
+        sendCommand(finalTranscript.trim());
       }
     };
 
     recognition.onerror = (event) => {
       console.warn("[SpeechRecognition] Error:", event.error);
       if (event.error !== "no-speech") {
-        if (isChatListening) {
-          chatInput.placeholder = `Lỗi nhận diện: ${event.error}`;
-        } else {
-          speechDisplay.innerText = `Lỗi nhận diện âm thanh: ${event.error}`;
-        }
+        chatInput.placeholder = `Lỗi nhận diện: ${event.error}`;
         soundError();
       }
       stopListening();
@@ -186,17 +126,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     recognition.onend = () => {
       stopListening();
-      if (continuousMode && currentMode === "control") {
-        setTimeout(startListening, 1000);
-      }
     };
   } else {
-    speechDisplay.innerText = "Trình duyệt không hỗ trợ Web Speech API. Vui lòng mở trên Google Chrome.";
+    chatInput.placeholder = "Trình duyệt không hỗ trợ Web Speech API. Bạn có thể gõ phím trực tiếp.";
   }
 
-  function startListening(forChat = false) {
+  function startListening() {
     if (!recognition || isListening) return;
-    isChatListening = forChat;
     try {
       recognition.start();
     } catch (e) {
@@ -207,9 +143,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function stopListening() {
     isListening = false;
     btnMic.classList.remove("listening");
-    btnChatMic.classList.remove("listening");
-    speechDisplay.style.borderColor = "var(--border)";
-    chatInput.placeholder = "Nhập câu hỏi hoặc nhấn nút Micro bên phải để nói...";
+    chatInput.placeholder = "Nhập lệnh điều khiển hệ thống (VD: mở Spotify, tắt tiếng, tìm file, mô tả màn hình...)...";
     soundStopListening();
   }
 
@@ -218,20 +152,11 @@ document.addEventListener("DOMContentLoaded", () => {
       recognition.stop();
       stopListening();
     } else {
-      startListening(false);
+      startListening();
     }
   });
 
-  btnChatMic.addEventListener("click", () => {
-    if (isListening) {
-      recognition.stop();
-      stopListening();
-    } else {
-      startListening(true);
-    }
-  });
-
-  // 3. Connect WebSocket to Local Agent
+  // 2. WebSocket Connection
   function connectWebSocket() {
     const loc = window.location;
     const wsUrl = `ws://${loc.hostname || "127.0.0.1"}:${loc.port || "8000"}/ws/webui`;
@@ -261,103 +186,91 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function handleServerMessage(msg) {
-    // Mode Changed Notification
-    if (msg.type === "MODE_CHANGED") {
-      switchMode(msg.mode, false);
-      return;
-    }
-
     if (msg.type === "STATUS_UPDATE") {
       if (msg.gemini_ready || msg.extension_connected) {
         extDot.classList.add("online");
         extStatusText.innerText = "Google Gemini: Đã sẵn sàng (Chạy ngầm)";
       } else {
         extDot.classList.remove("online");
-        extStatusText.innerText = "Google Gemini: Đang chờ Extension";
+        extStatusText.innerText = "Google Gemini: Đang chờ kết nối";
       }
-
-      if (msg.mode && msg.mode !== currentMode) {
-        switchMode(msg.mode, false);
+    } else if (msg.type === "USER_CHAT_MESSAGE") {
+      const text = msg.command || msg.text;
+      if (text && text !== lastUserCommandRendered) {
+        appendChatBubble("user", text);
+        lastUserCommandRendered = text;
       }
+      chatThinking.style.display = "flex";
+      chatThinkingText.innerText = "Luga đang chụp màn hình và phân tích...";
+      chatThread.scrollTop = chatThread.scrollHeight;
     } else if (msg.type === "ACTION_PROGRESS") {
-      speechDisplay.innerText = msg.message;
-    } else if (msg.type === "ACTION_COMPLETED") {
-      speechDisplay.innerText = msg.speech || "Đã hoàn thành thao tác.";
+      chatThinking.style.display = "flex";
+      chatThinkingText.innerText = msg.message || "Đang phân tích màn hình...";
+      chatThread.scrollTop = chatThread.scrollHeight;
+    } else if (msg.type === "ACTION_STEP" || msg.type === "ACTION_COMPLETED") {
+      chatThinking.style.display = "none";
       soundSuccess();
-      appendLog(msg.user_command, msg.speech, msg.action_result);
 
+      // Ensure user bubble exists if triggered externally (e.g. from F8 hotkey)
+      if (msg.user_command && msg.user_command !== lastUserCommandRendered) {
+        appendChatBubble("user", msg.user_command);
+        lastUserCommandRendered = msg.user_command;
+      }
+
+      // Append Assistant bubble in chat thread
+      appendAssistantBubble(msg);
+
+      // Update right monitor panel
       if (msg.annotated_image) {
         lastActionImg.src = msg.annotated_image;
         lastActionImg.style.display = "block";
         previewPlaceholder.style.display = "none";
       }
-    } else if (msg.type === "CHAT_PROGRESS") {
-      chatThinking.style.display = "flex";
-      chatThread.scrollTop = chatThread.scrollHeight;
-    } else if (msg.type === "CHAT_RESPONSE") {
-      chatThinking.style.display = "none";
-      appendChatBubble("ai", msg.response);
-      soundSuccess();
+
+      appendLog(msg.user_command, msg.speech, msg.action_result);
     } else if (msg.type === "CHAT_CLEARED") {
       chatThread.innerHTML = `
         <div class="chat-bubble ai">
           <div class="chat-avatar" aria-hidden="true">🤖</div>
           <div class="chat-content">
-            <div class="chat-sender">Gemini Assistant</div>
-            <div class="chat-text">✨ Phiên trò chuyện đã được làm mới. Hãy đặt câu hỏi bất kỳ cho tôi nhé!</div>
+            <div class="chat-sender">Luga Assist</div>
+            <div class="chat-text">✨ Phiên làm việc đã được làm mới. Hãy nhập hoặc nói câu lệnh bất kỳ để điều khiển máy tính nhé!</div>
           </div>
         </div>
       `;
+      activityLog.innerHTML = "";
     } else if (msg.type === "ERROR") {
       chatThinking.style.display = "none";
-      speechDisplay.innerText = `Lỗi: ${msg.message}`;
       soundError();
-      if (currentMode === "control") {
-        appendLog(msg.user_command || "Thao tác", msg.message, { success: false });
-      } else {
-        appendChatBubble("ai", `⚠️ Lỗi: ${msg.message}`);
-      }
+      appendChatBubble("ai", `⚠️ Lỗi: ${msg.message}`);
+      appendLog(msg.user_command || "Thao tác", msg.message, { success: false });
     }
   }
 
-  // 4. Send Commands & Chat Messages
-  function sendVoiceCommand(text) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      speechDisplay.innerText = "Chưa kết nối tới Local Agent. Hãy chắc chắn server đang chạy!";
-      soundError();
-      return;
-    }
-
-    speechDisplay.innerText = `Đang gửi lệnh: "${text}"...`;
-
-    ws.send(
-      JSON.stringify({
-        type: "VOICE_COMMAND",
-        command: text,
-        voice: selectVoice.value,
-      })
-    );
-  }
-
-  function sendChatMessage(text) {
+  // 3. Command Sending (Chat & Voice)
+  function sendCommand(text) {
+    text = (text || "").trim();
     if (!text) return;
+
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      appendChatBubble("ai", "⚠️ Chưa kết nối tới Local Agent. Vui lòng kiểm tra lại server.");
+      appendChatBubble("ai", "⚠️ Chưa kết nối tới Local Agent. Hãy đảm bảo server Luga đang chạy.");
       soundError();
       return;
     }
 
     appendChatBubble("user", text);
+    lastUserCommandRendered = text;
     chatInput.value = "";
     chatThinking.style.display = "flex";
+    chatThinkingText.innerText = "Luga đang chụp màn hình và phân tích...";
     chatThread.scrollTop = chatThread.scrollHeight;
 
     ws.send(
       JSON.stringify({
-        type: "CHAT_MESSAGE",
-        message: text,
+        type: "TEXT_COMMAND",
+        command: text,
         voice: selectVoice.value,
-        speak: chkChatTTS.checked,
+        speak: chkTTS.checked,
       })
     );
   }
@@ -368,30 +281,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const isAI = sender === "ai";
     const avatar = isAI ? "🤖" : "🗣️";
-    const senderName = isAI ? "Gemini Assistant" : "Bạn";
+    const senderName = isAI ? "Luga Assist" : "Bạn";
 
-    // Escape HTML but preserve basic breaks
     const escaped = text
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/\n/g, "<br>");
 
-    let actionButton = "";
-    if (isAI) {
-      actionButton = `
-        <button class="btn-speak-again" onclick="window.speakAgain('${encodeURIComponent(text)}')">
-          🔊 Nghe lại
-        </button>
-      `;
-    }
-
     bubble.innerHTML = `
       <div class="chat-avatar" aria-hidden="true">${avatar}</div>
       <div class="chat-content">
         <div class="chat-sender">${senderName}</div>
         <div class="chat-text">${escaped}</div>
-        ${actionButton}
       </div>
     `;
 
@@ -399,26 +301,62 @@ document.addEventListener("DOMContentLoaded", () => {
     chatThread.scrollTop = chatThread.scrollHeight;
   }
 
-  window.speakAgain = function (encodedText) {
-    const text = decodeURIComponent(encodedText);
-    fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, speak: true }),
-    }).catch(console.error);
+  function appendAssistantBubble(msg) {
+    const bubble = document.createElement("div");
+    bubble.className = "chat-bubble ai";
+
+    const speech = msg.speech || "Đã hoàn thành thao tác.";
+    const escapedSpeech = speech
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\n/g, "<br>");
+
+    let actionBadgeHtml = "";
+    if (msg.action_result?.details) {
+      actionBadgeHtml = `<div class="chat-action-badge">⚡ ${msg.action_result.details}</div>`;
+    }
+
+    let thumbHtml = "";
+    if (msg.annotated_image) {
+      thumbHtml = `<img src="${msg.annotated_image}" class="chat-thumb" alt="Ảnh chụp màn hình thao tác" onclick="window.previewLargeImage('${msg.annotated_image}')" title="Nhấp để xem ảnh lớn">`;
+    }
+
+    let speakAgainBtn = `
+      <button class="btn-speak-again" onclick="window.speakAgain('${encodeURIComponent(speech)}')">
+        🔊 Nghe lại
+      </button>
+    `;
+
+    bubble.innerHTML = `
+      <div class="chat-avatar" aria-hidden="true">🤖</div>
+      <div class="chat-content">
+        <div class="chat-sender">Luga Assist ${msg.done ? "✅" : "⏳"}</div>
+        <div class="chat-text">${escapedSpeech}</div>
+        ${actionBadgeHtml}
+        ${thumbHtml}
+        ${speakAgainBtn}
+      </div>
+    `;
+
+    chatThread.appendChild(bubble);
+    chatThread.scrollTop = chatThread.scrollHeight;
+  }
+
+  window.previewLargeImage = function (imgSrc) {
+    lastActionImg.src = imgSrc;
+    lastActionImg.style.display = "block";
+    previewPlaceholder.style.display = "none";
   };
 
-  chatForm.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const val = chatInput.value.trim();
-    if (val) sendChatMessage(val);
-  });
-
-  btnChatClear.addEventListener("click", () => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "CLEAR_CHAT" }));
-    }
-  });
+  window.speakAgain = function (encodedText) {
+    const text = decodeURIComponent(encodedText);
+    fetch("/api/command", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: `Đọc lại: ${text}`, speak: true }),
+    }).catch(console.error);
+  };
 
   function appendLog(userCmd, aiReply, actionResult) {
     const item = document.createElement("div");
@@ -428,23 +366,38 @@ document.addEventListener("DOMContentLoaded", () => {
     item.innerHTML = `
       <div class="log-user">🗣️ "${userCmd}"</div>
       <div class="log-reply">🤖 ${aiReply}</div>
-      <div class="log-action">⚡ Chi tiết: ${actionResult?.details || actionResult?.action || "Hoàn thành"}</div>
+      <div class="log-action">⚡ ${actionResult?.details || actionResult?.action || "Hoàn thành"}</div>
     `;
 
     activityLog.insertBefore(item, activityLog.firstChild);
   }
 
-  // 5. Accessible Hotkeys Handlers
-  window.addEventListener("keydown", (e) => {
-    // F9: Toggle between Computer Control and Chat Mode
-    if (e.code === "F9") {
-      e.preventDefault();
-      const nextMode = currentMode === "control" ? "chat" : "control";
-      switchMode(nextMode, true);
-      return;
-    }
+  // 4. Form Submit & Quick Chips
+  chatForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const val = chatInput.value.trim();
+    if (val) sendCommand(val);
+  });
 
-    // Escape: Cancel listening or speech
+  btnChatClear.addEventListener("click", () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "CLEAR_CHAT" }));
+    }
+  });
+
+  document.querySelectorAll(".quick-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const cmd = btn.getAttribute("data-cmd");
+      if (cmd) sendCommand(cmd);
+    });
+  });
+
+  btnReadScreen.addEventListener("click", () => {
+    sendCommand("Hãy miêu tả chi tiết những gì đang hiển thị trên màn hình máy tính của tôi.");
+  });
+
+  // 5. Accessible Hotkeys
+  window.addEventListener("keydown", (e) => {
     if (e.code === "Escape") {
       e.preventDefault();
       if (isListening) stopListening();
@@ -454,37 +407,30 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Ignore other keys if user is typing in input fields
-    if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA") return;
+    if (e.code === "F4") {
+      e.preventDefault();
+      sendCommand("Hãy miêu tả chi tiết những gì đang hiển thị trên màn hình máy tính của tôi.");
+      return;
+    }
 
-    if (e.code === "Space" && !e.repeat) {
-      e.preventDefault();
-      if (!isListening) startListening(currentMode === "chat");
-    } else if (e.code === "F2") {
-      e.preventDefault();
-      continuousMode = !continuousMode;
-      speechDisplay.innerText = continuousMode ? "Đã bật chế độ nghe liên tục (F2)" : "Đã tắt chế độ nghe liên tục (F2)";
-    } else if (e.code === "F4") {
-      e.preventDefault();
-      triggerReadScreen();
+    // Space to talk (only when not focused on input)
+    if (e.target.tagName !== "INPUT" && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "SELECT") {
+      if (e.code === "Space" && !e.repeat) {
+        e.preventDefault();
+        if (!isListening) startListening();
+      }
     }
   });
 
   window.addEventListener("keyup", (e) => {
-    if (e.code === "Space" && isListening && !continuousMode) {
-      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    if (e.code === "Space" && isListening) {
       e.preventDefault();
       setTimeout(() => {
         if (recognition && isListening) recognition.stop();
       }, 500);
     }
   });
-
-  function triggerReadScreen() {
-    sendVoiceCommand("Hãy miêu tả chi tiết những gì đang hiển thị trên màn hình máy tính của tôi.");
-  }
-
-  btnReadScreen.addEventListener("click", triggerReadScreen);
 
   // Initialize
   connectWebSocket();
