@@ -176,8 +176,17 @@ class NativeVoiceListener:
         print("🎙️ ĐANG LẮNG NGHE BẠN NÓI... (Nói lệnh và dừng lại khi nói xong)")
         print("=" * 60)
 
+        dev_idx, dev_name = audio_manager.get_active_device_index()
+        print(f"[NativeVoice] 🎙️ Đang thu âm từ Micro: [{dev_idx}] {dev_name}")
+
+        try:
+            dev_info = sd.query_devices(dev_idx) if dev_idx is not None else {}
+            active_sr = int(dev_info.get("default_samplerate", 16000)) if isinstance(dev_info, dict) else 16000
+        except Exception:
+            active_sr = 16000
+
         chunk_duration = 0.08  # 80ms chunks for rapid response
-        chunk_samples = int(self.sample_rate * chunk_duration)
+        chunk_samples = int(active_sr * chunk_duration)
         recorded_frames = []
 
         silence_threshold = 70  # Sensitive baseline for normal speech
@@ -190,11 +199,8 @@ class NativeVoiceListener:
         ambient_chunks = 0
         ambient_sum = 0
 
-        dev_idx, dev_name = audio_manager.get_active_device_index()
-        print(f"[NativeVoice] 🎙️ Đang thu âm từ Micro: [{dev_idx}] {dev_name}")
-
         try:
-            with sd.RawInputStream(samplerate=self.sample_rate, channels=self.channels, dtype="int16", device=dev_idx) as stream:
+            with sd.RawInputStream(samplerate=active_sr, channels=self.channels, dtype="int16", device=dev_idx) as stream:
                 while self.is_recording and not self._stop_requested:
                     data, overflowed = stream.read(chunk_samples)
                     raw_bytes = bytes(data)
@@ -244,7 +250,7 @@ class NativeVoiceListener:
         sound_manager.start_pulsing()
 
         audio_bytes = b"".join(recorded_frames)
-        audio = sr.AudioData(audio_bytes, self.sample_rate, 2)
+        audio = sr.AudioData(audio_bytes, active_sr, 2)
 
         def _recognize_lang(lang: str) -> Optional[tuple[str, float]]:
             try:

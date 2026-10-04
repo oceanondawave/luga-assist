@@ -161,7 +161,14 @@ class AudioManager:
             dev_name = f"Device {device_id}"
 
         try:
-            sample_rate = 16000
+            # Use native sample rate of device (e.g. 44100 on Loopback/Ocean Audio or 48000 on USB mics)
+            # to prevent virtual/HAL drivers from returning silent zeroes
+            try:
+                dev_info = sd.query_devices(dev_idx) if dev_idx is not None else {}
+                sample_rate = int(dev_info.get("default_samplerate", 44100)) if isinstance(dev_info, dict) else 44100
+            except Exception:
+                sample_rate = 44100
+
             chunk_size = int(sample_rate * 0.1)  # 100ms chunks
             chunks_to_read = max(1, int(duration / 0.1))
 

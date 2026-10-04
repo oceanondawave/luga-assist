@@ -62,13 +62,13 @@ class SpotlightHUD:
         self.root.configure(bg="#0f172a")
 
         # Dimensions & position at top center
-        win_w = 700
+        win_w = 780
         win_h = 240
         screen_w = self.root.winfo_screenwidth()
         x_pos = max(0, (screen_w - win_w) // 2)
         y_pos = 100
         self.root.geometry(f"{win_w}x{win_h}+{x_pos}+{y_pos}")
-        self.root.minsize(600, 200)
+        self.root.minsize(680, 200)
 
         # Build UI layout
         self._build_ui()
@@ -114,7 +114,7 @@ class SpotlightHUD:
             fg="#38bdf8",
             bg="#0f172a"
         )
-        title_lbl.pack(side="left")
+        title_lbl.pack(side="left", padx=(0, 6))
 
         # Mode toggle badge
         self.btn_mode = tk.Button(
@@ -126,12 +126,12 @@ class SpotlightHUD:
             activebackground="#334155",
             activeforeground="#38bdf8",
             relief="flat",
-            padx=8,
+            padx=6,
             pady=2,
             cursor="hand2",
             command=self.toggle_mode
         )
-        self.btn_mode.pack(side="left", padx=(10, 0))
+        self.btn_mode.pack(side="left", padx=(0, 6))
 
         # Microphone selector button
         self.btn_mic_select = tk.Button(
@@ -143,12 +143,12 @@ class SpotlightHUD:
             activebackground="#334155",
             activeforeground="#ffffff",
             relief="flat",
-            padx=8,
+            padx=6,
             pady=2,
             cursor="hand2",
             command=self.show_mic_menu
         )
-        self.btn_mic_select.pack(side="left", padx=(8, 0))
+        self.btn_mic_select.pack(side="left", padx=(0, 6))
 
         # Close button
         btn_close = tk.Button(
@@ -160,6 +160,8 @@ class SpotlightHUD:
             activebackground="#1e293b",
             activeforeground="#ffffff",
             relief="flat",
+            padx=6,
+            pady=2,
             cursor="hand2",
             command=self.hide
         )
@@ -192,7 +194,7 @@ class SpotlightHUD:
             activebackground="#334155",
             activeforeground="#ffffff",
             relief="flat",
-            padx=6,
+            padx=8,
             pady=2,
             cursor="hand2",
             command=self.open_web
@@ -207,13 +209,15 @@ class SpotlightHUD:
         btn_mic = tk.Button(
             input_box,
             text="🎙️",
-            font=("Arial", 12),
-            bg="#0f172a",
-            fg="#ffffff",
+            font=("Arial", 13),
+            bg="#1e293b",
+            fg="#38bdf8",
             activebackground="#334155",
-            activeforeground="#ffffff",
+            activeforeground="#38bdf8",
             relief="flat",
-            padx=6,
+            bd=0,
+            highlightthickness=0,
+            padx=4,
             pady=2,
             cursor="hand2",
             command=self.trigger_voice
@@ -498,7 +502,7 @@ class SpotlightHUD:
                     color = "#4ade80"
                     sound_manager.play_success()
                 else:
-                    msg = f"⚠️ Tín hiệu quá nhỏ hoặc im lặng [{dev_name}] (RMS: {avg_rms}). Vui lòng chọn Micro khác trong danh sách!"
+                    msg = f"⚠️ Không có tiếng nói từ [{dev_name}] (RMS: {avg_rms}). Nếu dùng card ảo Loopback/Ocean Audio, hãy gắn Micro vào nó trong Loopback, hoặc chọn micro [LG UltraFine Display Audio]!"
                     color = "#f87171"
                     sound_manager.play_error()
                 self.root.after(0, lambda: self.set_status(msg, fg=color))
