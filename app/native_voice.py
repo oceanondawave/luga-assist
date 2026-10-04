@@ -8,6 +8,7 @@ import sys
 import os
 import time
 import threading
+import queue
 import subprocess
 from pathlib import Path
 from typing import Optional, Callable
@@ -199,11 +200,27 @@ class NativeVoiceListener:
         ambient_chunks = 0
         ambient_sum = 0
 
+        audio_queue = queue.Queue()
+        def _voice_audio_callback(indata, frames, time_info, status):
+            audio_queue.put(bytes(indata))
+
         try:
-            with sd.RawInputStream(samplerate=active_sr, channels=self.channels, dtype="int16", device=dev_idx) as stream:
+            with sd.RawInputStream(
+                samplerate=active_sr,
+                channels=self.channels,
+                dtype="int16",
+                device=dev_idx,
+                blocksize=chunk_samples,
+                callback=_voice_audio_callback
+            ):
                 while self.is_recording and not self._stop_requested:
-                    data, overflowed = stream.read(chunk_samples)
-                    raw_bytes = bytes(data)
+                    try:
+                        raw_bytes = audio_queue.get(timeout=0.25)
+                    except queue.Empty:
+                        if time.time() - start_time > max_duration:
+                            break
+                        continue
+
                     recorded_frames.append(raw_bytes)
 
                     # Calculate RMS energy using C-accelerated audioop

@@ -447,11 +447,11 @@ async def api_set_audio_device(payload: AudioDevicePayload):
 
 @app.post("/api/audio/test")
 async def api_test_audio(payload: Optional[AudioTestPayload] = None):
-    """Test microphone signal level (RMS and peak)."""
+    """Test microphone signal level (RMS and peak) non-blockingly."""
     from app.audio_manager import audio_manager
     dev_id = payload.device_id if payload else None
     dur = payload.duration if (payload and payload.duration) else 0.5
-    res = audio_manager.test_microphone_level(device_id=dev_id, duration=dur)
+    res = await asyncio.to_thread(audio_manager.test_microphone_level, dev_id, dur)
     return {"status": "ok", **res}
 
 

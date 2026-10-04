@@ -85,30 +85,19 @@ class AudioManager:
                 pass
         return None
 
-    def probe_device_level(self, dev_id: int, duration: float = 0.05) -> int:
-        """Quickly measure RMS energy of a device (50ms)."""
-        try:
-            info = sd.query_devices(dev_id)
-            sr = int(info.get("default_samplerate", 44100))
-            with sd.RawInputStream(samplerate=sr, channels=1, dtype="int16", device=dev_id) as s:
-                data, _ = s.read(int(sr * duration))
-                return audioop.rms(bytes(data), 2)
-        except Exception:
-            return 0
-
     def get_active_device_index(self) -> Tuple[Optional[int], str]:
         """
         Get the device index and name for recording.
         Matches by saved device name if available.
-        If the chosen device is a virtual loopback with no signal (RMS <= 5),
-        automatically falls back to an active physical microphone.
+        In Auto mode, prioritizes physical studio/desktop microphones over virtual
+        cables or sleeping Bluetooth/Continuity devices without blocking audio probes.
         """
         devices = self.list_input_devices(force_refresh=True)
         saved_name = self.get_saved_device_name()
 
-        VIRTUAL_DEVICE_KEYWORDS = ["ocean audio", "blackhole", "soundflower", "loopback", "cadisplay"]
+        VIRTUAL_KEYWORDS = ["ocean audio", "blackhole", "soundflower", "loopback", "cadisplay", "lg mic"]
 
-        # 1. Check if user selected a specific real device (not Auto)
+        # 1. User explicitly selected a specific real device (not Auto)
         candidate = None
         is_auto_saved = (not saved_name or "auto" in saved_name.lower() or "tự động" in saved_name.lower())
         if not is_auto_saved:
@@ -118,52 +107,40 @@ class AudioManager:
                     break
 
         if candidate:
-            is_virtual = any(k in candidate["name"].lower() for k in VIRTUAL_DEVICE_KEYWORDS)
-            if is_virtual:
-                rms = self.probe_device_level(candidate["id"], duration=0.05)
-                if rms <= 10:
-                    # Virtual device is dead silent. Look for an active physical mic.
-                    for d in devices:
-                        if d.get("id", -1) >= 0 and not any(k in d["name"].lower() for k in VIRTUAL_DEVICE_KEYWORDS):
-                            phys_rms = self.probe_device_level(d["id"], duration=0.05)
-                            if phys_rms > 30:
-                                logger.info(
-                                    f"⚡ Thiết bị '{candidate['name']}' đang im lặng (RMS: {rms}). "
-                                    f"Tự động chuyển sang micro phần cứng '{d['name']}' (RMS: {phys_rms})!"
-                                )
-                                return d["id"], d["name"]
             return candidate["id"], candidate["name"]
 
-        # 2. If 'Auto' or no candidate: find best physical microphone by active signal
-        best_dev = None
-        best_rms = -1
-        first_physical = None
-
-        for d in devices:
+        # 2. In Auto mode (or no candidate): Rank all devices by physical microphone quality score
+        def _score_device(d: Dict[str, Any]) -> int:
             dev_id = d.get("id", -1)
-            if dev_id >= 0 and not any(k in d["name"].lower() for k in VIRTUAL_DEVICE_KEYWORDS):
-                if first_physical is None:
-                    first_physical = d
-                # Measure 40ms acoustic level
-                rms = self.probe_device_level(dev_id, duration=0.04)
-                if rms > best_rms:
-                    best_rms = rms
-                    best_dev = d
+            if dev_id < 0:
+                return -1000
+            name = d.get("name", "").lower()
+            if any(k in name for k in VIRTUAL_KEYWORDS):
+                return -100
+            if any(k in name for k in ["iphone", "ipad"]):
+                return -50
+            if any(k in name for k in ["ultrafine", "display audio", "maono", "yeti", "rode", "shure", "scarlett", "fifine", "elgato"]):
+                return 100
+            if "usb" in name:
+                return 80
+            if any(k in name for k in ["built-in", "internal", "macbook"]):
+                return 60
+            if any(k in name for k in ["headset", "airpods", "g9"]):
+                return 40
+            if d.get("is_default", False):
+                return 50
+            return 10
 
-        if best_dev and best_rms > 30:
-            return best_dev["id"], best_dev["name"]
-
-        if first_physical:
-            return first_physical["id"], first_physical["name"]
-
-        # Fallback to default device
-        if default_dev:
-            return default_dev["id"], default_dev["name"]
-
-        # Fallback to first available real input device
-        for d in devices:
-            if d.get("id", -1) >= 0:
-                return d["id"], d["name"]
+        real_candidates = [d for d in devices if d.get("id", -1) >= 0]
+        if real_candidates:
+            ranked = sorted(real_candidates, key=_score_device, reverse=True)
+            best = ranked[0]
+            if _score_device(best) > 0:
+                return best["id"], best["name"]
+            for d in real_candidates:
+                if d.get("is_default", False):
+                    return d["id"], d["name"]
+            return real_candidates[0]["id"], real_candidates[0]["name"]
 
         return None, "Default Microphone"
 
@@ -212,9 +189,11 @@ class AudioManager:
 
     def test_microphone_level(self, device_id: Optional[int] = None, duration: float = 0.5) -> Dict[str, Any]:
         """
-        Record a brief snippet to test if microphone is picking up sound.
+        Record a brief snippet using non-blocking audio callbacks to test if microphone is picking up sound.
         Returns average RMS, peak level, and whether signal is detected.
+        Safe against AUHAL / PortAudio deadlocks.
         """
+        import queue
         if device_id is None:
             dev_idx, dev_name = self.get_active_device_index()
         else:
@@ -222,29 +201,46 @@ class AudioManager:
             dev_name = f"Device {device_id}"
 
         try:
-            # Use native sample rate of device (e.g. 44100 on Loopback/Ocean Audio or 48000 on USB mics)
-            # to prevent virtual/HAL drivers from returning silent zeroes
             try:
                 dev_info = sd.query_devices(dev_idx) if dev_idx is not None else {}
                 sample_rate = int(dev_info.get("default_samplerate", 44100)) if isinstance(dev_info, dict) else 44100
+                if "name" in dev_info:
+                    dev_name = dev_info["name"]
             except Exception:
                 sample_rate = 44100
 
             chunk_size = int(sample_rate * 0.1)  # 100ms chunks
             chunks_to_read = max(1, int(duration / 0.1))
 
+            audio_queue = queue.Queue()
+            def _audio_callback(indata, frames, time_info, status):
+                audio_queue.put(bytes(indata))
+
             total_rms = 0
             peak_rms = 0
-            with sd.RawInputStream(samplerate=sample_rate, channels=1, dtype="int16", device=dev_idx) as stream:
-                for _ in range(chunks_to_read):
-                    data, _ = stream.read(chunk_size)
-                    chunk_rms = audioop.rms(bytes(data), 2)
-                    total_rms += chunk_rms
-                    if chunk_rms > peak_rms:
-                        peak_rms = chunk_rms
+            chunks_received = 0
 
-            avg_rms = total_rms // chunks_to_read
-            has_signal = avg_rms > 15  # Anything above digital noise floor
+            with sd.RawInputStream(
+                samplerate=sample_rate,
+                channels=1,
+                dtype="int16",
+                device=dev_idx,
+                blocksize=chunk_size,
+                callback=_audio_callback
+            ):
+                for _ in range(chunks_to_read):
+                    try:
+                        raw_data = audio_queue.get(timeout=0.35)
+                        chunk_rms = audioop.rms(raw_data, 2)
+                        total_rms += chunk_rms
+                        if chunk_rms > peak_rms:
+                            peak_rms = chunk_rms
+                        chunks_received += 1
+                    except queue.Empty:
+                        break
+
+            avg_rms = (total_rms // chunks_received) if chunks_received > 0 else 0
+            has_signal = avg_rms > 15
             return {
                 "success": True,
                 "device_id": dev_idx,
