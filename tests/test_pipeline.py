@@ -398,6 +398,86 @@ o   Video âm nhạc: "Chris Brown Ft Drake - Another Level (Official Music Vide
 
     print("test_narrative_extraction_and_speech_cleanup: PASSED")
 
+def test_citation_stripping():
+    from app.main import strip_citations, clean_text_for_speech, extract_payload_and_narrative
+
+    # 1. Test varied cite badge forms
+    sample1 = "Theo thông tin tìm kiếm [cite: 1], ngày mai trời có thể mưa [cite: 1, 2]."
+    cleaned1 = strip_citations(sample1)
+    assert "[cite:" not in cleaned1
+    assert cleaned1 == "Theo thông tin tìm kiếm, ngày mai trời có thể mưa."
+
+    sample2 = "Nội dung tóm tắt [cite: https://youtube.com/watch?v=123] [cite: 1-4] [CITE: 5] đã được đọc [cite]."
+    cleaned2 = strip_citations(sample2)
+    assert "[cite" not in cleaned2.lower()
+    assert "đã được đọc." in cleaned2
+
+    # 2. Test inside clean_text_for_speech
+    sample_tts = "**Tiêu đề** [cite: 1]: Nội dung [cite: 2] rất chi tiết."
+    cleaned_tts = clean_text_for_speech(sample_tts)
+    assert "[cite" not in cleaned_tts
+    assert "Tiêu đề: Nội dung rất chi tiết." in cleaned_tts
+
+    # 3. Test inside extract_payload_and_narrative with JSON payload
+    raw_with_cite = """```json
+{
+  "speech": "Đã tìm thấy thông tin [cite: 1, 3] cho bạn",
+  "actions": [{"action": "none"}],
+  "done": true
+}
+```
+Dưới đây là chi tiết [cite: 2]: Video Đậu Phộng TV [cite: 4] có 1.5M views."""
+    payload, narrative = extract_payload_and_narrative(raw_with_cite)
+    assert payload is not None
+    assert "[cite" not in payload["speech"]
+    assert "[cite" not in narrative
+    assert "Đã tìm thấy thông tin cho bạn" in payload["speech"]
+    assert "Dưới đây là chi tiết: Video Đậu Phộng TV có 1.5M views." in narrative
+    print("test_citation_stripping: PASSED")
+
+def test_web_element_selection_and_matching():
+    from app.accessibility import _match_element_score, accessibility_manager
+    from app.prompt_templates import SYSTEM_GROUNDING_PROMPT
+
+    # 1. Test prompt grounding includes web guidelines and select_element
+    assert "select_element" in SYSTEM_GROUNDING_PROMPT
+    assert "QUY TẮC THAO TÁC TRÊN GIAO DIỆN WEB" in SYSTEM_GROUNDING_PROMPT
+    assert "ZERO CITATIONS" in SYSTEM_GROUNDING_PROMPT
+
+    # 2. Test _match_element_score
+    # Exact match
+    score_exact = _match_element_score("Đậu Phộng TV", "Đậu Phộng TV")
+    assert score_exact == 1000.0
+
+    # Prefix match
+    score_prefix = _match_element_score("Đậu Phộng TV", "Đậu Phộng TV - Tập 85")
+    assert score_prefix > 700.0
+
+    # Substring match
+    score_sub = _match_element_score("Tập 85", "Đậu Phộng TV - Tập 85")
+    assert score_sub > 400.0
+
+    # Reject 1-letter noise nodes
+    score_noise = _match_element_score("Đậu Phộng TV", "a")
+    assert score_noise == 0.0
+
+    # 3. Test element selection through cached element lookup
+    accessibility_manager.cached_elements = [
+        {"role": "Button", "name": "Reload this page", "pixel_x": 50, "pixel_y": 80, "x_percent": 0.02, "y_percent": 0.05},
+        {"role": "Link", "name": "Đậu Phộng TV - Tập 85", "pixel_x": 450, "pixel_y": 320, "x_percent": 0.35, "y_percent": 0.25},
+        {"role": "SearchField", "name": "Search", "pixel_x": 600, "pixel_y": 80, "x_percent": 0.50, "y_percent": 0.05},
+    ]
+
+    # Test select_element execution via os_controller
+    res = os_controller.execute_action({
+        "action": "select_element",
+        "target": "Đậu Phộng TV"
+    })
+    assert res["success"] is True
+    assert "Selected 'Đậu Phộng TV'" in res["details"] or "Accessibility Grounding" in res["details"]
+
+    print("test_web_element_selection_and_matching: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -414,7 +494,9 @@ if __name__ == "__main__":
     test_bilingual_voice_selection_and_normalization()
     test_file_management_and_terminal_suite()
     test_narrative_extraction_and_speech_cleanup()
-    print("\n🎉 ALL TESTS (INCLUDING SUMMARY NARRATIVE EXTRACTION) PASSED SUCCESSFULLY!")
+    test_citation_stripping()
+    test_web_element_selection_and_matching()
+    print("\n🎉 ALL TESTS (INCLUDING WEB ELEMENT SELECTION & CITATION STRIPPING) PASSED SUCCESSFULLY!")
 
 
 

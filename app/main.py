@@ -160,11 +160,24 @@ async def set_session(payload: SessionPayload):
 
 
 # Helper: Extract clean JSON from Gemini's response
+def strip_citations(text: str) -> str:
+    """Strip all [cite: ...] markers and citation badges returned by Gemini."""
+    if not text:
+        return text
+    # Remove all [cite: ...] badges (e.g. [cite: 1], [cite: 1, 2], [cite: url], etc.)
+    cleaned = re.sub(r"\[\s*cite[^\]]*\]", "", text, flags=re.IGNORECASE)
+    # Collapse multiple spaces or tabs
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    # Fix space before punctuation: "tóm tắt ." -> "tóm tắt."
+    cleaned = re.sub(r"\s+([,.:;?!])", r"\1", cleaned)
+    return cleaned.strip()
+
 def clean_text_for_speech(text: str) -> str:
     """Clean markdown artifacts, headers, bullets, and file badges so TTS speaks naturally."""
     if not text:
         return text
-    cleaned = re.sub(r"```[a-zA-Z]*\n?", "", text)
+    cleaned = strip_citations(text)
+    cleaned = re.sub(r"```[a-zA-Z]*\n?", "", cleaned)
     cleaned = re.sub(r"\*\*([^*]+)\*\*", r"\1", cleaned)
     cleaned = re.sub(r"\*([^*]+)\*", r"\1", cleaned)
     cleaned = re.sub(r"__([^_]+)__", r"\1", cleaned)
@@ -176,6 +189,7 @@ def clean_text_for_speech(text: str) -> str:
     cleaned = re.sub(r"\bJPG\b|\bPNG\b", "", cleaned)
     cleaned = re.sub(r"!\[.*?\]\(.*?\)", "", cleaned)
     cleaned = re.sub(r"\n{2,}", "\n. ", cleaned)
+    cleaned = strip_citations(cleaned)
     return cleaned.strip()
 
 def extract_payload_and_narrative(text: str) -> tuple[Optional[Dict[str, Any]], str]:
@@ -188,6 +202,7 @@ def extract_payload_and_narrative(text: str) -> tuple[Optional[Dict[str, Any]], 
     if not text:
         return None, ""
 
+    text = strip_citations(text)
     decoder = json.JSONDecoder()
     pos = 0
     candidates = []
@@ -230,7 +245,7 @@ def extract_payload_and_narrative(text: str) -> tuple[Optional[Dict[str, Any]], 
     else:
         narrative = text.strip()
 
-    return chosen_payload, narrative
+    return chosen_payload, strip_citations(narrative)
 
 # Helper: Extract clean JSON from Gemini's response (backwards compatible)
 def extract_json_payload(text: str) -> Optional[Dict[str, Any]]:
@@ -418,6 +433,7 @@ async def process_user_command(user_command: str, voice: str):
                 await tts_service.speak(err_text)
                 return
 
+        raw_response = strip_citations(raw_response)
         print(f"[Pipeline] [Bước {step}] Phản hồi từ Gemini:\n{raw_response}")
         # Stop pulsing audio cue immediately as soon as AI response has been received
         sound_manager.stop_pulsing()
@@ -470,7 +486,8 @@ async def process_user_command(user_command: str, voice: str):
             elif summary_inside and len(summary_inside.strip()) > len(speech_to_say):
                 speech_to_say = summary_inside.strip()
 
-        # Clean speech text from markdown artifacts and bullet symbols for natural TTS audio
+        # Clean speech text from citations and markdown artifacts for natural TTS audio
+        speech_to_say = strip_citations(speech_to_say)
         speech_for_tts = clean_text_for_speech(speech_to_say)
 
         # ANTI-HALLUCINATION / OUTCOME VERIFICATION LOGIC:

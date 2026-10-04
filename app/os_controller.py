@@ -45,10 +45,15 @@ class OSController:
         result = {"success": True, "action": action, "details": ""}
 
         try:
-            if action == "click":
-                target = action_data.get("target") or action_data.get("field")
+            if action in ("click", "select_element", "choose_element", "click_element", "select"):
+                target = (
+                    action_data.get("target")
+                    or action_data.get("field")
+                    or action_data.get("element")
+                    or action_data.get("name")
+                )
                 if target and accessibility_manager.focus_element_by_name(target):
-                    result["details"] = f"Clicked '{target}' via 100% Accessibility Grounding"
+                    result["details"] = f"Selected '{target}' via 100% Accessibility Grounding"
                 else:
                     x, y = self.to_pixel_coords(action_data.get("x_percent", 0.5), action_data.get("y_percent", 0.5))
                     pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
@@ -67,7 +72,7 @@ class OSController:
                 pyautogui.rightClick(x, y)
                 result["details"] = f"Right clicked at ({x}, {y})"
 
-            elif action == "focus":
+            elif action in ("focus", "focus_element"):
                 target = action_data.get("target") or action_data.get("field", "")
                 target_str = str(target).lower().strip()
                 if target_str in ("next", "tab"):

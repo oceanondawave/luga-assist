@@ -7,6 +7,7 @@ Only creates a new chat if explicitly requested or if context is truly overloade
 """
 from pathlib import Path
 import json
+import re
 import asyncio
 from typing import Optional, Dict, Any
 
@@ -126,6 +127,8 @@ class GeminiSessionService:
             print(f"[GeminiSessionService] Gửi lệnh vào cuộc trò chuyện hiện tại (cid={self.chat_session.cid or 'mới'})...")
             output = await self.chat_session.send_message(prompt, files=files)
             response_text = output.text if hasattr(output, "text") else str(output)
+            # Remove any citation badges e.g. [cite: 1], [cite: 1, 2], [cite: ...]
+            response_text = re.sub(r"\[\s*cite[^\]]*\]", "", response_text, flags=re.IGNORECASE)
             return response_text
         except Exception as e:
             err_str = str(e).lower()
@@ -138,7 +141,8 @@ class GeminiSessionService:
                 print(f"[GeminiSessionService] Context bị quá tải ({e}), tự động làm mới chat session...")
                 self.reset_chat()
                 output = await self.chat_session.send_message(prompt, files=files)
-                return output.text if hasattr(output, "text") else str(output)
+                response_text = output.text if hasattr(output, "text") else str(output)
+                return re.sub(r"\[\s*cite[^\]]*\]", "", response_text, flags=re.IGNORECASE)
             raise e
 
     def reset_chat(self):

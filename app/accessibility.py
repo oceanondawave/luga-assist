@@ -4,6 +4,7 @@ Provides 100% exact UI element detection, direct focus, coordinate anchoring,
 and outcome verification via macOS Accessibility APIs and cross-platform UI Automation.
 """
 import sys
+import re
 import time
 from typing import Dict, Any, List, Optional, Tuple
 import pyautogui
@@ -23,40 +24,79 @@ else:
 
 
 def _score_element(role: str, name: str) -> int:
-    """Prioritize form inputs and core action buttons, suppressing formatting toolbar noise."""
+    """Prioritize web links, search fields, form inputs and core action buttons, suppressing browser/editor noise."""
     name_lower = name.lower().strip()
     role_clean = role.replace("AX", "")
 
-    # Toolbar formatting noise gets negative score
+    # Formatting toolbar & browser chrome noise gets negative score
     noise_keywords = (
         "bold", "italic", "underline", "strikethrough", "font", "font size",
         "font color", "highlight color", "increase indent", "decrease indent",
         "bullet list", "number list", "text alignment", "paragraph spacing",
-        "styles", "clipboard", "undo", "redo", "more options"
+        "styles", "clipboard", "undo", "redo", "more options",
+        # Browser chrome & extension noise
+        "view site information", "edit bookmark for this tab", "bookmark",
+        "extensions", "extension", "bitwarden", "dark reader", "wappalyzer",
+        "luga assist bridge", "ask gemini", "tab groups", "reload", "back", "forward",
+        "install youtube", "customize and control google chrome"
     )
-    if any(k == name_lower or name_lower.startswith(k) for k in noise_keywords):
-        return -50
+    if any(k in name_lower for k in noise_keywords):
+        return -60
 
     score = 0
-    # Primary form inputs
+    # Search and inputs
     if any(r in role_clean for r in ("TextField", "TextArea", "SearchField", "ComboBox", "Edit")):
         score += 100
-        if any(k in name_lower for k in ("to", "recipients", "subject", "search", "tìm", "tiêu đề", "người nhận")):
+        if any(k in name_lower for k in ("search", "tìm", "to", "recipients", "subject", "tiêu đề", "người nhận")):
             score += 50
-    # Primary action buttons
+    # Core action buttons
     elif "Button" in role_clean:
         action_button_keywords = (
-            "send", "gửi", "new mail", "new", "mới", "soạn", "reply",
-            "save", "lưu", "submit", "discard", "hủy", "search", "ok", "cancel"
+            "search", "tìm", "play", "pause", "subscribe", "send", "gửi",
+            "save", "lưu", "submit", "discard", "like", "share", "create", "tạo", "ok", "cancel"
         )
         if any(k in name_lower for k in action_button_keywords):
-            score += 80
+            score += 90
         else:
-            score += 20
+            score += 25
+    # Web links (video cards, articles, navigation)
+    elif "Link" in role_clean or "Hyperlink" in role_clean:
+        score += 85
+    # Category chips & options (e.g. YouTube category chips like Music, Gaming, News)
+    elif "RadioButton" in role_clean or "CheckBox" in role_clean:
+        score += 75
     else:
         score += 10
 
     return score
+
+
+def _match_element_score(token: str, elem_name: str) -> float:
+    """
+    Score how closely elem_name matches token.
+    Higher score indicates a much more accurate match for web & native controls.
+    """
+    t = str(token or "").strip().lower()
+    e = str(elem_name or "").strip().lower()
+    if not t or not e or len(e) < 2:
+        return 0.0
+    if t == e:
+        return 1000.0  # Exact full match
+    if e.startswith(t):
+        return 700.0 + len(t)
+    if len(e) >= 3 and t.startswith(e):
+        return 500.0 + len(e)
+    if t in e:
+        return 400.0 + len(t)
+    if len(e) >= 3 and e in t:
+        return 300.0 + len(e)
+    # Check word overlap
+    t_words = set(re.findall(r"\w+", t))
+    e_words = set(re.findall(r"\w+", e))
+    common = t_words & e_words
+    if common:
+        return 150.0 * (len(common) / max(len(t_words), 1))
+    return 0.0
 
 
 class AccessibilityManager:
@@ -97,12 +137,86 @@ class AccessibilityManager:
             seen_keys = set()
             visited_nodes = [0]
 
+            interactive_roles = (
+                "AXTextField", "AXTextArea", "AXButton", "AXPopUpButton",
+                "AXComboBox", "AXCheckBox", "AXRadioButton", "AXMenuItem",
+                "AXSearchField", "AXLink", "AXTab"
+            )
+
+            # Check if active window contains an AXWebArea (Chrome, Safari, Edge, Firefox, Electron apps)
+            def find_web_area(elem, depth: int = 0):
+                if depth > 8:
+                    return None
+                e, r = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXRole", None)
+                if r == "AXWebArea":
+                    return elem
+                e, ch = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXChildren", None)
+                if ch:
+                    for c in ch:
+                        res = find_web_area(c, depth + 1)
+                        if res:
+                            return res
+                return None
+
+            primary_win = windows[0]
+            web_area = find_web_area(primary_win)
+
+            # If web browser window, extract web elements directly from AXWebArea first
+            if web_area:
+                def walk_web(elem, depth: int = 0):
+                    visited_nodes[0] += 1
+                    if depth > 18 or visited_nodes[0] > 700 or len(candidates) >= max_elements * 2:
+                        return
+                    e, role = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXRole", None)
+                    e, desc = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXDescription", None)
+                    e, title = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXTitle", None)
+                    e, val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXValue", None)
+                    e, placeholder = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXPlaceholderValue", None)
+
+                    name = desc or title or placeholder or (str(val)[:30] if role in ("AXTextField", "AXButton") and val else "")
+                    name_str = str(name).strip() if name else ""
+
+                    if role in interactive_roles and name_str and len(name_str) > 1:
+                        e, pos_val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXPosition", None)
+                        e, size_val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXSize", None)
+                        if pos_val and size_val:
+                            ok_p, pt = ApplicationServices.AXValueGetValue(pos_val, ApplicationServices.kAXValueCGPointType, None)
+                            ok_s, sz = ApplicationServices.AXValueGetValue(size_val, ApplicationServices.kAXValueCGSizeType, None)
+                            if ok_p and ok_s and sz.width >= 10 and sz.height >= 10:
+                                cx = int(pt.x + sz.width / 2.0)
+                                cy = int(pt.y + sz.height / 2.0)
+                                xp = round(cx / float(screen_w), 3)
+                                yp = round(cy / float(screen_h), 3)
+                                dedup_key = f"{role}:{name_str}"
+                                if dedup_key not in seen_keys:
+                                    seen_keys.add(dedup_key)
+                                    candidates.append({
+                                        "role": role.replace("AX", ""),
+                                        "name": name_str,
+                                        "x_percent": xp,
+                                        "y_percent": yp,
+                                        "pixel_x": cx,
+                                        "pixel_y": cy,
+                                        "width": int(sz.width),
+                                        "height": int(sz.height),
+                                    })
+                    e, ch = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXChildren", None)
+                    if ch:
+                        for c in ch:
+                            walk_web(c, depth + 1)
+
+                walk_web(web_area)
+
+            # Also walk native window controls (or top browser address bar / search)
             def walk(elem, depth: int = 0):
                 visited_nodes[0] += 1
-                if depth > 14 or visited_nodes[0] > 400:
+                if depth > 14 or visited_nodes[0] > 900:
+                    return
+                # Skip re-traversing web area if already extracted
+                e, role = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXRole", None)
+                if web_area and role == "AXWebArea":
                     return
 
-                e, role = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXRole", None)
                 e, desc = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXDescription", None)
                 e, title = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXTitle", None)
                 e, val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXValue", None)
@@ -111,13 +225,7 @@ class AccessibilityManager:
                 name = desc or title or placeholder or (str(val)[:25] if role in ("AXTextField", "AXButton") and val else "")
                 name_str = str(name).strip() if name else ""
 
-                interactive_roles = (
-                    "AXTextField", "AXTextArea", "AXButton", "AXPopUpButton",
-                    "AXComboBox", "AXCheckBox", "AXRadioButton", "AXMenuItem",
-                    "AXSearchField"
-                )
-
-                if role in interactive_roles and name_str:
+                if role in interactive_roles and name_str and len(name_str) > 1:
                     e, pos_val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXPosition", None)
                     e, size_val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXSize", None)
 
@@ -126,7 +234,6 @@ class AccessibilityManager:
                         ok_s, sz = ApplicationServices.AXValueGetValue(size_val, ApplicationServices.kAXValueCGSizeType, None)
 
                         if ok_p and ok_s and sz.width >= 12 and sz.height >= 12:
-                            # For wide text fields, click near left edge (50-80px in)
                             if "TextField" in role or "TextArea" in role or "ComboBox" in role:
                                 click_x = int(pt.x + min(80, sz.width * 0.2))
                             else:
@@ -136,7 +243,7 @@ class AccessibilityManager:
                             xp = round(click_x / float(screen_w), 3)
                             yp = round(click_y / float(screen_h), 3)
 
-                            dedup_key = f"{role}:{name_str}:{xp}:{yp}"
+                            dedup_key = f"{role}:{name_str}"
                             if dedup_key not in seen_keys:
                                 seen_keys.add(dedup_key)
                                 candidates.append({
@@ -162,7 +269,7 @@ class AccessibilityManager:
                     win_title = str(t) if t else ""
                 walk(w)
 
-            # Sort candidates by relevance score
+            # Sort candidates by relevance score (real web content & form inputs at top)
             candidates.sort(key=lambda el: _score_element(el["role"], el["name"]), reverse=True)
             self.cached_elements = candidates[:max_elements]
             return {"app": app_name, "window": win_title, "elements": self.cached_elements}
@@ -174,7 +281,7 @@ class AccessibilityManager:
     def _get_windows_app_elements(self, max_elements: int = 35) -> Dict[str, Any]:
         """
         Inspect the active foreground window on Windows using UIAutomation or PowerShell.
-        Extracts Edit, Button, ComboBox controls and their exact screen rectangles.
+        Extracts Edit, Button, ComboBox, Hyperlink, RadioButton controls and their exact screen rectangles.
         """
         import subprocess
         import json
@@ -230,6 +337,9 @@ class AccessibilityManager:
                 "$cond = New-Object System.Windows.Automation.OrCondition(\n"
                 "  (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit)),\n"
                 "  (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)),\n"
+                "  (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Hyperlink)),\n"
+                "  (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::RadioButton)),\n"
+                "  (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::CheckBox)),\n"
                 "  (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::ComboBox))\n"
                 ");\n"
                 "$found = $elem.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond);\n"
@@ -308,7 +418,8 @@ class AccessibilityManager:
 
                 if allowed_roles is None or role in allowed_roles:
                     for token in search_tokens:
-                        if token in name_str or (name_str and name_str in token):
+                        score = _match_element_score(token, name_str)
+                        if score >= 100.0:
                             e, pos_val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXPosition", None)
                             e, size_val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXSize", None)
                             if pos_val and size_val:
@@ -336,6 +447,27 @@ class AccessibilityManager:
                         if res:
                             return res
                 return None
+
+            # Prioritize searching inside AXWebArea for web pages
+            def find_web_area(elem, depth: int = 0):
+                if depth > 8:
+                    return None
+                e, r = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXRole", None)
+                if r == "AXWebArea":
+                    return elem
+                e, ch = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXChildren", None)
+                if ch:
+                    for c in ch:
+                        res = find_web_area(c, depth + 1)
+                        if res:
+                            return res
+                return None
+
+            web_area = find_web_area(windows[0])
+            if web_area:
+                web_match = search_node(web_area)
+                if web_match:
+                    return web_match
 
             return search_node(windows[0])
         except Exception as e:
@@ -370,21 +502,26 @@ class AccessibilityManager:
                 search_tokens.extend(syn_list)
                 target_category = key
 
-        # 1. Search in cached elements first
+        # 1. Search in cached elements first, scoring all candidates to pick the best match
         if not self.cached_elements:
             self.get_frontmost_app_elements()
 
         best_elem = None
-        for elem in self.cached_elements:
-            elem_name_lower = elem.get("name", "").lower()
-            for token in search_tokens:
-                if token in elem_name_lower or (elem_name_lower and elem_name_lower in token):
-                    best_elem = elem
-                    break
-            if best_elem:
-                break
+        best_score = 0.0
 
-        # 2. If not found in cached list, perform live targeted search
+        for elem in self.cached_elements:
+            elem_name = elem.get("name", "")
+            for token in search_tokens:
+                score = _match_element_score(token, elem_name)
+                if score > best_score:
+                    best_score = score
+                    best_elem = elem
+
+        # Only accept cached element if score is solid (>= 100.0)
+        if best_score < 100.0:
+            best_elem = None
+
+        # 2. If not found in cached list with sufficient score, perform live targeted search
         if not best_elem and IS_MACOS:
             allowed_roles = None
             if target_category in ("to", "subject"):
@@ -396,13 +533,18 @@ class AccessibilityManager:
         if best_elem:
             px = best_elem["pixel_x"]
             py = best_elem["pixel_y"]
-            print(f"[AccessibilityManager] 🎯 Khóa chính xác phần tử '{best_elem['name']}' ({best_elem.get('role', '')}) tại ({px}, {py})")
+            role = best_elem.get("role", "Element")
+            print(f"[AccessibilityManager] 🎯 Khóa chính xác phần tử '{best_elem['name']}' ({role}) tại ({px}, {py})")
             pyautogui.moveTo(px, py, duration=0.08)
             pyautogui.click()
             time.sleep(0.12)
             return True
 
         return False
+
+    def select_element_by_name(self, target_name: str) -> bool:
+        """Alias for focus_element_by_name to select web or app elements directly."""
+        return self.focus_element_by_name(target_name)
 
     def is_compose_window_active(self) -> bool:
         """
