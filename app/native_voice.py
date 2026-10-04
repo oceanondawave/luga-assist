@@ -171,7 +171,6 @@ class NativeVoiceListener:
         self.is_recording = True
         self._stop_requested = False
         self._recording_start_time = time.time()
-        sound_manager.play_start()
         print("\n" + "=" * 60)
         print("🎙️ ĐANG LẮNG NGHE BẠN NÓI... (Nói lệnh và dừng lại khi nói xong)")
         print("=" * 60)
@@ -180,13 +179,15 @@ class NativeVoiceListener:
         chunk_samples = int(self.sample_rate * chunk_duration)
         recorded_frames = []
 
-        silence_threshold = 200  # Optimal sensitivity for natural speech
+        silence_threshold = 70  # Sensitive baseline for normal speech
         speech_detected = False
         speech_duration = 0.0
         silence_start_time = None
-        silence_duration_to_stop = 0.85  # 0.85s natural pause threshold
+        silence_duration_to_stop = 0.9  # 0.9s natural pause threshold
         max_duration = 12.0  # Max 12 seconds per command
         start_time = time.time()
+        ambient_chunks = 0
+        ambient_sum = 0
 
         try:
             with sd.RawInputStream(samplerate=self.sample_rate, channels=self.channels, dtype="int16") as stream:
@@ -201,12 +202,18 @@ class NativeVoiceListener:
                     except Exception:
                         rms = 0
 
+                    # Dynamic noise floor adaptation during first 3 chunks
+                    if ambient_chunks < 3:
+                        ambient_sum += rms
+                        ambient_chunks += 1
+                        silence_threshold = max(55, min(140, int((ambient_sum / ambient_chunks) * 1.5)))
+
                     if rms > silence_threshold:
                         speech_detected = True
                         speech_duration += chunk_duration
                         silence_start_time = None
-                    elif speech_detected and speech_duration >= 0.35:
-                        # Only start counting silence if user has actually spoken for at least 0.35s
+                    elif speech_detected and speech_duration >= 0.3:
+                        # Start counting silence after user has spoken
                         if silence_start_time is None:
                             silence_start_time = time.time()
                         elif time.time() - silence_start_time >= silence_duration_to_stop:
@@ -223,7 +230,8 @@ class NativeVoiceListener:
             return None
 
         self.is_recording = False
-        if not recorded_frames or not speech_detected:
+        total_audio_duration = len(recorded_frames) * chunk_duration
+        if not recorded_frames or total_audio_duration < 0.4:
             print("[NativeVoice] Không phát hiện thấy giọng nói.")
             sound_manager.play_error()
             return None
@@ -319,34 +327,46 @@ class NativeVoiceListener:
         """
         def on_press(key):
             try:
-                # F7: Spotlight Floating Chat Popup trigger
-                if key == keyboard.Key.f7:
-                    print("\n[Global Hotkey] Đã nhấn F7 -> Bật/Tắt Cửa sổ Chat Nổi (Spotlight)!")
+                # Track modifier keys
+                if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
+                    self._current_keys.add("ctrl")
+                elif key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
+                    self._current_keys.add("alt")
+                elif key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r):
+                    self._current_keys.add("cmd")
+
+                # F7: Spotlight Floating Chat (F7 physical, media_previous, or Ctrl+Alt+Space)
+                is_f7 = (key == keyboard.Key.f7)
+                if hasattr(keyboard.Key, "media_previous") and key == keyboard.Key.media_previous:
+                    is_f7 = True
+
+                if is_f7 or (key == keyboard.Key.space and "ctrl" in self._current_keys and "alt" in self._current_keys):
+                    print("\n[Global Hotkey] Đã nhấn F7 / Ctrl+Alt+Space -> Bật/Tắt Cửa sổ Chat Nổi (Spotlight)!")
                     if self.on_spotlight_toggle:
                         self.on_spotlight_toggle()
                     return
 
-                # F8: Voice trigger
-                if key == keyboard.Key.f8:
-                    print("\n[Global Hotkey] Đã nhấn F8 -> Bắt đầu lắng nghe!")
+                # F8: Voice trigger (F8 physical, media_play_pause, or Ctrl+Space)
+                is_f8 = (key == keyboard.Key.f8)
+                if hasattr(keyboard.Key, "media_play_pause") and key == keyboard.Key.media_play_pause:
+                    is_f8 = True
+
+                if is_f8 or (key == keyboard.Key.space and "ctrl" in self._current_keys and "alt" not in self._current_keys):
+                    print("\n[Global Hotkey] Đã nhấn F8 / Ctrl+Space -> Bắt đầu lắng nghe!")
                     self.trigger_voice_flow()
                     return
 
-                # F9: Toggle Mode (Control Mode <-> Chat Mode)
-                if key == keyboard.Key.f9:
+                # F9: Toggle Mode (F9 physical, media_next, or Ctrl+Alt+M)
+                is_f9 = (key == keyboard.Key.f9)
+                if hasattr(keyboard.Key, "media_next") and key == keyboard.Key.media_next:
+                    is_f9 = True
+
+                if is_f9:
                     print("\n[Global Hotkey] Đã nhấn F9 -> Chuyển đổi chế độ (Điều khiển <-> Trò chuyện AI)!")
                     if self.on_mode_toggle:
                         self.on_mode_toggle()
                     return
 
-                # Ctrl + Space: Alternative voice trigger
-                if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
-                    self._current_keys.add("ctrl")
-                elif key == keyboard.Key.space:
-                    if "ctrl" in self._current_keys:
-                        print("\n[Global Hotkey] Đã nhấn Ctrl + Space -> Bắt đầu lắng nghe!")
-                        self.trigger_voice_flow()
-                        return
             except Exception:
                 pass
 
@@ -354,6 +374,10 @@ class NativeVoiceListener:
             try:
                 if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
                     self._current_keys.discard("ctrl")
+                elif key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
+                    self._current_keys.discard("alt")
+                elif key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r):
+                    self._current_keys.discard("cmd")
             except Exception:
                 pass
 

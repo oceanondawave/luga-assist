@@ -147,6 +147,10 @@ class SoundManager:
         self._play_file(str(self.snd_start), volume=0.8)
         print("\n[Sound] 🔔 CHIME (Đã kích hoạt chế độ nghe - Bắt đầu lắng nghe)")
 
+    def play_chime(self):
+        """Notification / popup activation earcon."""
+        self.play_start()
+
     def start_pulsing(self):
         """Start repeating pulse sound while Gemini is thinking/processing."""
         if not self.pulse_enabled:

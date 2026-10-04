@@ -77,8 +77,10 @@ def create_macos_apps():
     # Launcher checks if Luga is already running. If so, simply triggers HUD show.
     # Otherwise, starts python -m app.main directly.
     launcher_script = f"""#!/bin/bash
+export PATH="/Library/Frameworks/Python.framework/Versions/3.14/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 BASE_DIR="{BASE_DIR}"
 PYTHON_BIN="{python_bin}"
+export PYTHONPATH="$BASE_DIR"
 
 # 1. Check if Luga Assist is already running in background
 if curl -s -m 1 "http://localhost:8000/api/status" >/dev/null 2>&1; then

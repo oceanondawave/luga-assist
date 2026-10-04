@@ -72,14 +72,7 @@ def launch_spotlight_hud() -> Optional[subprocess.Popen]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 1. Try restoring saved session from disk
-    await gemini_service.auto_init_from_disk()
-
-    # 2. If Google session is not yet ready, ensure Chrome runs silently in background (--no-startup-window)
-    if not gemini_service.is_ready and hub.extension_client is None:
-        ensure_background_browser()
-
-    # 3. Start Global Native Voice & Hotkey Listener (Zero browser needed!)
+    # 1. Start Global Native Voice & Hotkey Listener IMMEDIATELY (Zero delay for F7/F8/F9!)
     loop = asyncio.get_running_loop()
 
     def handle_native_voice_command(cmd_text: str):
@@ -105,11 +98,22 @@ async def lifespan(app: FastAPI):
     )
     native_voice.start_global_hotkeys()
 
-    # 4. Start Native Desktop Spotlight Floating Chat HUD (F7 Hotkey) if not already active
+    # 2. Start Native Desktop Spotlight Floating Chat HUD (F7 Hotkey) if not already active
     global spotlight_process
     from app.spotlight_ui import get_spotlight_hud
     if get_spotlight_hud() is None:
         spotlight_process = launch_spotlight_hud()
+
+    # 3. Initialize background Gemini session asynchronously (never block server startup)
+    async def _init_gemini_bg():
+        try:
+            await gemini_service.auto_init_from_disk()
+            if not gemini_service.is_ready and hub.extension_client is None:
+                ensure_background_browser()
+        except Exception as e:
+            print(f"[Lifespan] Background session init: {e}")
+
+    asyncio.create_task(_init_gemini_bg())
 
     yield
 
@@ -1088,7 +1092,7 @@ def start():
 
     if has_display:
         from app.spotlight_ui import SpotlightHUD
-        config = uvicorn.Config(app="app.main:app", host=HOST, port=PORT, reload=False, log_level="warning")
+        config = uvicorn.Config(app=app, host=HOST, port=PORT, reload=False, log_level="warning")
         server = uvicorn.Server(config)
         server_thread = threading.Thread(target=server.run, daemon=True)
         server_thread.start()

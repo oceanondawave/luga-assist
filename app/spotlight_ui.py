@@ -274,14 +274,30 @@ class SpotlightHUD:
         if not self.root:
             return
         def _do_show():
-            self.root.deiconify()
-            self.root.lift()
-            self.root.attributes("-topmost", True)
-            self.root.focus_force()
-            self.txt_input.focus_set()
-            self.txt_input.select_range(0, tk.END)
-            self.is_visible = True
-            sound_manager.play_chime()
+            try:
+                self.root.deiconify()
+                self.root.lift()
+                self.root.attributes("-topmost", True)
+                if sys.platform == "darwin":
+                    try:
+                        import subprocess
+                        subprocess.run(
+                            ["osascript", "-e", f'tell application "System Events" to set frontmost of first process whose unix id is {os.getpid()} to true'],
+                            capture_output=True,
+                            timeout=0.4
+                        )
+                    except Exception:
+                        pass
+                self.root.focus_force()
+                self.txt_input.focus_set()
+                self.txt_input.select_range(0, tk.END)
+                self.is_visible = True
+            except Exception as e:
+                logger.error(f"Error in show HUD: {e}")
+            try:
+                sound_manager.play_start()
+            except Exception:
+                pass
         self.root.after(0, _do_show)
 
     def hide(self):
