@@ -108,7 +108,7 @@ async def lifespan(app: FastAPI):
     # 2. Start Native Desktop Spotlight Floating Chat HUD (F7 Hotkey) if not already active
     global spotlight_process
     from app.spotlight_ui import get_spotlight_hud
-    if get_spotlight_hud() is None:
+    if get_spotlight_hud() is None and not os.environ.get("LUGA_MAIN_GUI_ACTIVE"):
         spotlight_process = launch_spotlight_hud()
 
     # 3. Initialize background Gemini session asynchronously (never block server startup)
@@ -1158,13 +1158,14 @@ def start():
         has_display = False
 
     if has_display:
+        os.environ["LUGA_MAIN_GUI_ACTIVE"] = "1"
         from app.spotlight_ui import SpotlightHUD
         config = uvicorn.Config(app=app, host=HOST, port=PORT, reload=False, log_level="warning")
         server = uvicorn.Server(config)
+        hud = SpotlightHUD(host=HOST, port=PORT, server=server, manage_hotkeys=False)
         server_thread = threading.Thread(target=server.run, daemon=True)
         server_thread.start()
 
-        hud = SpotlightHUD(host=HOST, port=PORT, server=server, manage_hotkeys=False)
         try:
             hud.run(show_immediately=True)
         except (KeyboardInterrupt, SystemExit):

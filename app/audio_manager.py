@@ -41,14 +41,24 @@ class AudioManager:
             return []
 
         active_selection = self.get_saved_device_name()
-        devices = []
+        is_auto = (active_selection is None or active_selection.lower() in ("auto", ""))
+        devices = [
+            {
+                "id": -1,
+                "name": "🎯 Tự động chọn Micro tốt nhất (Auto)",
+                "channels": 1,
+                "sample_rate": 44100.0,
+                "is_default": False,
+                "is_selected": is_auto,
+            }
+        ]
         for i, d in enumerate(raw_devices):
             if d.get("max_input_channels", 0) > 0:
                 name = d.get("name", f"Microphone {i}")
                 is_selected = False
-                if active_selection:
+                if not is_auto and active_selection:
                     is_selected = (name == active_selection or active_selection.lower() in name.lower())
-                elif default_in is not None and i == default_in:
+                elif not is_auto and default_in is not None and i == default_in:
                     is_selected = True
 
                 devices.append({
@@ -75,44 +85,85 @@ class AudioManager:
                 pass
         return None
 
+    def probe_device_level(self, dev_id: int, duration: float = 0.05) -> int:
+        """Quickly measure RMS energy of a device (50ms)."""
+        try:
+            info = sd.query_devices(dev_id)
+            sr = int(info.get("default_samplerate", 44100))
+            with sd.RawInputStream(samplerate=sr, channels=1, dtype="int16", device=dev_id) as s:
+                data, _ = s.read(int(sr * duration))
+                return audioop.rms(bytes(data), 2)
+        except Exception:
+            return 0
+
     def get_active_device_index(self) -> Tuple[Optional[int], str]:
         """
         Get the device index and name for recording.
         Matches by saved device name if available.
-        If no saved device or saved device not found, intelligently avoids known virtual/silent devices.
+        If the chosen device is a virtual loopback with no signal (RMS <= 5),
+        automatically falls back to an active physical microphone.
         """
         devices = self.list_input_devices(force_refresh=True)
         saved_name = self.get_saved_device_name()
 
-        if saved_name:
-            for d in devices:
-                if d["name"] == saved_name or saved_name.lower() in d["name"].lower():
-                    return d["id"], d["name"]
-
         VIRTUAL_DEVICE_KEYWORDS = ["ocean audio", "blackhole", "soundflower", "loopback", "cadisplay"]
 
-        default_dev = None
-        for d in devices:
-            if d.get("is_default"):
-                default_dev = d
-                break
+        # 1. Check if user selected a specific real device (not Auto)
+        candidate = None
+        is_auto_saved = (not saved_name or "auto" in saved_name.lower() or "tự động" in saved_name.lower())
+        if not is_auto_saved:
+            for d in devices:
+                if d.get("id", -1) >= 0 and (d["name"] == saved_name or saved_name.lower() in d["name"].lower()):
+                    candidate = d
+                    break
 
-        # If system default is NOT a virtual device, use it
-        if default_dev and not any(k in default_dev["name"].lower() for k in VIRTUAL_DEVICE_KEYWORDS):
-            return default_dev["id"], default_dev["name"]
+        if candidate:
+            is_virtual = any(k in candidate["name"].lower() for k in VIRTUAL_DEVICE_KEYWORDS)
+            if is_virtual:
+                rms = self.probe_device_level(candidate["id"], duration=0.05)
+                if rms <= 10:
+                    # Virtual device is dead silent. Look for an active physical mic.
+                    for d in devices:
+                        if d.get("id", -1) >= 0 and not any(k in d["name"].lower() for k in VIRTUAL_DEVICE_KEYWORDS):
+                            phys_rms = self.probe_device_level(d["id"], duration=0.05)
+                            if phys_rms > 30:
+                                logger.info(
+                                    f"⚡ Thiết bị '{candidate['name']}' đang im lặng (RMS: {rms}). "
+                                    f"Tự động chuyển sang micro phần cứng '{d['name']}' (RMS: {phys_rms})!"
+                                )
+                                return d["id"], d["name"]
+            return candidate["id"], candidate["name"]
 
-        # Find first non-virtual physical microphone (e.g. LG UltraFine, USB mic, etc.)
+        # 2. If 'Auto' or no candidate: find best physical microphone by active signal
+        best_dev = None
+        best_rms = -1
+        first_physical = None
+
         for d in devices:
-            if not any(k in d["name"].lower() for k in VIRTUAL_DEVICE_KEYWORDS):
-                return d["id"], d["name"]
+            dev_id = d.get("id", -1)
+            if dev_id >= 0 and not any(k in d["name"].lower() for k in VIRTUAL_DEVICE_KEYWORDS):
+                if first_physical is None:
+                    first_physical = d
+                # Measure 40ms acoustic level
+                rms = self.probe_device_level(dev_id, duration=0.04)
+                if rms > best_rms:
+                    best_rms = rms
+                    best_dev = d
+
+        if best_dev and best_rms > 30:
+            return best_dev["id"], best_dev["name"]
+
+        if first_physical:
+            return first_physical["id"], first_physical["name"]
 
         # Fallback to default device
         if default_dev:
             return default_dev["id"], default_dev["name"]
 
-        # Fallback to first available input device
-        if devices:
-            return devices[0]["id"], devices[0]["name"]
+        # Fallback to first available real input device
+        for d in devices:
+            if d.get("id", -1) >= 0:
+                return d["id"], d["name"]
 
         return None, "Default Microphone"
 
@@ -120,6 +171,16 @@ class AudioManager:
         """Save user's preferred microphone by name or id."""
         devices = self.list_input_devices(force_refresh=True)
         chosen = None
+
+        if name_or_id in (-1, "auto", "Auto") or "tự động" in str(name_or_id).lower():
+            try:
+                with open(AUDIO_CONFIG_FILE, "w", encoding="utf-8") as f:
+                    json.dump({"selected_device_name": "Auto", "selected_device_id": -1}, f, indent=2)
+                self._cached_devices = None
+                logger.info("Active microphone set to Auto-Detect")
+                return {"id": -1, "name": "🎯 Tự động chọn Micro tốt nhất (Auto)", "channels": 1, "is_default": False, "is_selected": True}
+            except Exception as e:
+                logger.error(f"Error saving auto config: {e}")
 
         if isinstance(name_or_id, int):
             for d in devices:

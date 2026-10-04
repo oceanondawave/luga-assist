@@ -724,8 +724,9 @@ def test_audio_device_management():
     assert len(dev_name) > 0
 
     # 3. Setting active device
-    if devices:
-        target = devices[0]["name"]
+    real_devices = [d for d in devices if d.get("id", -1) >= 0]
+    if real_devices:
+        target = real_devices[0]["name"]
         res = audio_manager.set_active_device(target)
         assert res.get("name") == target
         saved_name = audio_manager.get_saved_device_name()
@@ -743,10 +744,13 @@ def test_audio_device_management():
     assert status["active_microphone"] is not None
 
     # 6. Test set device endpoint
-    if devices:
-        payload = main_module.AudioDevicePayload(device=devices[0]["name"])
+    if real_devices:
+        payload = main_module.AudioDevicePayload(device=real_devices[0]["name"])
         api_set = asyncio.run(main_module.api_set_audio_device(payload))
         assert api_set["status"] == "ok"
+
+    # 7. Restore active device to Auto
+    audio_manager.set_active_device("Auto")
 
     print("test_audio_device_management: PASSED")
 

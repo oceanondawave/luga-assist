@@ -419,8 +419,12 @@ class SpotlightHUD:
         """Update the microphone button label with currently active device name."""
         try:
             from app.audio_manager import audio_manager
+            saved = audio_manager.get_saved_device_name()
             _, name = audio_manager.get_active_device_index()
-            short_name = name if len(name) <= 18 else (name[:16] + "…")
+            if saved and saved.lower() in ("auto", ""):
+                short_name = f"Tự động ({name[:10]}…)" if len(name) > 10 else f"Tự động ({name})"
+            else:
+                short_name = name if len(name) <= 16 else (name[:14] + "…")
             if hasattr(self, "btn_mic_select") and self.btn_mic_select:
                 self.btn_mic_select.config(text=f"🎤 {short_name} ▾")
         except Exception:
@@ -432,6 +436,8 @@ class SpotlightHUD:
             from app.audio_manager import audio_manager
             devices = audio_manager.list_input_devices(force_refresh=True)
             active_id, active_name = audio_manager.get_active_device_index()
+            saved = audio_manager.get_saved_device_name()
+            is_auto = (saved is None or saved.lower() in ("auto", ""))
 
             menu = tk.Menu(
                 self.root,
@@ -446,7 +452,10 @@ class SpotlightHUD:
             for d in devices:
                 d_id = d["id"]
                 d_name = d["name"]
-                is_sel = (d_id == active_id or d_name == active_name)
+                if d_id == -1:
+                    is_sel = is_auto
+                else:
+                    is_sel = not is_auto and (d_id == active_id or d_name == active_name)
                 mark = "✔ " if is_sel else "    "
                 label = f"{mark}{d_name}"
                 def _make_cmd(target_name=d_name):
