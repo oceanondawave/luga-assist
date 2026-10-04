@@ -23,6 +23,12 @@ case "$1" in
     shift
     PYTHONPATH=. python3 -m app.chat_cli "$@"
     ;;
+  install)
+    ./install.sh
+    ;;
+  uninstall)
+    ./uninstall.sh
+    ;;
   fg|run|foreground)
     ./start.sh
     ;;
@@ -34,9 +40,11 @@ case "$1" in
     echo "👉 luga stop     : Dừng app đang chạy ngầm"
     echo "👉 luga restart  : Khởi động lại app ngầm"
     echo "👉 luga status   : Kiểm tra app có đang chạy không"
-    echo "👉 luga chat     : Mở phòng chat AI với Gemini ngay trên terminal"
+    echo "👉 luga chat     : Giao diện Chat điều khiển máy tính cực đẹp trên Terminal"
     echo "👉 luga logs     : Xem nhật ký hoạt động (logs)"
     echo "👉 luga fg       : Chạy trực tiếp trên màn hình terminal"
+    echo "👉 luga install  : Chạy trình cài đặt toàn diện"
+    echo "👉 luga uninstall: Gỡ cài đặt Luga Assist khỏi hệ thống"
     echo "=========================================================="
     ;;
 esac

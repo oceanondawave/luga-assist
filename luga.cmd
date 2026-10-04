@@ -17,6 +17,10 @@ if "%1"=="start" (
     python -m app.daemon logs -f
 ) else if "%1"=="chat" (
     python -m app.chat_cli %2 %3 %4 %5
+) else if "%1"=="install" (
+    call install.bat
+) else if "%1"=="uninstall" (
+    call uninstall.bat
 ) else if "%1"=="fg" (
     python app\main.py
 ) else if "%1"=="run" (
@@ -25,12 +29,14 @@ if "%1"=="start" (
     echo ==========================================================
     echo               LỆNH ĐIỀU KHIỂN LUGA ASSIST (WINDOWS)
     echo ==========================================================
-    echo   luga start    : Khởi động app chạy ngầm
-    echo   luga stop     : Dừng app đang chạy ngầm
-    echo   luga restart  : Khởi động lại app ngầm
-    echo   luga status   : Kiểm tra app có đang chạy không
-    echo   luga chat     : Mở phòng chat AI với Gemini ngay trên CMD/PowerShell
-    echo   luga logs     : Xem nhật ký hoạt động (logs)
-    echo   luga fg       : Chạy trực tiếp trên màn hình CMD
+    echo   luga start     : Khởi động app chạy ngầm
+    echo   luga stop      : Dừng app đang chạy ngầm
+    echo   luga restart   : Khởi động lại app ngầm
+    echo   luga status    : Kiểm tra app có đang chạy không
+    echo   luga chat      : Giao diện Chat điều khiển máy tính cực đẹp trên Terminal
+    echo   luga logs      : Xem nhật ký hoạt động (logs)
+    echo   luga fg        : Chạy trực tiếp trên màn hình CMD
+    echo   luga install   : Chạy trình cài đặt toàn diện Windows
+    echo   luga uninstall : Gỡ cài đặt Luga Assist khỏi Windows
     echo ==========================================================
 )
