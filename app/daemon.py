@@ -100,6 +100,7 @@ def start_daemon():
     env = os.environ.copy()
     env["PYTHONPATH"] = str(BASE_DIR)
     env["LUGA_DAEMON_MODE"] = "1"
+    env["PYTHONUNBUFFERED"] = "1"
 
     # Detach process according to OS
     if sys.platform == "darwin" or sys.platform.startswith("linux"):

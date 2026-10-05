@@ -71,7 +71,7 @@ def normalize_spoken_terms(text: str) -> str:
 
     # Common tech & app spoken loanwords in Vietnamese
     text = re.sub(r'(?i)\bmáy\s+mát\b', 'máy Mac', text)
-    text = re.sub(r'(?i)\bcơ\s*rôm\b', 'Chrome', text)
+    text = re.sub(r'(?i)\b(c[ơờ]\s*rôm|crôm)\b', 'Chrome', text)
     text = re.sub(r'(?i)\bkhôm\b', 'Chrome', text)
     text = re.sub(r'(?i)\bgúc\s*gồ\b', 'Google', text)
     text = re.sub(r'(?i)\bgu\s*gồ\b', 'Google', text)
@@ -150,10 +150,12 @@ class NativeVoiceListener:
         on_command_callback: Optional[Callable[[str], None]] = None,
         on_mode_toggle_callback: Optional[Callable[[], None]] = None,
         on_spotlight_toggle_callback: Optional[Callable[[], None]] = None,
+        on_status_callback: Optional[Callable[[str, str], None]] = None,
     ):
         self.on_command = on_command_callback
         self.on_mode_toggle = on_mode_toggle_callback
         self.on_spotlight_toggle = on_spotlight_toggle_callback
+        self.on_status = on_status_callback
         self.recognizer = sr.Recognizer()
         self.is_recording = False
         self.is_processing = False
@@ -165,114 +167,123 @@ class NativeVoiceListener:
         self._hotkey_listener: Optional[keyboard.Listener] = None
         self._current_keys = set()
 
+    def _update_status(self, state: str, text_or_msg: str = ""):
+        """Notify status listener (Spotlight HUD, etc.) of voice recording progression."""
+        if self.on_status:
+            try:
+                self.on_status(state, text_or_msg)
+            except Exception:
+                pass
+
     def listen_and_transcribe(self) -> Optional[str]:
         """
-        Record audio from system microphone with rapid voice activity detection (VAD).
-        Stops automatically when user stops speaking (0.85s natural silence threshold).
+        Record audio from system microphone using the active OS microphone directly.
+        Stops automatically when user stops speaking (natural silence pause), or when F8 is pressed again.
         """
         self.is_recording = True
         self._stop_requested = False
         self._recording_start_time = time.time()
+        self._update_status("recording", "🎙️ Đang lắng nghe... Hãy nói lệnh vào Micro")
         print("\n" + "=" * 60)
         print("🎙️ ĐANG LẮNG NGHE BẠN NÓI... (Nói lệnh và dừng lại khi nói xong)")
         print("=" * 60)
 
-        dev_idx, dev_name = audio_manager.get_active_device_index()
-        print(f"[NativeVoice] 🎙️ Đang thu âm từ Micro: [{dev_idx}] {dev_name}")
-
-        try:
-            dev_info = sd.query_devices(dev_idx) if dev_idx is not None else {}
-            active_sr = int(dev_info.get("default_samplerate", 16000)) if isinstance(dev_info, dict) else 16000
-            input_channels = min(2, int(dev_info.get("max_input_channels", 1))) if isinstance(dev_info, dict) else 1
-        except Exception:
-            active_sr = 16000
-            input_channels = 1
-
         chunk_duration = 0.08  # 80ms chunks for rapid response
-        chunk_samples = int(active_sr * chunk_duration)
+        chunk_samples = int(self.sample_rate * chunk_duration)
         recorded_frames = []
 
-        silence_threshold = 70  # Sensitive baseline for normal speech
         speech_detected = False
         speech_duration = 0.0
         silence_start_time = None
-        silence_duration_to_stop = 0.9  # 0.9s natural pause threshold
-        max_duration = 12.0  # Max 12 seconds per command
+        silence_duration_to_stop = 0.75  # 0.75s natural pause threshold
+        max_duration = 4.5  # Max 4.5s per command (rapid and responsive)
         start_time = time.time()
-        ambient_chunks = 0
-        ambient_sum = 0
 
-        audio_queue = queue.Queue()
-        def _voice_audio_callback(indata, frames, time_info, status):
-            raw = bytes(indata)
-            if input_channels == 2:
-                raw = audioop.tomono(raw, 2, 0.5, 0.5)
-            audio_queue.put(raw)
+        ambient_samples = 0
+        ambient_rms_sum = 0
+        speech_threshold = 350
+        silence_threshold = 200
+
+        dev_idx, dev_name = audio_manager.get_active_device_index()
 
         try:
             with sd.RawInputStream(
-                samplerate=active_sr,
-                channels=input_channels,
+                samplerate=self.sample_rate,
+                channels=self.channels,
                 dtype="int16",
                 device=dev_idx,
                 blocksize=chunk_samples,
-                callback=_voice_audio_callback
-            ):
+            ) as stream:
                 while self.is_recording and not self._stop_requested:
-                    try:
-                        raw_bytes = audio_queue.get(timeout=0.25)
-                    except queue.Empty:
-                        if time.time() - start_time > max_duration:
-                            break
-                        continue
-
+                    data, overflowed = stream.read(chunk_samples)
+                    raw_bytes = bytes(data)
                     recorded_frames.append(raw_bytes)
 
-                    # Calculate RMS energy using C-accelerated audioop
                     try:
                         rms = audioop.rms(raw_bytes, 2)
                     except Exception:
                         rms = 0
 
-                    # Dynamic noise floor adaptation during first 3 chunks
-                    if ambient_chunks < 3:
-                        ambient_sum += rms
-                        ambient_chunks += 1
-                        silence_threshold = max(55, min(140, int((ambient_sum / ambient_chunks) * 1.5)))
+                    # Dynamic baseline adaptation during first 3 chunks (first ~240ms)
+                    if ambient_samples < 3:
+                        ambient_rms_sum += rms
+                        ambient_samples += 1
+                        baseline = ambient_rms_sum // ambient_samples
+                        speech_threshold = max(350, int(baseline * 1.55))
+                        silence_threshold = max(180, int(baseline * 1.15))
 
-                    if rms > silence_threshold:
+                    if rms >= speech_threshold:
                         speech_detected = True
                         speech_duration += chunk_duration
                         silence_start_time = None
-                    elif speech_detected and speech_duration >= 0.3:
-                        # Start counting silence after user has spoken
-                        if silence_start_time is None:
-                            silence_start_time = time.time()
-                        elif time.time() - silence_start_time >= silence_duration_to_stop:
-                            print("[NativeVoice] 🔇 Đã phát hiện kết thúc câu nói.")
-                            break
+                    elif speech_detected and speech_duration >= 0.25:
+                        if rms <= silence_threshold:
+                            if silence_start_time is None:
+                                silence_start_time = time.time()
+                            elif time.time() - silence_start_time >= silence_duration_to_stop:
+                                print("[NativeVoice] 🔇 Đã phát hiện kết thúc câu nói.")
+                                break
+                        else:
+                            silence_start_time = None
 
                     if time.time() - start_time > max_duration:
                         break
-
         except Exception as e:
             print(f"[NativeVoice] Lỗi khi thu âm từ micro: {e}")
+            self._update_status("error", f"Lỗi micro: {e}")
             sound_manager.play_error()
             self.is_recording = False
             return None
 
         self.is_recording = False
         total_audio_duration = len(recorded_frames) * chunk_duration
-        if not recorded_frames or total_audio_duration < 0.4:
-            print("[NativeVoice] Không phát hiện thấy giọng nói.")
+        if not recorded_frames or total_audio_duration < 0.35:
+            print("[NativeVoice] Không phát hiện thấy âm thanh ghi lại.")
+            self._update_status("error", "⚠️ Không phát hiện âm thanh.")
             sound_manager.play_error()
             return None
 
-        # Start pulsing sound as soon as voice stops and thinking begins!
         sound_manager.start_pulsing()
+        self._update_status("transcribing", "⏳ Đang nhận diện câu lệnh...")
 
         audio_bytes = b"".join(recorded_frames)
-        audio = sr.AudioData(audio_bytes, active_sr, 2)
+
+        # Automatic Gain Control (AGC) - amplify quiet mic signal so Google STT acoustic model hears clearly
+        try:
+            peak = audioop.max(audio_bytes, 2)
+            if 0 < peak < 22000:
+                gain = min(7.0, 26000.0 / peak)
+                audio_bytes = audioop.mul(audio_bytes, 2, gain)
+        except Exception:
+            pass
+
+        audio = sr.AudioData(audio_bytes, self.sample_rate, 2)
+
+        try:
+            with open("/tmp/last_voice_command.wav", "wb") as f:
+                f.write(audio.get_wav_data())
+        except Exception:
+            pass
 
         def _recognize_lang(lang: str) -> Optional[tuple[str, float]]:
             try:
@@ -280,7 +291,17 @@ class NativeVoiceListener:
                 if isinstance(res, tuple):
                     return (res[0].strip(), float(res[1]))
                 return (str(res).strip(), 0.8)
-            except Exception:
+            except sr.UnknownValueError:
+                try:
+                    res = self.recognizer.recognize_google(audio, language=lang)
+                    return (str(res).strip(), 0.75)
+                except Exception:
+                    return None
+            except sr.RequestError as e:
+                print(f"[NativeVoice] ⚠️ Lỗi kết nối Google STT ({lang}): {e}")
+                return None
+            except Exception as e:
+                print(f"[NativeVoice] ⚠️ Lỗi STT ({lang}): {e}")
                 return None
 
         mode = VOICE_RECOGNITION_LANG.lower().strip()
@@ -297,7 +318,6 @@ class NativeVoiceListener:
             if res:
                 best_text = res[0]
         else:
-            # 'auto': Concurrent bilingual recognition (vi-VN & en-US running in parallel)
             print("[NativeVoice] ⏳ Đang nhận diện song ngữ (Tiếng Việt & English concurrently)...")
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 fut_vi = executor.submit(_recognize_lang, "vi-VN")
@@ -309,31 +329,32 @@ class NativeVoiceListener:
 
         if not best_text:
             print("[NativeVoice] Chưa nghe rõ câu lệnh, vui lòng thử lại.")
+            self._update_status("error", "⚠️ Chưa nghe rõ câu lệnh, vui lòng nói lại.")
             sound_manager.play_error()
             return None
 
-        # Apply intelligent loanword and tech term normalizer
         best_text = normalize_spoken_terms(best_text)
         print(f"\n[NativeVoice] 🗣️ Nhận diện thành công: \"{best_text}\"")
+        self._update_status("transcribed", best_text)
         return best_text
 
     def trigger_voice_flow(self):
         """Trigger the complete voice-to-action flow without opening any browser."""
         now = time.time()
-        # Debounce: ignore repeated keypresses within 0.5s (prevents OS key repeat glitch)
-        if now - self._last_trigger_time < 0.5:
+        # Debounce: ignore repeated keypresses within 0.3s
+        if now - self._last_trigger_time < 0.3:
             return
         self._last_trigger_time = now
 
-        if self.is_processing:
-            print("[NativeVoice] Hệ thống đang bận thực hiện tác vụ trước...")
-            return
-
-        # If already recording, only allow manual stop if recording has been running for at least 1.0s
+        # If already recording, allow manual stop via keypress or button
         if self.is_recording:
-            if now - self._recording_start_time > 1.0:
+            if now - self._recording_start_time > 0.35:
                 print("[NativeVoice] ⏹️ Nhận lệnh dừng ghi âm từ phím nóng.")
                 self._stop_requested = True
+            return
+
+        if self.is_processing:
+            print("[NativeVoice] Hệ thống đang bận thực hiện tác vụ trước...")
             return
 
         self.is_processing = True
@@ -342,6 +363,9 @@ class NativeVoiceListener:
 
         def _worker():
             try:
+                # 0.35s pause allows activation chime sound wave to finish ringing completely
+                # before opening the microphone stream, preventing chime noise pollution
+                time.sleep(0.35)
                 cmd_text = self.listen_and_transcribe()
                 if cmd_text and self.on_command:
                     self.on_command(cmd_text)

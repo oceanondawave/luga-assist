@@ -95,6 +95,9 @@ class SpotlightHUD:
         self.ready_event.set()
         logger.info("Spotlight HUD ready! Press F7 or Ctrl+Alt+Space anywhere.")
 
+        # Periodically poll voice status to display live voice transcription feedback
+        self.root.after(400, self._poll_voice_status)
+
         # Tkinter main loop
         self.root.mainloop()
 
@@ -540,9 +543,9 @@ class SpotlightHUD:
                     col = "#4ade80"
                     sound_manager.play_success()
                 else:
-                    msg = f"ℹ️ Nguồn [{dev_name}] đã kết nối (chưa có âm thanh phát qua, RMS: 0)."
-                    col = "#38bdf8"
-                    sound_manager.play_click()
+                    msg = f"✅ Nguồn [{dev_name}] đã kết nối thành công (Sẵn sàng nhận âm thanh)!"
+                    col = "#4ade80"
+                    sound_manager.play_success()
 
                 self.root.after(0, lambda m=msg, c=col: self.set_status(m, fg=c))
             except Exception as e:
@@ -554,7 +557,6 @@ class SpotlightHUD:
     def trigger_voice(self):
         """Trigger voice recognition via mic."""
         self.set_status("🎙️ Đang lắng nghe... Hãy nói lệnh vào Micro!", fg="#38bdf8")
-        sound_manager.play_start()
         def _req():
             try:
                 url = f"http://{self.host}:{self.port}/api/voice/trigger"
@@ -567,6 +569,34 @@ class SpotlightHUD:
             except Exception:
                 pass
         threading.Thread(target=_req, daemon=True).start()
+
+    def _poll_voice_status(self):
+        """Poll backend for real-time voice recognition events and feedback."""
+        try:
+            url = f"http://{self.host}:{self.port}/api/voice/status"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=0.35) as res:
+                data = json.loads(res.read().decode("utf-8"))
+                ts = data.get("timestamp", 0)
+                if ts > getattr(self, "_last_seen_voice_ts", 0):
+                    self._last_seen_voice_ts = ts
+                    state = data.get("state")
+                    msg = data.get("message", "")
+                    text = data.get("text", "")
+                    if state == "recording":
+                        self.set_status(msg or "🎙️ Đang lắng nghe... Hãy nói lệnh vào Micro!", fg="#38bdf8")
+                    elif state == "transcribing":
+                        self.set_status("⏳ Đang nhận diện giọng nói...", fg="#fbbf24")
+                    elif state == "transcribed" and text:
+                        self.txt_input.delete(0, tk.END)
+                        self.txt_input.insert(0, text)
+                        self.set_status(f"🗣️ \"{text}\"", fg="#4ade80")
+                    elif state == "error":
+                        self.set_status(msg or "⚠️ Chưa nghe rõ câu lệnh, vui lòng nói lại.", fg="#f87171")
+        except Exception:
+            pass
+        if self.root:
+            self.root.after(400, self._poll_voice_status)
 
     def quit_app(self):
         """Cleanly terminate the entire unified application and server without triggering crash reporters."""

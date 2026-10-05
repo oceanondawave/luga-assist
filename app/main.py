@@ -10,6 +10,7 @@ if sys.platform == "darwin":
     os.environ["ApplePersistence"] = "NO"
 
 import json
+import time
 import uuid
 import asyncio
 from contextlib import asynccontextmanager
@@ -22,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import subprocess
+import threading
 import uvicorn
 import webbrowser
 
@@ -75,6 +77,23 @@ def launch_spotlight_hud() -> Optional[subprocess.Popen]:
         return None
 
 native_voice_instance: Optional[NativeVoiceListener] = None
+voice_status_lock = threading.Lock()
+current_voice_status = {
+    "state": "idle",
+    "text": "",
+    "message": "",
+    "timestamp": time.time(),
+}
+
+def update_global_voice_status(state: str, text_or_msg: str):
+    global current_voice_status
+    with voice_status_lock:
+        current_voice_status = {
+            "state": state,
+            "text": text_or_msg if state == "transcribed" else "",
+            "message": text_or_msg if state != "transcribed" else f'"{text_or_msg}"',
+            "timestamp": time.time(),
+        }
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -102,6 +121,7 @@ async def lifespan(app: FastAPI):
         on_command_callback=handle_native_voice_command,
         on_mode_toggle_callback=handle_native_mode_toggle,
         on_spotlight_toggle_callback=handle_native_spotlight_toggle,
+        on_status_callback=update_global_voice_status,
     )
     native_voice_instance.start_global_hotkeys()
 
@@ -462,6 +482,13 @@ async def api_voice_trigger():
         threading.Thread(target=native_voice_instance.trigger_voice_flow, daemon=True).start()
         return {"status": "ok", "message": "Voice trigger initiated"}
     return {"status": "error", "message": "Native voice listener not available"}
+
+
+@app.get("/api/voice/status")
+async def api_voice_status():
+    """Get current voice listening and recognition status for Spotlight HUD."""
+    with voice_status_lock:
+        return dict(current_voice_status)
 
 
 @app.get("/api/spotlight/show")
@@ -1137,6 +1164,22 @@ async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, s
 def start():
     """Entry point for running server and native Spotlight HUD."""
     import threading
+    import signal
+
+    # Terminate any previously running instance to prevent conflicting mic listeners/ports
+    if PID_FILE.exists():
+        try:
+            with open(PID_FILE, "r") as f:
+                old_pid = int(f.read().strip())
+            if old_pid != os.getpid() and old_pid > 0:
+                try:
+                    os.kill(old_pid, 0)
+                    os.kill(old_pid, signal.SIGTERM)
+                    time.sleep(0.4)
+                except (OSError, ProcessLookupError):
+                    pass
+        except Exception:
+            pass
 
     # Save PID so daemon commands / scripts know about this process
     try:
@@ -1153,32 +1196,16 @@ def start():
     print("      Phím tắt F9:     Chuyển đổi Chế độ (Điều khiển <-> Chat)")
     print("=" * 60)
 
-    has_display = True
-    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
-        has_display = False
-
-    if has_display:
-        os.environ["LUGA_MAIN_GUI_ACTIVE"] = "1"
-        from app.spotlight_ui import SpotlightHUD
-        config = uvicorn.Config(app=app, host=HOST, port=PORT, reload=False, log_level="warning")
-        server = uvicorn.Server(config)
-        hud = SpotlightHUD(host=HOST, port=PORT, server=server, manage_hotkeys=False)
-        server_thread = threading.Thread(target=server.run, daemon=True)
-        server_thread.start()
-
-        try:
-            hud.run(show_immediately=True)
-        except (KeyboardInterrupt, SystemExit):
-            pass
-        finally:
-            server.should_exit = True
-            try:
-                PID_FILE.unlink(missing_ok=True)
-            except Exception:
-                pass
-            sys.exit(0)
-    else:
+    try:
         uvicorn.run("app.main:app", host=HOST, port=PORT, reload=False, log_level="info")
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    finally:
+        try:
+            PID_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+        sys.exit(0)
 
 if __name__ == "__main__":
     start()
