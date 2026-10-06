@@ -30,7 +30,7 @@ case "$1" in
     ./uninstall.sh
     ;;
   fg|run|foreground)
-    ./start.sh
+    bash ./start.sh
     ;;
   desktop|shortcuts)
     python3 scripts/create_desktop_launchers.py
