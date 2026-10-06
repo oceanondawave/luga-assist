@@ -68,6 +68,16 @@ def create_macos_apps():
     <string>1.0.0</string>
     <key>LSMinimumSystemVersion</key>
     <string>10.13</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Luga Assist cần quyền truy cập Micro để nhận diện câu lệnh giọng nói.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Luga Assist cần quyền nhận diện giọng nói tiếng Việt và tiếng Anh.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Luga Assist cần quyền điều khiển hệ thống qua AppleScript.</string>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>Luga Assist cần quyền trợ năng để hỗ trợ điều khiển máy tính.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Luga Assist cần quyền chụp màn hình để AI quan sát giao diện.</string>
 </dict>
 </plist>
 """
@@ -75,18 +85,9 @@ def create_macos_apps():
         f.write(info_plist)
 
     # Launcher checks if Luga is already running. If so, simply triggers HUD show.
-    # Otherwise, starts python -m app.main directly.
+    # Otherwise, launches start.sh inside Terminal so macOS grants 100% full microphone permissions!
     launcher_script = f"""#!/bin/bash
-export PATH="/Library/Frameworks/Python.framework/Versions/3.14/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 BASE_DIR="{BASE_DIR}"
-PYTHON_BIN="{python_bin}"
-export PYTHONPATH="$BASE_DIR"
-
-# Prevent macOS window restoration prompts from previous crashes
-defaults write org.python.python ApplePersistence -bool no 2>/dev/null || true
-defaults write org.python.python NSQuitAlwaysKeepsWindows -bool no 2>/dev/null || true
-defaults write com.luga.assist ApplePersistence -bool no 2>/dev/null || true
-defaults write com.luga.assist NSQuitAlwaysKeepsWindows -bool no 2>/dev/null || true
 
 # 1. Check if Luga Assist is already running in background
 if curl -s -m 1 "http://localhost:8000/api/status" >/dev/null 2>&1; then
@@ -95,21 +96,35 @@ if curl -s -m 1 "http://localhost:8000/api/status" >/dev/null 2>&1; then
     exit 0
 fi
 
-# 2. Start unified Luga Assist process
-cd "$BASE_DIR"
-exec "$PYTHON_BIN" -m app.main
+# 2. Launch start.sh inside Terminal to guarantee full macOS microphone & accessibility entitlements
+osascript <<EOF
+tell application "Terminal"
+    do script "cd \\"$BASE_DIR\\" && ./start.sh"
+    activate
+end tell
+EOF
 """
     launcher_file = macos_dir / "launcher"
     with open(launcher_file, "w", encoding="utf-8") as f:
         f.write(launcher_script)
     launcher_file.chmod(launcher_file.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-    print("✅ [macOS] Đã thiết lập 1 ứng dụng DUY NHẤT trên Desktop:")
+    # 3. Also create a direct Luga Assist.command file on Desktop
+    cmd_file = desktop / "Luga Assist.command"
+    cmd_content = f"""#!/bin/bash
+cd "{BASE_DIR}"
+./start.sh
+"""
+    with open(cmd_file, "w", encoding="utf-8") as f:
+        f.write(cmd_content)
+    cmd_file.chmod(cmd_file.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    print("✅ [macOS] Đã thiết lập ứng dụng trên Desktop:")
     print(f"   • {app_target}")
+    print(f"   • {cmd_file}")
     print("👉 Khi mở Luga Assist:")
-    print("   - Cửa sổ Chat Nổi (F7) sẽ hiển thị ngay lập tức để nhập lệnh.")
-    print("   - Nhấn F7 để Bật/Tắt chat, Esc để ẩn hoàn toàn, F8 để nói qua Micro, F9 để đổi chế độ.")
-    print("   - Nút '🛑 Tắt Luga' có sẵn ngay trên thanh chat để thoát hoàn toàn.")
+    print("   - Terminal sẽ mở và chạy ./start.sh với đầy đủ 100% quyền Micro, Trợ năng và Màn hình.")
+    print("   - Nhấn F7 để Bật/Tắt chat, F8 để nói qua Micro (hoặc Ctrl+Space), F9 để đổi chế độ.")
 
 
 def create_windows_launchers():

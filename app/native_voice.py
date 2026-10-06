@@ -271,7 +271,13 @@ class NativeVoiceListener:
         # Automatic Gain Control (AGC) - amplify quiet mic signal so Google STT acoustic model hears clearly
         try:
             peak = audioop.max(audio_bytes, 2)
-            if 0 < peak < 22000:
+            if peak == 0:
+                print("\n[NativeVoice] ⚠️ Micro trả về tín hiệu bằng 0 (Hoàn toàn im lặng).")
+                print("[NativeVoice] 👉 Vui lòng chạy './start.sh' trong Terminal hoặc cấp quyền Micro trong Cài đặt hệ thống (Privacy & Security -> Microphone)!")
+                self._update_status("error", "⚠️ Micro không nhận được tín hiệu (bị chặn quyền hoặc tắt mic).")
+                sound_manager.play_error()
+                return None
+            elif 0 < peak < 22000:
                 gain = min(7.0, 26000.0 / peak)
                 audio_bytes = audioop.mul(audio_bytes, 2, gain)
         except Exception:
