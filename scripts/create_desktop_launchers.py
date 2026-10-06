@@ -96,10 +96,10 @@ if curl -s -m 1 "http://localhost:8000/api/status" >/dev/null 2>&1; then
     exit 0
 fi
 
-# 2. Launch start.sh inside Terminal to guarantee full macOS microphone & accessibility entitlements
+# 2. Launch directly inside Terminal to guarantee full macOS microphone & accessibility entitlements
 osascript <<EOF
 tell application "Terminal"
-    do script "cd \\"$BASE_DIR\\" && zsh ./start.sh"
+    do script "cd \\"$BASE_DIR\\" && python3 app/main.py"
     activate
 end tell
 EOF
@@ -113,7 +113,7 @@ EOF
     cmd_file = desktop / "Luga Assist.command"
     cmd_content = f"""#!/bin/bash
 cd "{BASE_DIR}"
-zsh ./start.sh
+python3 app/main.py
 """
     with open(cmd_file, "w", encoding="utf-8") as f:
         f.write(cmd_content)
