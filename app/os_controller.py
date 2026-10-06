@@ -52,7 +52,18 @@ class OSController:
                     or action_data.get("element")
                     or action_data.get("name")
                 )
-                if target and accessibility_manager.focus_element_by_name(target):
+                target_str = str(target or "").lower().strip()
+                # Check if target is a window control button (maximize, zoom, minimize, close)
+                if any(k in target_str for k in ("maximize", "phóng to", "zoom", "nút xanh", "green button")):
+                    w_res = self.window_control("maximize")
+                    result["details"] = w_res["details"] or "Clicked Maximize/Zoom window button"
+                elif any(k in target_str for k in ("minimize", "thu nhỏ", "yellow button", "nút vàng")):
+                    w_res = self.window_control("minimize")
+                    result["details"] = w_res["details"] or "Clicked Minimize window button"
+                elif any(k in target_str for k in ("close window", "đóng cửa sổ", "red button", "nút đỏ")):
+                    w_res = self.window_control("close")
+                    result["details"] = w_res["details"] or "Clicked Close window button"
+                elif target and accessibility_manager.focus_element_by_name(target):
                     result["details"] = f"Selected '{target}' via 100% Accessibility Grounding"
                 else:
                     x, y = self.to_pixel_coords(action_data.get("x_percent", 0.5), action_data.get("y_percent", 0.5))
@@ -258,6 +269,13 @@ class OSController:
                     elif sys.platform.startswith("win"):
                         subprocess.Popen(["rundll32.exe", "user32.dll,LockWorkStation"])
                     result["details"] = "Locked computer screen"
+
+            elif action in ("window_control", "manage_window", "window"):
+                cmd = action_data.get("command") or action_data.get("type") or "maximize"
+                app_name = action_data.get("app_name") or action_data.get("target", "")
+                w_res = self.window_control(command=cmd, app_name=app_name)
+                result["success"] = w_res["success"]
+                result["details"] = w_res["details"]
 
             elif action == "launch_app":
                 app_name = action_data.get("app_name", "").strip()
@@ -548,5 +566,124 @@ class OSController:
                 pyautogui.press("enter")
         else:  # Linux
             subprocess.Popen([app_name])
+
+    def window_control(self, command: str, app_name: str = "") -> Dict[str, Any]:
+        """
+        Manage window states natively (maximize, zoom, minimize, close, fullscreen, restore).
+        Uses macOS Accessibility / AppleScript on macOS, and native Windows shortcuts on Windows.
+        """
+        cmd = str(command or "maximize").lower().strip()
+        details = ""
+        success = False
+
+        if sys.platform == "darwin":
+            try:
+                import AppKit
+                import ApplicationServices
+                ws = AppKit.NSWorkspace.sharedWorkspace()
+                target_app = None
+                if app_name:
+                    for app in ws.runningApplications():
+                        if app.localizedName() and app.localizedName().lower() == app_name.lower():
+                            target_app = app
+                            break
+                if not target_app:
+                    target_app = ws.frontmostApplication()
+
+                if target_app:
+                    pid = target_app.processIdentifier()
+                    app_elem = ApplicationServices.AXUIElementCreateApplication(pid)
+                    err, windows = ApplicationServices.AXUIElementCopyAttributeValue(app_elem, "AXWindows", None)
+                    if windows and len(windows) > 0:
+                        front_win = windows[0]
+                        # Map command to button attribute
+                        btn_attr_map = {
+                            "maximize": ["AXZoomButton", "AXFullScreenButton"],
+                            "zoom": ["AXZoomButton", "AXFullScreenButton"],
+                            "phóng to": ["AXZoomButton", "AXFullScreenButton"],
+                            "fullscreen": ["AXFullScreenButton", "AXZoomButton"],
+                            "toàn màn hình": ["AXFullScreenButton", "AXZoomButton"],
+                            "minimize": ["AXMinimizeButton"],
+                            "thu nhỏ": ["AXMinimizeButton"],
+                            "close": ["AXCloseButton"],
+                            "đóng": ["AXCloseButton"],
+                        }
+
+                        attrs_to_try = btn_attr_map.get(cmd, ["AXZoomButton", "AXFullScreenButton"])
+                        target_btn = None
+                        for attr in attrs_to_try:
+                            err_b, btn = ApplicationServices.AXUIElementCopyAttributeValue(front_win, attr, None)
+                            if err_b == 0 and btn:
+                                target_btn = btn
+                                break
+
+                        if target_btn:
+                            # 1. Move cursor visibly to button so user sees physical mouse feedback
+                            err_pos, pos_val = ApplicationServices.AXUIElementCopyAttributeValue(target_btn, "AXPosition", None)
+                            err_sz, size_val = ApplicationServices.AXUIElementCopyAttributeValue(target_btn, "AXSize", None)
+                            if err_pos == 0 and err_sz == 0 and pos_val and size_val:
+                                ok_p, pt = ApplicationServices.AXValueGetValue(pos_val, ApplicationServices.kAXValueCGPointType, None)
+                                ok_s, sz = ApplicationServices.AXValueGetValue(size_val, ApplicationServices.kAXValueCGSizeType, None)
+                                if ok_p and ok_s:
+                                    cx = int(pt.x + sz.width / 2.0)
+                                    cy = int(pt.y + sz.height / 2.0)
+                                    pyautogui.moveTo(cx, cy, duration=MOUSE_MOVE_DURATION)
+                                    pyautogui.click(cx, cy)
+                            # 2. Also perform native AXPress for 100% guarantee
+                            ApplicationServices.AXUIElementPerformAction(target_btn, "AXPress")
+                            success = True
+                            details = f"Executed '{cmd}' on window of '{target_app.localizedName()}' via Accessibility"
+            except Exception as e:
+                print(f"[OSController] Window control AX notice: {e}")
+
+            # Fallback for macOS if AX didn't succeed
+            if not success:
+                if cmd in ("maximize", "zoom", "phóng to"):
+                    as_code = '''
+                    tell application "System Events"
+                        set frontApp to first application process whose frontmost is true
+                        tell frontApp
+                            try
+                                set frontWin to front window
+                                set value of attribute "AXZoom" of frontWin to true
+                            end try
+                        end tell
+                    end tell
+                    '''
+                    res = subprocess.run(["osascript", "-e", as_code], capture_output=True, text=True)
+                    success = (res.returncode == 0)
+                    details = "Maximized window via AppleScript AXZoom"
+                elif cmd in ("minimize", "thu nhỏ"):
+                    pyautogui.hotkey("command", "m")
+                    success = True
+                    details = "Minimized window via Cmd+M"
+                elif cmd in ("close", "đóng"):
+                    pyautogui.hotkey("command", "w")
+                    success = True
+                    details = "Closed window via Cmd+W"
+                elif cmd in ("fullscreen", "toàn màn hình"):
+                    pyautogui.hotkey("ctrl", "command", "f")
+                    success = True
+                    details = "Toggled fullscreen via Ctrl+Cmd+F"
+
+        elif sys.platform.startswith("win"):
+            if cmd in ("maximize", "zoom", "phóng to", "fullscreen"):
+                pyautogui.hotkey("win", "up")
+                success = True
+                details = "Maximized window (Win+Up)"
+            elif cmd in ("minimize", "thu nhỏ"):
+                pyautogui.hotkey("win", "down")
+                success = True
+                details = "Minimized window (Win+Down)"
+            elif cmd in ("close", "đóng"):
+                pyautogui.hotkey("alt", "f4")
+                success = True
+                details = "Closed window (Alt+F4)"
+            elif cmd in ("restore", "khôi phục"):
+                pyautogui.hotkey("win", "down")
+                success = True
+                details = "Restored window size (Win+Down)"
+
+        return {"success": success, "details": details}
 
 os_controller = OSController()

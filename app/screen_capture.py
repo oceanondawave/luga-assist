@@ -81,7 +81,7 @@ class ScreenCapturer:
 
         # 3. High-speed JPEG save & Base64 encoding in memory
         buffered = io.BytesIO()
-        processed_img.save(buffered, format="JPEG", quality=75)
+        processed_img.save(buffered, format="JPEG", quality=85)
         raw_bytes = buffered.getvalue()
 
         with open(self.screenshot_path, "wb") as f:

@@ -33,7 +33,7 @@ TTS_VOLUME = "+0%"
 # Draws a reference grid overlay on screenshots so Gemini can pinpoint exact coordinates
 ENABLE_VISUAL_GRID = True
 GRID_PERCENT_STEP = 5  # 5% grid lines for fine-grained coordinate precision
-SCREENSHOT_MAX_WIDTH = 1920  # High-definition resolution for crisp UI labels & inputs
+SCREENSHOT_MAX_WIDTH = 2560  # Native 2K/QHD resolution for pixel-sharp UI labels, icons & buttons
 
 # High-Speed Automation limits
 MOUSE_MOVE_DURATION = 0.08  # Ultra-fast, snappy mouse movement

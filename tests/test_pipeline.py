@@ -754,6 +754,23 @@ def test_audio_device_management():
 
     print("test_audio_device_management: PASSED")
 
+def test_window_control():
+    from app.config import SCREENSHOT_MAX_WIDTH
+    assert SCREENSHOT_MAX_WIDTH == 2560, f"Expected 2560, got {SCREENSHOT_MAX_WIDTH}"
+
+    # Test window_control execution
+    res1 = os_controller.execute_action({"action": "window_control", "command": "maximize"})
+    assert "success" in res1
+    assert "details" in res1
+    assert "action" in res1 and res1["action"] == "window_control"
+
+    # Test click action snapping to window maximize button
+    res2 = os_controller.execute_action({"action": "click", "target": "phóng to cửa sổ"})
+    assert "success" in res2
+    assert "details" in res2
+
+    print("test_window_control: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -779,6 +796,7 @@ if __name__ == "__main__":
     test_system_ui_and_lifecycle_controls()
     test_spotlight_and_screen_capture_hooks()
     test_audio_device_management()
+    test_window_control()
     print("\n🎉 ALL TESTS (INCLUDING AUDIO MANAGER & DEVICE SELECTION) PASSED SUCCESSFULLY!")
 
 
