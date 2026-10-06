@@ -99,7 +99,7 @@ fi
 # 2. Launch directly inside Terminal to guarantee full macOS microphone & accessibility entitlements
 osascript <<EOF
 tell application "Terminal"
-    do script "cd \\"$BASE_DIR\\" && python3 app/main.py"
+    do script "cd \\"$BASE_DIR\\" && export PYTHONPATH=\\"$BASE_DIR\\" && python3 -m app.main"
     activate
 end tell
 EOF
@@ -113,7 +113,8 @@ EOF
     cmd_file = desktop / "Luga Assist.command"
     cmd_content = f"""#!/bin/bash
 cd "{BASE_DIR}"
-python3 app/main.py
+export PYTHONPATH="{BASE_DIR}"
+python3 -m app.main
 """
     with open(cmd_file, "w", encoding="utf-8") as f:
         f.write(cmd_content)
