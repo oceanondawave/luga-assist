@@ -36,6 +36,73 @@ class OSController:
         clamped_y = max(0.0, min(1.0, float(y_percent)))
         return int(round(w * clamped_x)), int(round(h * clamped_y))
 
+    def _native_click(self, x: int, y: int, button: str = "left", click_count: int = 1):
+        """
+        Rock-solid physical click across macOS and Windows.
+        Ensures clickState is properly set (1 for single, 2 for double click)
+        and down-up has a realistic hardware dwell time (0.04s) so that native
+        Cocoa/Windows tables, tree views, sidebars, and menus 100% register the click.
+        """
+        # 1. Smoothly move cursor so user and OS see physical movement
+        pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
+        time.sleep(0.02)
+
+        # 2. Native macOS CoreGraphics click with exact clickState & dwell time
+        if sys.platform == "darwin":
+            try:
+                import Quartz
+                pt = (float(x), float(y))
+                # Hover event to ensure UI element updates hover state
+                move_ev = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, pt, 0)
+                Quartz.CGEventPost(Quartz.kCGHIDEventTap, move_ev)
+                time.sleep(0.02)
+
+                if button == "right":
+                    down_t = Quartz.kCGEventRightMouseDown
+                    up_t = Quartz.kCGEventRightMouseUp
+                    cg_btn = Quartz.kCGMouseButtonRight
+                elif button == "middle":
+                    down_t = Quartz.kCGEventOtherMouseDown
+                    up_t = Quartz.kCGEventOtherMouseUp
+                    cg_btn = Quartz.kCGMouseButtonCenter
+                else:
+                    down_t = Quartz.kCGEventLeftMouseDown
+                    up_t = Quartz.kCGEventLeftMouseUp
+                    cg_btn = Quartz.kCGMouseButtonLeft
+
+                for c in range(1, click_count + 1):
+                    down_ev = Quartz.CGEventCreateMouseEvent(None, down_t, pt, cg_btn)
+                    Quartz.CGEventSetIntegerValueField(down_ev, Quartz.kCGMouseEventClickState, c)
+                    Quartz.CGEventPost(Quartz.kCGHIDEventTap, down_ev)
+                    time.sleep(0.04)
+
+                    up_ev = Quartz.CGEventCreateMouseEvent(None, up_t, pt, cg_btn)
+                    Quartz.CGEventSetIntegerValueField(up_ev, Quartz.kCGMouseEventClickState, c)
+                    Quartz.CGEventPost(Quartz.kCGHIDEventTap, up_ev)
+                    if c < click_count:
+                        time.sleep(0.05)
+                return
+            except Exception as e:
+                print(f"[OSController] Native macOS Quartz click notice: {e}")
+
+        # 3. Fallback / Windows / Linux with realistic dwell time
+        if button == "right":
+            pyautogui.mouseDown(x, y, button="right")
+            time.sleep(0.04)
+            pyautogui.mouseUp(x, y, button="right")
+        elif click_count == 2:
+            pyautogui.mouseDown(x, y, button="left")
+            time.sleep(0.04)
+            pyautogui.mouseUp(x, y, button="left")
+            time.sleep(0.06)
+            pyautogui.mouseDown(x, y, button="left")
+            time.sleep(0.04)
+            pyautogui.mouseUp(x, y, button="left")
+        else:
+            pyautogui.mouseDown(x, y, button="left")
+            time.sleep(0.04)
+            pyautogui.mouseUp(x, y, button="left")
+
     def execute_action(self, action_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute an automated action returned by Gemini Vision.
@@ -67,8 +134,7 @@ class OSController:
                     result["details"] = f"Selected '{target}' via 100% Accessibility Grounding"
                 elif "x_percent" in action_data and "y_percent" in action_data:
                     x, y = self.to_pixel_coords(action_data["x_percent"], action_data["y_percent"])
-                    pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
-                    pyautogui.click(x, y)
+                    self._native_click(x, y, button="left", click_count=1)
                     target_info = f" '{target}'" if target else ""
                     result["details"] = f"Clicked{target_info} at ({x}, {y})"
                 else:
@@ -79,14 +145,12 @@ class OSController:
 
             elif action == "double_click":
                 x, y = self.to_pixel_coords(action_data.get("x_percent", 0.5), action_data.get("y_percent", 0.5))
-                pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
-                pyautogui.doubleClick(x, y)
+                self._native_click(x, y, button="left", click_count=2)
                 result["details"] = f"Double clicked at ({x}, {y})"
 
             elif action == "right_click":
                 x, y = self.to_pixel_coords(action_data.get("x_percent", 0.5), action_data.get("y_percent", 0.5))
-                pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
-                pyautogui.rightClick(x, y)
+                self._native_click(x, y, button="right", click_count=1)
                 result["details"] = f"Right clicked at ({x}, {y})"
 
             elif action in ("focus", "focus_element"):
@@ -110,8 +174,7 @@ class OSController:
                         result["details"] = f"Focused '{target_str}' via 100% Accessibility"
                     elif "x_percent" in action_data and "y_percent" in action_data:
                         x, y = self.to_pixel_coords(action_data["x_percent"], action_data["y_percent"])
-                        pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
-                        pyautogui.click(x, y)
+                        self._native_click(x, y, button="left", click_count=1)
                         result["details"] = f"Focused at ({x}, {y})"
                     else:
                         result["details"] = f"Could not focus '{target_str}'"
@@ -193,9 +256,8 @@ class OSController:
 
                     if not focused and "x_percent" in action_data and "y_percent" in action_data:
                         x, y = self.to_pixel_coords(action_data["x_percent"], action_data["y_percent"])
-                        pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
-                        pyautogui.click(x, y)
-                        time.sleep(0.12)
+                        self._native_click(x, y, button="left", click_count=1)
+                        time.sleep(0.08)
                         focused = True
 
                     # Clear existing content if requested (default True for clean input)

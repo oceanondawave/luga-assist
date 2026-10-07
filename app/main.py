@@ -1048,12 +1048,16 @@ async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, s
         else:
             # Active manipulation actions exist (click, type, press, launch_app, focus, send_email, system_control).
             # CHECK FOR IMMEDIATE COMPLETION:
-            # System controls (sleep, mute, unmute, volume, lock) or simple instant actions do NOT need
-            # a secondary screenshot verification loop.
-            all_system = all(
+            # Only true instant system hardware controls (sleep, mute, unmute, volume, lock)
+            # or standalone file information queries do NOT need a secondary screenshot verification loop.
+            pure_hardware_controls = all(
                 isinstance(a, dict) and a.get("action", "").lower() in (
-                    "system_control", "system", "sleep", "mute", "unmute", "volume_up", "volume_down", "lock",
-                    "terminal_command", "terminal", "run_terminal", "bash", "cmd", "powershell", "powershell_command",
+                    "system_control", "system", "sleep", "mute", "unmute", "volume_up", "volume_down", "lock"
+                )
+                for a in active_actions
+            )
+            file_info_actions = all(
+                isinstance(a, dict) and a.get("action", "").lower() in (
                     "find_files", "find_file", "search_file", "search_files", "open_file", "open", "open_folder",
                     "list_files", "list_dir", "dir", "ls", "read_file", "cat", "view_file",
                     "create_file", "write_file", "new_file", "delete_file", "remove_file", "trash_file"
@@ -1068,9 +1072,16 @@ async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, s
                 for a in active_actions
             )
 
-            if all_system or (claimed_done and not is_complex_form):
+            # NOTE: terminal_command, click, type, press NEVER auto-complete if Gemini marked done: false!
+            if pure_hardware_controls:
                 is_goal_verified_completed = True
-                print(f"[Pipeline] ⚡ Thao tác tức thì hoàn tất tại bước {step} (không cần chụp ảnh thẩm định lại): {speech_to_say}")
+                print(f"[Pipeline] ⚡ Điều khiển phần cứng hoàn tất tại bước {step}: {speech_to_say}")
+            elif file_info_actions and (claimed_done or len(active_actions) == 1):
+                is_goal_verified_completed = True
+                print(f"[Pipeline] ⚡ Thao tác file hoàn tất tại bước {step}: {speech_to_say}")
+            elif claimed_done and not is_complex_form and not any(a.get("action") in ("terminal_command", "terminal", "run_terminal") for a in active_actions):
+                is_goal_verified_completed = True
+                print(f"[Pipeline] ⚡ Thao tác hoàn tất theo xác nhận AI tại bước {step}: {speech_to_say}")
             else:
                 is_goal_verified_completed = False
 
@@ -1116,6 +1127,8 @@ async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, s
             # If action execution failed, force unverified state so next step can recover
             if not action_result.get("success", True):
                 is_goal_verified_completed = False
+                last_actions_summary += f" | [LƯU Ý THẤT BÀI]: Thao tác bước {step} không thành công ({action_result.get('details', '')[:100]}). Hãy thử lại hoặc dùng chuột vật lý!"
+                print(f"[Pipeline] ⚠️ Thao tác tại bước {step} thất bại. Chuyển sang bước tiếp theo để AI kiểm tra và sửa sai.")
 
         # Step 8: Broadcast Step or Verified Final Result to WebUI
         await hub.broadcast_webui({

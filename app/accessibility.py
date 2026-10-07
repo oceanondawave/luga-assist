@@ -65,6 +65,11 @@ def _score_element(role: str, name: str) -> int:
     # Category chips & options (e.g. YouTube category chips like Music, Gaming, News)
     elif "RadioButton" in role_clean or "CheckBox" in role_clean:
         score += 75
+    # Sidebar folders, items, and rows (Outlook/Mail/Finder folders)
+    elif any(r in role_clean for r in ("Row", "Cell", "OutlineRow", "TreeItem", "ListItem", "StaticText")):
+        score += 80
+        if any(k in name_lower for k in ("junk", "inbox", "sent", "trash", "draft", "rác", "đến", "gửi", "spam")):
+            score += 45
     else:
         score += 10
 
@@ -146,7 +151,8 @@ class AccessibilityManager:
             interactive_roles = (
                 "AXTextField", "AXTextArea", "AXButton", "AXPopUpButton",
                 "AXComboBox", "AXCheckBox", "AXRadioButton", "AXMenuItem",
-                "AXSearchField", "AXLink", "AXTab"
+                "AXSearchField", "AXLink", "AXTab",
+                "AXRow", "AXCell", "AXOutlineRow", "AXStaticText"
             )
 
             # Check if active window contains an AXWebArea (Chrome, Safari, Edge, Firefox, Electron apps)
@@ -493,7 +499,7 @@ class AccessibilityManager:
         if not target_lower:
             return False
 
-        # Keyword mappings for Vietnamese & English common form fields
+        # Keyword mappings for Vietnamese & English common form fields & folders
         synonyms = {
             "to": ["to recipients", "to:", "to", "recipients", "người nhận", "đến", "gửi đến"],
             "subject": ["subject", "tiêu đề", "chủ đề"],
@@ -503,6 +509,11 @@ class AccessibilityManager:
             "discard": ["discard", "hủy", "xóa"],
             "attach": ["attach", "đính kèm", "tệp"],
             "new mail": ["new mail", "new", "soạn thư", "mới"],
+            "junk": ["junk email", "junk", "thư rác", "spam", "bulk mail", "rác"],
+            "inbox": ["inbox", "hộp thư đến", "hộp thư"],
+            "sent": ["sent items", "sent", "đã gửi"],
+            "trash": ["deleted items", "trash", "thùng rác", "mục đã xóa"],
+            "drafts": ["drafts", "bản nháp", "nháp"],
         }
 
         search_tokens = [target_lower]
@@ -538,6 +549,8 @@ class AccessibilityManager:
                 allowed_roles = ["AXTextField", "AXTextArea", "AXComboBox"]
             elif target_category in ("send", "discard", "new mail"):
                 allowed_roles = ["AXButton"]
+            elif target_category in ("junk", "inbox", "sent", "trash", "drafts"):
+                allowed_roles = ["AXRow", "AXCell", "AXOutlineRow", "AXStaticText", "AXGroup", "AXButton"]
             best_elem = self._search_live_macos(search_tokens, allowed_roles=allowed_roles)
 
         if best_elem:
@@ -546,7 +559,27 @@ class AccessibilityManager:
             role = best_elem.get("role", "Element")
             print(f"[AccessibilityManager] 🎯 Khóa chính xác phần tử '{best_elem['name']}' ({role}) tại ({px}, {py})")
             pyautogui.moveTo(px, py, duration=0.08)
-            pyautogui.click()
+            time.sleep(0.02)
+            if IS_MACOS:
+                try:
+                    import Quartz
+                    pt = (float(px), float(py))
+                    move_ev = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, pt, 0)
+                    Quartz.CGEventPost(Quartz.kCGHIDEventTap, move_ev)
+                    time.sleep(0.02)
+                    down_ev = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseDown, pt, Quartz.kCGMouseButtonLeft)
+                    Quartz.CGEventSetIntegerValueField(down_ev, Quartz.kCGMouseEventClickState, 1)
+                    Quartz.CGEventPost(Quartz.kCGHIDEventTap, down_ev)
+                    time.sleep(0.04)
+                    up_ev = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseUp, pt, Quartz.kCGMouseButtonLeft)
+                    Quartz.CGEventSetIntegerValueField(up_ev, Quartz.kCGMouseEventClickState, 1)
+                    Quartz.CGEventPost(Quartz.kCGHIDEventTap, up_ev)
+                except Exception:
+                    pyautogui.click()
+            else:
+                pyautogui.mouseDown()
+                time.sleep(0.04)
+                pyautogui.mouseUp()
             time.sleep(0.12)
             return True
 

@@ -515,25 +515,45 @@ class FileAndTerminalManager:
 
             trimmed_output = combined_output[:2000]
 
+            # Check for error patterns even if exit_code was 0 (e.g. from chained shell commands like cmd 2>&1 || ...)
+            lower_out = combined_output.lower()
+            error_patterns = [
+                "execution error:",
+                "can’t get",
+                "can't get",
+                "invalid index",
+                "syntax error",
+                "command not found",
+                "no such file or directory",
+                "traceback (most recent call last)",
+                "error: -1700",
+                "error: -1719",
+                "error: -1728",
+            ]
+            has_fatal_error = any(p in lower_out for p in error_patterns)
+            is_success = (exit_code == 0) and not has_fatal_error
+
             # Generate natural spoken feedback
-            if exit_code == 0:
+            if is_success:
                 # Speak first 100 characters of stdout if meaningful
                 first_line = stdout.splitlines()[0] if stdout else "hoàn tất thành công"
                 if len(first_line) > 80:
                     first_line = first_line[:80] + "..."
                 speech_msg = f"Lệnh đã thực thi xong. Kết quả: {first_line}"
             else:
-                err_preview = stderr.splitlines()[0] if stderr else f"Mã lỗi {exit_code}"
+                err_preview = stderr.splitlines()[0] if stderr else (
+                    stdout.splitlines()[0] if stdout else f"Mã lỗi {exit_code}"
+                )
                 if len(err_preview) > 80:
                     err_preview = err_preview[:80] + "..."
                 speech_msg = f"Lệnh trả về lỗi: {err_preview}"
 
             return {
-                "success": exit_code == 0,
-                "exit_code": exit_code,
+                "success": is_success,
+                "exit_code": exit_code if (exit_code != 0 or not has_fatal_error) else 1,
                 "stdout": stdout,
                 "stderr": stderr,
-                "details": f"Exit {exit_code} | Output:\n{trimmed_output}",
+                "details": f"Exit {exit_code}{' (Failed with output error)' if has_fatal_error else ''} | Output:\n{trimmed_output}",
                 "speech_result": speech_msg
             }
         except subprocess.TimeoutExpired:

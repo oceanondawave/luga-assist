@@ -144,6 +144,42 @@ def select_best_transcript(
         return en_text
     return vi_text
 
+
+def check_macos_microphone_permission() -> bool:
+    """
+    Check and proactively trigger macOS system permission prompt for Microphone.
+    This guarantees that when the app is launched as a native .app bundle or outside Terminal,
+    macOS displays the 'Luga Assist would like to access the Microphone' dialog instead of failing silently.
+    """
+    if sys.platform != "darwin":
+        return True
+    try:
+        import objc
+        objc.loadBundle('AVFoundation', globals(), bundle_path='/System/Library/Frameworks/AVFoundation.framework')
+        av_cls = objc.lookUpClass('AVCaptureDevice')
+        if not av_cls:
+            return True
+        # AVMediaTypeAudio is 'soun'
+        status = av_cls.authorizationStatusForMediaType_('soun')
+        # status: 0 = NotDetermined, 1 = Restricted, 2 = Denied, 3 = Authorized
+        if status == 0:
+            print("[NativeVoice] 🎙️ Yêu cầu macOS cấp quyền Micro lần đầu...")
+            done_evt = threading.Event()
+            def handler(granted):
+                done_evt.set()
+            av_cls.requestAccessForMediaType_completionHandler_('soun', handler)
+            done_evt.wait(timeout=10.0)
+            status = av_cls.authorizationStatusForMediaType_('soun')
+        if status == 3:
+            return True
+        elif status == 2:
+            print("[NativeVoice] ⚠️ Quyền Micro bị từ chối trong Cài đặt hệ thống (System Settings -> Privacy & Security -> Microphone).")
+            return False
+    except Exception as e:
+        print(f"[NativeVoice] macOS mic permission check notice: {e}")
+    return True
+
+
 class NativeVoiceListener:
     def __init__(
         self,
@@ -180,6 +216,11 @@ class NativeVoiceListener:
         Record audio from system microphone using the active OS microphone directly.
         Stops automatically when user stops speaking (natural silence pause), or when F8 is pressed again.
         """
+        if not check_macos_microphone_permission():
+            self._update_status("error", "⚠️ Quyền Micro bị từ chối trong Cài đặt hệ thống.")
+            sound_manager.play_error()
+            return None
+
         self.is_recording = True
         self._stop_requested = False
         self._recording_start_time = time.time()

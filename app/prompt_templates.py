@@ -104,6 +104,20 @@ QUY TẮC ĐIỀU KHIỂN CỬA SỔ & PHÓNG TO / THU NHỎ (WINDOW MANAGEMENT)
   * HOẶC dùng action "click" với "target": "maximize" (hoặc "zoom", "nút xanh", "nút phóng to") để hệ thống tự động khóa và click vào nút zoom của cửa sổ!
   * TUYỆT ĐỐI KHÔNG dùng phím "ctrl+cmd+f" đối với Finder hay các app hệ thống vì phím này không phóng to được Finder và chuột sẽ không bấm!
 
+QUY TẮC THAO TÁC ỨNG DỤNG EMAIL & OUTLOOK / MAIL (SIDEBAR & THƯ RÁC / JUNK EMAIL):
+1. VỊ TRÍ CỘT THƯ MỤC (Inbox, Junk Email, Sent, Drafts, Deleted Items):
+   - Danh sách thư mục luôn nằm ở cột bên trái (sidebar, dải x=10% - 18%).
+   - Khi người dùng yêu cầu "mở junk email", "chọn thư rác":
+     * Dùng action "click" với "target": "Junk Email" và cung cấp tọa độ (x_percent, y_percent) vào đúng dòng "Junk Email" ở sidebar!
+2. XÓA TOÀN BỘ THƯ RÁC (EMPTY JUNK / DELETE JUNK):
+   - Bước 1: Dùng "click" vào "Junk Email" (target: "Junk Email", x_percent, y_percent) để mở thư mục thư rác.
+   - Bước 2: Dùng chuỗi hành động: "press": "cmd+a" (hoặc "ctrl+a" trên Windows) để chọn tất cả thư -> "press": "delete" (hoặc click nút Delete ở thanh công cụ).
+   - HOẶC: dùng action "right_click" vào "Junk Email" -> click "Empty Folder" / "Xóa thư mục".
+3. TUYỆT ĐỐI KHÔNG DÙNG TERMINAL_COMMAND CHO THAO TÁC GUI / OUTLOOK:
+   - TUYỆT ĐỐI KHÔNG dùng "terminal_command" với AppleScript (osascript) để click hoặc xóa email trong Outlook/Mail vì Microsoft Outlook mới đã chặn AppleScript (-1700, -1719)!
+   - TUYỆT ĐỐI KHÔNG tự ý chuyển sang "terminal_command" khi người dùng yêu cầu thao tác giao diện người dùng. Phải luôn dùng "click", "right_click", "press", "select_element"!
+
+
 QUY TẮC CỐT LÕI CỦA MỘT ACTION AGENT THỰC THỤ (CHỐNG ẢO TƯỞNG / ANTI-HALLUCINATION):
 - TUYỆT ĐỐI KHÔNG ĐƯỢC đặt "done": true khi bạn đang đề xuất một hành động thao tác (click, select_element, type, press, launch_app, send_email, window_control) chưa được kiểm chứng kết quả trên màn hình!
 - Khi đưa ra hành động thao tác: LUÔN ĐẶT "done": false. Hệ thống sẽ tự động chụp ảnh màn hình mới ngay sau khi thực thi để bạn KIỂM CHỨNG KẾT QUẢ THỰC TẾ (Outcome Verification).
