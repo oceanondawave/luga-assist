@@ -39,7 +39,10 @@ class SpotlightHUD:
         self.host = host
         self.port = port
         self.server = server
-        self.manage_hotkeys = manage_hotkeys
+        if os.environ.get("LUGA_SPAWNED_BY_MAIN") == "1":
+            self.manage_hotkeys = False
+        else:
+            self.manage_hotkeys = manage_hotkeys
         self.root: Optional[tk.Tk] = None
         self.is_visible = False
         self.was_visible_before_capture = False
@@ -47,6 +50,7 @@ class SpotlightHUD:
         self._keys_held = set()
         self._hotkey_listener = None
         self._last_toggle_time = 0.0
+        self._quitting = False
 
         # Thread synchronization
         self.ready_event = threading.Event()
@@ -92,6 +96,9 @@ class SpotlightHUD:
         if self.manage_hotkeys:
             self._start_global_hotkeys()
 
+        # Start background WebSocket listener connecting to main server for instant control
+        self._start_ws_client()
+
         self.ready_event.set()
         logger.info("Spotlight HUD ready! Press F7 or Ctrl+Alt+Space anywhere.")
 
@@ -100,6 +107,35 @@ class SpotlightHUD:
 
         # Tkinter main loop
         self.root.mainloop()
+
+    def _start_ws_client(self):
+        """Connect to Luga Assist Main via WebSocket to receive instant toggle/show/hide actions."""
+        def _ws_worker():
+            from websockets.sync.client import connect
+            while not self._quitting:
+                try:
+                    with connect(f"ws://{self.host}:{self.port}/ws/spotlight") as ws:
+                        logger.info("Spotlight HUD connected to Main Server via WebSocket.")
+                        for msg_str in ws:
+                            if self._quitting:
+                                break
+                            try:
+                                data = json.loads(msg_str)
+                                act = data.get("action")
+                                if act == "toggle":
+                                    self.toggle()
+                                elif act == "show":
+                                    self.show()
+                                elif act == "hide":
+                                    self.hide()
+                                elif act == "quit":
+                                    self.quit_app()
+                            except Exception as ex:
+                                logger.warning(f"Error handling WS message: {ex}")
+                except Exception:
+                    time.sleep(1.0)
+
+        threading.Thread(target=_ws_worker, daemon=True).start()
 
     def _build_ui(self):
         # Outer Card Container
@@ -600,6 +636,7 @@ class SpotlightHUD:
 
     def quit_app(self):
         """Cleanly terminate the entire unified application and server without triggering crash reporters."""
+        self._quitting = True
         logger.info("SpotlightHUD: Graceful quit initiated.")
         try:
             sound_manager.play_done()

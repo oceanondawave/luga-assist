@@ -60,6 +60,25 @@ from app.system_ui import (
 setup_logging()
 
 spotlight_process: Optional[subprocess.Popen] = None
+spotlight_clients: set = set()
+spotlight_clients_lock = threading.Lock()
+server_async_loop: Optional[asyncio.AbstractEventLoop] = None
+
+async def broadcast_to_spotlight(payload: dict):
+    with spotlight_clients_lock:
+        clients = list(spotlight_clients)
+    for ws in clients:
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            pass
+
+def send_spotlight_action_sync(action: str, **kwargs):
+    """Safely send command to connected Spotlight HUD from sync threads or hotkey callbacks."""
+    global server_async_loop
+    payload = {"action": action, **kwargs}
+    if server_async_loop and server_async_loop.is_running():
+        asyncio.run_coroutine_threadsafe(broadcast_to_spotlight(payload), server_async_loop)
 
 def launch_spotlight_hud() -> Optional[subprocess.Popen]:
     """Launch native Spotlight Floating Chat HUD in background."""
@@ -68,6 +87,7 @@ def launch_spotlight_hud() -> Optional[subprocess.Popen]:
     try:
         env = os.environ.copy()
         env["PYTHONPATH"] = str(BASE_DIR)
+        env["LUGA_SPAWNED_BY_MAIN"] = "1"
         proc = subprocess.Popen(
             [sys.executable, "-m", "app.spotlight_ui"],
             cwd=str(BASE_DIR),
@@ -102,9 +122,10 @@ def update_global_voice_status(state: str, text_or_msg: str):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global native_voice_instance
-    # 1. Start Global Native Voice & Hotkey Listener IMMEDIATELY (Zero delay for F7/F8/F9!)
+    global native_voice_instance, server_async_loop
     loop = asyncio.get_running_loop()
+    server_async_loop = loop
+    # 1. Start Global Native Voice & Hotkey Listener IMMEDIATELY (Zero delay for F7/F8/F9!)
 
     def handle_native_voice_command(cmd_text: str):
         print(f"\n[Global Handler] Đã nhận lệnh từ Micro: \"{cmd_text}\"")
@@ -117,10 +138,18 @@ async def lifespan(app: FastAPI):
         asyncio.run_coroutine_threadsafe(toggle_mode(), loop)
 
     def handle_native_spotlight_toggle():
+        print("\n[Global Handler] Đã nhận tín hiệu F7 / Ctrl+Alt+Space -> Bật/Tắt Cửa sổ Chat Nổi (Spotlight)!")
         from app.spotlight_ui import get_spotlight_hud
         hud = get_spotlight_hud()
         if hud:
             hud.toggle()
+        global spotlight_process
+        with spotlight_clients_lock:
+            has_clients = len(spotlight_clients) > 0
+        if not has_clients and hud is None:
+            if spotlight_process is None or spotlight_process.poll() is not None:
+                spotlight_process = launch_spotlight_hud()
+        send_spotlight_action_sync("toggle")
 
     native_voice_instance = NativeVoiceListener(
         on_command_callback=handle_native_voice_command,
@@ -496,6 +525,22 @@ async def api_voice_status():
         return dict(current_voice_status)
 
 
+@app.websocket("/ws/spotlight")
+async def ws_spotlight_endpoint(websocket: WebSocket):
+    """Bidirectional WebSocket connection for Spotlight Floating HUD."""
+    await websocket.accept()
+    with spotlight_clients_lock:
+        spotlight_clients.add(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        with spotlight_clients_lock:
+            spotlight_clients.discard(websocket)
+
+
 @app.get("/api/spotlight/show")
 @app.post("/api/spotlight/show")
 async def api_spotlight_show():
@@ -503,8 +548,14 @@ async def api_spotlight_show():
     hud = get_spotlight_hud()
     if hud:
         hud.show()
-        return {"status": "ok", "visible": True}
-    return {"status": "error", "message": "Spotlight HUD not active"}
+    global spotlight_process
+    with spotlight_clients_lock:
+        has_clients = len(spotlight_clients) > 0
+    if not has_clients and hud is None:
+        if spotlight_process is None or spotlight_process.poll() is not None:
+            spotlight_process = launch_spotlight_hud()
+    await broadcast_to_spotlight({"action": "show"})
+    return {"status": "ok", "visible": True}
 
 @app.get("/api/spotlight/hide")
 @app.post("/api/spotlight/hide")
@@ -513,8 +564,8 @@ async def api_spotlight_hide():
     hud = get_spotlight_hud()
     if hud:
         hud.hide()
-        return {"status": "ok", "visible": False}
-    return {"status": "error", "message": "Spotlight HUD not active"}
+    await broadcast_to_spotlight({"action": "hide"})
+    return {"status": "ok", "visible": False}
 
 @app.get("/api/spotlight/toggle")
 @app.post("/api/spotlight/toggle")
@@ -523,8 +574,14 @@ async def api_spotlight_toggle():
     hud = get_spotlight_hud()
     if hud:
         hud.toggle()
-        return {"status": "ok"}
-    return {"status": "error", "message": "Spotlight HUD not active"}
+    global spotlight_process
+    with spotlight_clients_lock:
+        has_clients = len(spotlight_clients) > 0
+    if not has_clients and hud is None:
+        if spotlight_process is None or spotlight_process.poll() is not None:
+            spotlight_process = launch_spotlight_hud()
+    await broadcast_to_spotlight({"action": "toggle"})
+    return {"status": "ok"}
 
 @app.get("/api/spotlight/quit")
 @app.post("/api/spotlight/quit")
@@ -533,8 +590,8 @@ async def api_spotlight_quit():
     hud = get_spotlight_hud()
     if hud:
         hud.quit_app()
-        return {"status": "ok"}
-    return {"status": "error", "message": "Spotlight HUD not active"}
+    await broadcast_to_spotlight({"action": "quit"})
+    return {"status": "ok"}
 
 
 

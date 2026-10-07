@@ -201,7 +201,12 @@ class NativeVoiceListener:
         self.sample_rate = 16000
         self.channels = 1
         self._hotkey_listener: Optional[keyboard.Listener] = None
+        self._supervisor_thread: Optional[threading.Thread] = None
+        self._stop_hotkeys = False
+        self._hotkeys_active = False
+        self._has_announced_hotkeys = False
         self._current_keys = set()
+
 
     def _update_status(self, state: str, text_or_msg: str = ""):
         """Notify status listener (Spotlight HUD, etc.) of voice recording progression."""
@@ -421,13 +426,15 @@ class NativeVoiceListener:
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def start_global_hotkeys(self):
-        """
-        Start global keyboard listener in background.
-        Global Hotkeys:
-        - F8: Toggle listening (Dedicated physical key, perfect for visually impaired users)
-        - Ctrl + Space: Alternative hotkey
-        """
+    def _start_listener_internal(self) -> bool:
+        """Create and start a new pynput keyboard.Listener instance."""
+        if self._hotkey_listener is not None:
+            try:
+                self._hotkey_listener.stop()
+            except Exception:
+                pass
+            self._hotkey_listener = None
+
         def on_press(key):
             try:
                 # Track modifier keys
@@ -484,13 +491,79 @@ class NativeVoiceListener:
             except Exception:
                 pass
 
-        self._hotkey_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
-        self._hotkey_listener.daemon = True
-        self._hotkey_listener.start()
-        print("\n" + "=" * 65)
-        print("🎙️ GLOBAL WAY - TRỢ LÝ TOÀN HỆ THỐNG ĐÃ SẴN SÀNG!")
-        print("👉 F7                     : Bật/Tắt Cửa sổ Chat Nổi (Spotlight)")
-        print("👉 F8 (hoặc Ctrl + Space) : Nói lệnh điều khiển / hỏi đáp")
-        print("👉 F9                     : Chuyển đổi Chế độ Điều khiển <-> Chat Mode")
-        print("👉 KHÔNG CẦN MỞ TRÌNH DUYỆT - MÀN HÌNH HOÀN TOÀN THOÁNG ĐÃNG.")
-        print("=" * 65 + "\n")
+        try:
+            listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+            listener.daemon = True
+            listener.start()
+            # Give macOS CGEventTap 0.15s to establish or fail
+            time.sleep(0.15)
+            if listener.is_alive():
+                self._hotkey_listener = listener
+                return True
+            else:
+                return False
+        except Exception as e:
+            print(f"[Global Hotkeys] ⚠️ Lỗi khởi động listener: {e}")
+            return False
+
+    def _hotkey_supervisor_loop(self):
+        """
+        Background watchdog thread that continuously ensures global hotkeys are active.
+        If macOS Accessibility permission is missing, prompts user and opens System Settings.
+        The instant permission is granted by the user, automatically activates hotkeys without restarting!
+        """
+        from app.accessibility import ensure_accessibility_permissions
+        has_prompted = False
+        last_prompt_time = 0.0
+
+        while not self._stop_hotkeys:
+            is_alive = (self._hotkey_listener is not None and self._hotkey_listener.is_alive())
+
+            if not is_alive:
+                self._hotkeys_active = False
+                now = time.time()
+                should_prompt = not has_prompted or (now - last_prompt_time > 60.0)
+                is_trusted = ensure_accessibility_permissions(prompt=should_prompt)
+                if should_prompt:
+                    has_prompted = True
+                    last_prompt_time = now
+
+                if is_trusted:
+                    success = self._start_listener_internal()
+                    if success:
+                        self._hotkeys_active = True
+                        if not self._has_announced_hotkeys:
+                            self._has_announced_hotkeys = True
+                            print("\n" + "=" * 65)
+                            print("🎙️ GLOBAL WAY - TRỢ LÝ TOÀN HỆ THỐNG ĐÃ SẴN SÀNG!")
+                            print("👉 F7                     : Bật/Tắt Cửa sổ Chat Nổi (Spotlight)")
+                            print("👉 F8 (hoặc Ctrl + Space) : Nói lệnh điều khiển / hỏi đáp")
+                            print("👉 F9                     : Chuyển đổi Chế độ Điều khiển <-> Chat Mode")
+                            print("👉 KHÔNG CẦN MỞ TRÌNH DUYỆT - MÀN HÌNH HOÀN TOÀN THOÁNG ĐÃNG.")
+                            print("=" * 65 + "\n")
+                            try:
+                                from app.system_ui import show_desktop_notification
+                                show_desktop_notification("Luga Assist", "✅ Phím tắt F7, F8, F9 đã sẵn sàng hoạt động!")
+                            except Exception:
+                                pass
+            else:
+                self._hotkeys_active = True
+
+            time.sleep(2.0)
+
+    def start_global_hotkeys(self):
+        """Start global keyboard listener with automatic watchdog supervisor."""
+        self._stop_hotkeys = False
+        if self._supervisor_thread is None or not self._supervisor_thread.is_alive():
+            self._supervisor_thread = threading.Thread(target=self._hotkey_supervisor_loop, daemon=True)
+            self._supervisor_thread.start()
+
+    def stop_global_hotkeys(self):
+        """Stop global keyboard listener and supervisor watchdog."""
+        self._stop_hotkeys = True
+        if self._hotkey_listener is not None:
+            try:
+                self._hotkey_listener.stop()
+            except Exception:
+                pass
+            self._hotkey_listener = None

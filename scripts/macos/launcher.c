@@ -11,11 +11,34 @@
 #include <sys/types.h>
 #include <string.h>
 
+#ifdef __APPLE__
+#include <ApplicationServices/ApplicationServices.h>
+#endif
+
 #define BASE_DIR "/Volumes/DATA/CAREER/Projects/luga-assist"
 #define PYTHON_EXEC "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3"
 #define LOG_FILE "/Volumes/DATA/CAREER/Projects/luga-assist/logs/luga_assist.log"
 
 int main(int argc, char *argv[]) {
+#ifdef __APPLE__
+    // Proactively check and prompt for Accessibility permission for this bundle
+    CFStringRef ax_keys[] = { kAXTrustedCheckOptionPrompt };
+    CFBooleanRef ax_vals[] = { kCFBooleanTrue };
+    CFDictionaryRef ax_opts = CFDictionaryCreate(
+        kCFAllocatorDefault,
+        (const void **)ax_keys,
+        (const void **)ax_vals,
+        1,
+        &kCFTypeDictionaryKeyCallBacks,
+        &kCFTypeDictionaryValueCallBacks
+    );
+    Boolean ax_trusted = AXIsProcessTrustedWithOptions(ax_opts);
+    if (ax_opts) CFRelease(ax_opts);
+    if (!ax_trusted) {
+        system("osascript -e 'display notification \"Vui lòng cấp quyền Trợ năng (Accessibility) cho Luga Assist trong Cài đặt hệ thống để sử dụng phím tắt F7, F8, F9.\" with title \"Luga Assist\"' >/dev/null 2>&1");
+    }
+#endif
+
     // 1. Check if Luga Assist is already running on port 8000
     int status_check = system("curl -s -m 1 http://127.0.0.1:8000/api/status >/dev/null 2>&1");
     if (status_check == 0) {

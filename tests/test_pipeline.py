@@ -784,6 +784,34 @@ def test_click_safety_and_coordinates():
 
     print("test_click_safety_and_coordinates: PASSED")
 
+def test_accessibility_permissions_and_hotkey_supervisor():
+    from app.accessibility import ensure_accessibility_permissions
+    from app.native_voice import NativeVoiceListener
+    import app.main as main_mod
+
+    # 1. Test accessibility permission check returns boolean without error
+    is_trusted = ensure_accessibility_permissions(prompt=False)
+    assert isinstance(is_trusted, bool)
+
+    # 2. Test listener lifecycle and supervisor state controls
+    listener = NativeVoiceListener()
+    assert listener._hotkeys_active is False
+    assert listener._stop_hotkeys is False
+
+    # Start and stop hotkeys safely
+    started = listener._start_listener_internal()
+    assert isinstance(started, bool)
+    listener.stop_global_hotkeys()
+    assert listener._stop_hotkeys is True
+    assert listener._hotkey_listener is None
+
+    # 3. Test Spotlight broadcast sync helper
+    main_mod.send_spotlight_action_sync("toggle")
+    main_mod.send_spotlight_action_sync("show")
+    main_mod.send_spotlight_action_sync("hide")
+
+    print("test_accessibility_permissions_and_hotkey_supervisor: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -811,6 +839,7 @@ if __name__ == "__main__":
     test_audio_device_management()
     test_window_control()
     test_click_safety_and_coordinates()
+    test_accessibility_permissions_and_hotkey_supervisor()
     print("\n🎉 ALL TESTS (INCLUDING AUDIO MANAGER & DEVICE SELECTION) PASSED SUCCESSFULLY!")
 
 

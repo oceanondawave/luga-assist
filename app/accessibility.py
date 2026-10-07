@@ -23,6 +23,55 @@ else:
     HAS_MACOS_AX = False
 
 
+def ensure_accessibility_permissions(prompt: bool = True) -> bool:
+    """
+    Check if the current process is trusted for macOS Accessibility (CGEventTap / AXUIElement).
+    If not trusted and prompt=True, requests permission from macOS (displaying system dialog)
+    and opens System Settings -> Privacy & Security -> Accessibility.
+    On non-macOS platforms, always returns True.
+    """
+    if not IS_MACOS:
+        return True
+
+    try:
+        if HAS_MACOS_AX:
+            from ApplicationServices import AXIsProcessTrusted, AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
+            is_trusted = AXIsProcessTrusted()
+            if is_trusted:
+                return True
+            if prompt:
+                AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True})
+                import subprocess
+                subprocess.Popen(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"])
+            return False
+        else:
+            import ctypes
+            from ctypes import c_bool, c_void_p
+            as_lib = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")
+            as_lib.AXIsProcessTrusted.restype = c_bool
+            if as_lib.AXIsProcessTrusted():
+                return True
+            if prompt:
+                cf_lib = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+                prompt_key = ctypes.c_void_p.in_dll(as_lib, "kAXTrustedCheckOptionPrompt")
+                kCFBooleanTrue = ctypes.c_void_p.in_dll(cf_lib, "kCFBooleanTrue")
+                cf_lib.CFDictionaryCreate.restype = c_void_p
+                cf_lib.CFDictionaryCreate.argtypes = [c_void_p, ctypes.POINTER(c_void_p), ctypes.POINTER(c_void_p), ctypes.c_long, c_void_p, c_void_p]
+                keys = (c_void_p * 1)(prompt_key.value)
+                values = (c_void_p * 1)(kCFBooleanTrue.value)
+                options = cf_lib.CFDictionaryCreate(None, keys, values, 1, None, None)
+                as_lib.AXIsProcessTrustedWithOptions.restype = c_bool
+                as_lib.AXIsProcessTrustedWithOptions.argtypes = [c_void_p]
+                as_lib.AXIsProcessTrustedWithOptions(options)
+                import subprocess
+                subprocess.Popen(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"])
+            return False
+    except Exception as e:
+        print(f"[Accessibility] Warning checking permissions: {e}")
+        return True
+
+
+
 def _score_element(role: str, name: str) -> int:
     """Prioritize web links, search fields, form inputs and core action buttons, suppressing browser/editor noise."""
     name_lower = name.lower().strip()
