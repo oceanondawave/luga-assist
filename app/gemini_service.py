@@ -42,11 +42,14 @@ class GeminiSessionService:
         return None
 
     def _start_chat_safe(self):
-        """Start chat with fastest model (gemini-flash-lite) to maintain context without stalls."""
+        """Start chat with standard Gemini model (full multimodal vision & spatial reasoning)."""
         try:
-            return self.client.start_chat(model="gemini-flash-lite")
+            return self.client.start_chat()
         except Exception:
-            return self.client.start_chat(model="gemini-flash")
+            try:
+                return self.client.start_chat(model="gemini-flash")
+            except Exception:
+                return self.client.start_chat(model="gemini-flash-lite")
 
     async def auto_init_from_disk(self):
         """Try to automatically initialize if session was previously saved."""

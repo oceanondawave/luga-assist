@@ -34,7 +34,7 @@ class OSController:
         # Clamp to bounds
         clamped_x = max(0.0, min(1.0, float(x_percent)))
         clamped_y = max(0.0, min(1.0, float(y_percent)))
-        return int(w * clamped_x), int(h * clamped_y)
+        return int(round(w * clamped_x)), int(round(h * clamped_y))
 
     def execute_action(self, action_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -65,11 +65,17 @@ class OSController:
                     result["details"] = w_res["details"] or "Clicked Close window button"
                 elif target and accessibility_manager.focus_element_by_name(target):
                     result["details"] = f"Selected '{target}' via 100% Accessibility Grounding"
-                else:
-                    x, y = self.to_pixel_coords(action_data.get("x_percent", 0.5), action_data.get("y_percent", 0.5))
+                elif "x_percent" in action_data and "y_percent" in action_data:
+                    x, y = self.to_pixel_coords(action_data["x_percent"], action_data["y_percent"])
                     pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
                     pyautogui.click(x, y)
-                    result["details"] = f"Clicked at ({x}, {y})"
+                    target_info = f" '{target}'" if target else ""
+                    result["details"] = f"Clicked{target_info} at ({x}, {y})"
+                else:
+                    # Target not found in AX and no visual coordinates provided
+                    result["success"] = False
+                    result["details"] = f"Không tìm thấy phần tử '{target or 'unknown'}' qua Accessibility và thiếu tọa độ (x_percent, y_percent)"
+                    print(f"[OSController] ⚠️ CẢNH BÁO: Không tìm thấy phần tử '{target}' và AI không cung cấp tọa độ x_percent, y_percent để click!")
 
             elif action == "double_click":
                 x, y = self.to_pixel_coords(action_data.get("x_percent", 0.5), action_data.get("y_percent", 0.5))

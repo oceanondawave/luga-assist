@@ -128,6 +128,12 @@ class AccessibilityManager:
             self.last_app_name = app_name
 
             app_elem = ApplicationServices.AXUIElementCreateApplication(pid)
+            # Ensure Chromium browsers (Chrome, Edge, Brave, Arc) expose full web & UI DOM tree
+            try:
+                ApplicationServices.AXUIElementSetAttributeValue(app_elem, "AXEnhancedUserInterface", True)
+            except Exception:
+                pass
+
             err, windows = ApplicationServices.AXUIElementCopyAttributeValue(app_elem, "AXWindows", None)
             if not windows:
                 return {"app": app_name, "window": "", "elements": []}
@@ -399,6 +405,10 @@ class AccessibilityManager:
                 return None
             pid = front_app.processIdentifier()
             app_elem = ApplicationServices.AXUIElementCreateApplication(pid)
+            try:
+                ApplicationServices.AXUIElementSetAttributeValue(app_elem, "AXEnhancedUserInterface", True)
+            except Exception:
+                pass
             err, windows = ApplicationServices.AXUIElementCopyAttributeValue(app_elem, "AXWindows", None)
             if not windows:
                 return None

@@ -771,6 +771,19 @@ def test_window_control():
 
     print("test_window_control: PASSED")
 
+def test_click_safety_and_coordinates():
+    # 1. Missing target and no coordinates should report failure, not click center (0.5, 0.5)
+    res_fail = os_controller.execute_action({"action": "click", "target": "completely_non_existent_element_xyz_12345"})
+    assert res_fail["success"] is False
+    assert "Không tìm thấy" in res_fail["details"]
+
+    # 2. Explicit coordinates should succeed and calculate exact pixels
+    res_coord = os_controller.execute_action({"action": "click", "x_percent": 0.25, "y_percent": 0.35})
+    assert res_coord["success"] is True
+    assert "(640, 504)" in res_coord["details"]
+
+    print("test_click_safety_and_coordinates: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -797,6 +810,7 @@ if __name__ == "__main__":
     test_spotlight_and_screen_capture_hooks()
     test_audio_device_management()
     test_window_control()
+    test_click_safety_and_coordinates()
     print("\n🎉 ALL TESTS (INCLUDING AUDIO MANAGER & DEVICE SELECTION) PASSED SUCCESSFULLY!")
 
 

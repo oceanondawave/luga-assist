@@ -1113,6 +1113,10 @@ async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, s
                 last_actions_summary += f" | Kết quả: {action_result.get('details')[:250]}"
             print(f"[Pipeline] [Bước {step}] Đã thực thi xong: {last_actions_summary}")
 
+            # If action execution failed, force unverified state so next step can recover
+            if not action_result.get("success", True):
+                is_goal_verified_completed = False
+
         # Step 8: Broadcast Step or Verified Final Result to WebUI
         await hub.broadcast_webui({
             "type": "ACTION_COMPLETED" if is_goal_verified_completed else "ACTION_STEP",
