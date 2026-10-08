@@ -51,6 +51,7 @@ class SpotlightHUD:
         self._hotkey_listener = None
         self._last_toggle_time = 0.0
         self._quitting = False
+        self.is_executing = False
 
         # Thread synchronization
         self.ready_event = threading.Event()
@@ -77,8 +78,8 @@ class SpotlightHUD:
         # Build UI layout
         self._build_ui()
 
-        # Bind window keys
-        self.root.bind("<Escape>", lambda e: self.hide())
+        # Bind window keys: Esc cancels executing task if running, else hides HUD
+        self.root.bind("<Escape>", lambda e: self.on_escape())
         self.root.protocol("WM_DELETE_WINDOW", self.hide)
 
         # Start hidden initially unless show_immediately is requested
@@ -108,6 +109,28 @@ class SpotlightHUD:
         # Tkinter main loop
         self.root.mainloop()
 
+    def on_escape(self):
+        """Escape key handler: cancel task if running, otherwise hide window."""
+        if self.is_executing:
+            self.cancel_active_task()
+        else:
+            self.hide()
+
+    def cancel_active_task(self):
+        """Cancel currently executing task or voice flow."""
+        self.is_executing = False
+        self.set_status("⏹️ Đang ngắt tác vụ...", fg="#fbbf24")
+        sound_manager.stop_pulsing()
+        sound_manager.play_error()
+        def _cancel():
+            try:
+                url = f"http://{self.host}:{self.port}/api/cancel"
+                req = urllib.request.Request(url, data=b"{}", headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=1.5)
+            except Exception:
+                pass
+        threading.Thread(target=_cancel, daemon=True).start()
+
     def _start_ws_client(self):
         """Connect to Luga Assist Main via WebSocket to receive instant toggle/show/hide actions."""
         def _ws_worker():
@@ -128,6 +151,9 @@ class SpotlightHUD:
                                     self.show()
                                 elif act == "hide":
                                     self.hide()
+                                elif act == "cancel":
+                                    self.is_executing = False
+                                    self.set_status("⏹️ Đã ngắt tác vụ đang xử lý.", fg="#fbbf24")
                                 elif act == "quit":
                                     self.quit_app()
                             except Exception as ex:
@@ -275,6 +301,22 @@ class SpotlightHUD:
         self.txt_input.pack(side="left", fill="x", expand=True, padx=(4, 8))
         self.txt_input.bind("<Return>", lambda e: self.submit_command())
 
+        btn_cancel = tk.Button(
+            input_box,
+            text="⏹️",
+            font=("Arial", 11),
+            bg="#334155",
+            fg="#f87171",
+            activebackground="#ef4444",
+            activeforeground="#ffffff",
+            relief="flat",
+            padx=8,
+            pady=4,
+            cursor="hand2",
+            command=self.cancel_active_task
+        )
+        btn_cancel.pack(side="right", padx=(6, 0))
+
         btn_send = tk.Button(
             input_box,
             text="Gửi ➔",
@@ -326,7 +368,7 @@ class SpotlightHUD:
 
         hints = tk.Label(
             footer,
-            text="Phím tắt: [F7] Bật/Tắt Chat • [Esc] Ẩn • [F8] Nói qua Micro • [F9] Đổi chế độ",
+            text="Phím tắt: [F7] Bật/Tắt Chat • [F8] Nói Micro • [F9] Đổi chế độ • [F10/Esc] Ngắt xử lý",
             font=("Arial", 10),
             fg="#64748b",
             bg="#0f172a"
@@ -684,8 +726,9 @@ class SpotlightHUD:
         if not cmd:
             return
 
+        self.is_executing = True
         self.status_lbl.config(
-            text="⏳ Luga đang phân tích màn hình và thực thi câu lệnh...",
+            text="⏳ Luga đang phân tích màn hình và thực thi câu lệnh... (Nhấn F10 hoặc Esc để ngắt)",
             fg="#38bdf8"
         )
         self.resp_text.config(text="")
@@ -703,6 +746,7 @@ class SpotlightHUD:
                     data = json.loads(res.read())
                     speech = data.get("response") or data.get("speech") or "Đã hoàn thành thao tác."
                     def _update_ui():
+                        self.is_executing = False
                         self.status_lbl.config(text="✅ Kết quả hoàn tất:", fg="#10b981")
                         self.resp_text.config(text=speech)
                         # Clear input after success
@@ -718,6 +762,7 @@ class SpotlightHUD:
                     self.root.after(0, _update_ui)
             except Exception as e:
                 def _err_ui():
+                    self.is_executing = False
                     self.status_lbl.config(text=f"⚠️ Lỗi kết nối: {e}", fg="#ef4444")
                     self.root.deiconify()
                 self.root.after(0, _err_ui)
@@ -729,9 +774,18 @@ class SpotlightHUD:
         Global hotkeys:
         - F7: Toggle Spotlight HUD
         - Ctrl + Alt + Space: Alternative hotkey
+        - F10 or Ctrl + Esc: Emergency cancel
         """
         def on_press(key):
             try:
+                # F10 or Ctrl+Esc: Emergency cancel
+                is_f10 = (key == keyboard.Key.f10)
+                is_ctrl_esc = (key == keyboard.Key.esc and "ctrl" in self._keys_held)
+                if is_f10 or is_ctrl_esc:
+                    print("\n[Global Hotkey] Đã nhấn F10 / Ctrl+Esc -> Ngắt tác vụ!")
+                    self.cancel_active_task()
+                    return
+
                 # F7 key
                 if key == keyboard.Key.f7:
                     print("\n[Global Hotkey] Đã nhấn F7 -> Bật/Tắt Spotlight Chat!")

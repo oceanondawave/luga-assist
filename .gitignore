@@ -1,9 +1,54 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+*.dylib
+*.dll
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+*.spec.bak
+
+# Release archives and installers
+*.dmg
+*.zip
+*.tar.gz
+
+# Local temporary and runtime storage
 temp/
 logs/
-.DS_Store
+*.log
+*.pid
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environments
+.env
+*.env
+.venv/
+venv/
+ENV/
+env/
+
+# IDE and Editor configurations
+.vscode/
+.idea/
 *.swp
-*.egg-info/
-dist/
-build/
+*.swo
+*~
+
+# Operating System files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

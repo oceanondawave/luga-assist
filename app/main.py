@@ -120,12 +120,37 @@ def update_global_voice_status(state: str, text_or_msg: str):
             "timestamp": time.time(),
         }
 
+pipeline_abort_event = threading.Event()
+
+def cancel_active_pipeline():
+    """Cancel any active pipeline execution, TTS speech, and sound cues."""
+    print("\n[Pipeline] ⏹️ Kích hoạt ngắt khẩn cấp (Emergency Cancel Active Pipeline)!")
+    pipeline_abort_event.set()
+    tts_service.stop_speaking()
+    sound_manager.stop_pulsing()
+    sound_manager.play_error()
+    update_global_voice_status("idle", "⏹️ Đã ngắt tác vụ đang xử lý!")
+    send_spotlight_action_sync("cancel")
+    show_desktop_notification("Luga Assist", "⏹️ Đã ngắt tác vụ đang xử lý!")
+    # Cancel any pending extension futures
+    for task_id, fut in list(hub.pending_tasks.items()):
+        if not fut.done():
+            fut.cancel()
+    if server_async_loop and server_async_loop.is_running():
+        asyncio.run_coroutine_threadsafe(
+            hub.broadcast_webui({
+                "type": "ACTION_CANCELLED",
+                "message": "Đã ngắt tác vụ đang xử lý theo lệnh người dùng."
+            }),
+            server_async_loop
+        )
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global native_voice_instance, server_async_loop
     loop = asyncio.get_running_loop()
     server_async_loop = loop
-    # 1. Start Global Native Voice & Hotkey Listener IMMEDIATELY (Zero delay for F7/F8/F9!)
+    # 1. Start Global Native Voice & Hotkey Listener IMMEDIATELY (Zero delay for F7/F8/F9/F10!)
 
     def handle_native_voice_command(cmd_text: str):
         print(f"\n[Global Handler] Đã nhận lệnh từ Micro: \"{cmd_text}\"")
@@ -155,6 +180,7 @@ async def lifespan(app: FastAPI):
         on_command_callback=handle_native_voice_command,
         on_mode_toggle_callback=handle_native_mode_toggle,
         on_spotlight_toggle_callback=handle_native_spotlight_toggle,
+        on_cancel_callback=cancel_active_pipeline,
         on_status_callback=update_global_voice_status,
     )
     native_voice_instance.start_global_hotkeys()
@@ -388,6 +414,15 @@ async def api_chat_clear():
     gemini_service.reset_conversation()
     await hub.broadcast_webui({"type": "CHAT_CLEARED"})
     return {"status": "ok"}
+
+@app.post("/api/cancel")
+async def api_cancel():
+    """Emergency stop/cancel currently active task, voice recording, or speech."""
+    if native_voice_instance:
+        native_voice_instance.cancel_all()
+    else:
+        cancel_active_pipeline()
+    return {"status": "ok", "message": "Đã ngắt tác vụ đang xử lý"}
 
 @app.post("/api/set_session")
 async def set_session(payload: SessionPayload):
@@ -907,6 +942,8 @@ async def process_user_command(user_command: str, voice: str = DEFAULT_TTS_VOICE
 
 async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, speak: bool = True) -> Dict[str, Any]:
     print(f"\n[Pipeline] 🎯 Nhận mục tiêu mới: '{user_command}'")
+    # Reset abort event for fresh goal execution
+    pipeline_abort_event.clear()
     # Start pulsing audio feedback for the user (only if enabled)
     sound_manager.start_pulsing()
 
@@ -939,6 +976,10 @@ async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, s
     is_goal_verified_completed = False
 
     while step < MAX_AUTONOMOUS_STEPS:
+        if pipeline_abort_event.is_set():
+            print(f"[Pipeline] ⏹️ Đã ngắt tác vụ '{user_command}' trước bước {step + 1}!")
+            break
+
         step += 1
         is_first_step = (step == 1)
         print(f"\n[Pipeline] 🔄 --- BƯỚC {step}/{MAX_AUTONOMOUS_STEPS} cho mục tiêu: '{user_command}' ---")
@@ -1026,6 +1067,10 @@ async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, s
         print(f"[Pipeline] [Bước {step}] Phản hồi từ Gemini:\n{raw_response}")
         # Stop pulsing audio cue immediately as soon as AI response has been received
         sound_manager.stop_pulsing()
+
+        if pipeline_abort_event.is_set():
+            print(f"[Pipeline] ⏹️ Đã ngắt tác vụ '{user_command}' sau phản hồi AI.")
+            break
 
         # Step 4: Robust JSON Parse & Narrative Extraction
         action_data, narrative_text = extract_payload_and_narrative(raw_response)
@@ -1154,6 +1199,9 @@ async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, s
         # Step 7: Execute Action Sequence on OS (if active actions exist)
         action_result = {"success": True, "action": "none", "details": "Verified state"}
         if active_actions:
+            if pipeline_abort_event.is_set():
+                print(f"[Pipeline] ⏹️ Đã ngắt tác vụ trước khi thao tác chuột/phím!")
+                break
             try:
                 if len(actions_list) > 1:
                     print(f"[Pipeline] ⚡ [Bước {step}] Đang thực thi chuỗi {len(actions_list)} hành động liên hoàn...")
@@ -1216,9 +1264,28 @@ async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, s
         # If more steps needed, wait briefly for new window/dialog/state to settle
         delay = 1.0 if any(a.get("action") == "launch_app" for a in actions_list) else 0.7
         print(f"[Pipeline] ⏳ Đang tạm dừng {delay}s chờ giao diện cập nhật để chụp ảnh thẩm định kết quả...")
-        await asyncio.sleep(delay)
+        for _ in range(int(delay * 10)):
+            if pipeline_abort_event.is_set():
+                break
+            await asyncio.sleep(0.1)
 
     # Completion handling
+    if pipeline_abort_event.is_set():
+        sound_manager.stop_pulsing()
+        sound_manager.play_error()
+        tts_service.stop_speaking()
+        cancel_msg = "Đã ngắt thao tác theo lệnh người dùng."
+        print(f"\n[Pipeline] ⏹️ TÁC VỤ ĐÃ BỊ NGẮT BỞI NGƯỜI DÙNG!")
+        return {
+            "success": False,
+            "speech": cancel_msg,
+            "action_result": {"success": False, "action": "cancelled"},
+            "annotated_image": annotated_b64 if "annotated_b64" in locals() else "",
+            "step": step,
+            "cancelled": True,
+            "done": True,
+        }
+
     if is_goal_verified_completed:
         sound_manager.play_done()
         print(f"\n[Pipeline] 🎉 HOÀN THÀNH VÀ ĐÃ XÁC MINH TOÀN BỘ MỤC TIÊU!")

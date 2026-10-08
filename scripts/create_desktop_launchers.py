@@ -84,32 +84,43 @@ def create_macos_apps():
     with open(app_target / "Contents" / "Info.plist", "w", encoding="utf-8") as f:
         f.write(info_plist)
 
-    # Launcher checks if Luga is already running. If so, simply triggers HUD show.
-    # Otherwise, launches start.sh inside Terminal so macOS grants 100% full microphone permissions!
-    launcher_script = f"""#!/bin/bash
-BASE_DIR="{BASE_DIR}"
+    # 3. Setup native Mach-O launcher inside the app bundle
+    native_bin = BASE_DIR / "scripts" / "macos" / "launcher"
+    if not native_bin.exists():
+        try:
+            subprocess.run(
+                ["clang", "-O2", "-target", "arm64-apple-macos11.0", str(BASE_DIR / "scripts" / "macos" / "launcher.c"), "-o", str(native_bin)],
+                check=True
+            )
+        except Exception:
+            pass
 
-# 1. Check if Luga Assist is already running in background
+    launcher_file = macos_dir / "launcher"
+    if native_bin.exists():
+        shutil.copy2(native_bin, launcher_file)
+    else:
+        launcher_script = f"""#!/bin/bash
+BASE_DIR="{BASE_DIR}"
 if curl -s -m 1 "http://localhost:8000/api/status" >/dev/null 2>&1; then
     curl -s -m 1 -X POST "http://localhost:8000/api/spotlight/show" >/dev/null 2>&1
-    osascript -e 'display notification "Luga Assist đã hoạt động. Bấm F7 để Chat, F8 để Nói, F9 để Đổi chế độ." with title "Luga Assist"' >/dev/null 2>&1
+    osascript -e 'display notification "Luga Assist đã hoạt động. Bấm F7 để Chat, F8 để Nói, F9 để Đổi chế độ, F10 để Ngắt." with title "Luga Assist"' >/dev/null 2>&1
     exit 0
 fi
-
-# 2. Launch directly inside Terminal to guarantee full macOS microphone & accessibility entitlements
-osascript <<EOF
-tell application "Terminal"
-    do script "cd \\"$BASE_DIR\\" && export PYTHONPATH=\\"$BASE_DIR\\" && python3 -m app.main"
-    activate
-end tell
-EOF
+export PYTHONPATH="{BASE_DIR}"
+exec python3 -m app.main
 """
-    launcher_file = macos_dir / "launcher"
-    with open(launcher_file, "w", encoding="utf-8") as f:
-        f.write(launcher_script)
+        with open(launcher_file, "w", encoding="utf-8") as f:
+            f.write(launcher_script)
+
     launcher_file.chmod(launcher_file.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-    # 3. Also create a direct Luga Assist.command file on Desktop
+    # Ad-hoc codesign bundle
+    try:
+        subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(app_target)], check=False)
+    except Exception:
+        pass
+
+    # 4. Also create a direct Luga Assist.command file on Desktop for developers
     cmd_file = desktop / "Luga Assist.command"
     cmd_content = f"""#!/bin/bash
 cd "{BASE_DIR}"
@@ -121,11 +132,13 @@ python3 -m app.main
     cmd_file.chmod(cmd_file.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
     print("✅ [macOS] Đã thiết lập ứng dụng trên Desktop:")
-    print(f"   • {app_target}")
-    print(f"   • {cmd_file}")
-    print("👉 Khi mở Luga Assist:")
-    print("   - Terminal sẽ mở và chạy ./start.sh với đầy đủ 100% quyền Micro, Trợ năng và Màn hình.")
-    print("   - Nhấn F7 để Bật/Tắt chat, F8 để nói qua Micro (hoặc Ctrl+Space), F9 để đổi chế độ.")
+    print(f"   • {app_target} (100% Native GUI - Không mở Terminal)")
+    print(f"   • {cmd_file} (Chế độ dòng lệnh dành cho Dev)")
+    print("👉 Phím tắt toàn hệ thống:")
+    print("   - F7: Bật/Tắt Cửa sổ Chat Nổi (Spotlight)")
+    print("   - F8: Nói trực tiếp qua Micro (hoặc Ctrl + Space)")
+    print("   - F9: Chuyển đổi Điều khiển <-> Chat Mode")
+    print("   - F10 / Ctrl+Esc: Ngắt ngay lập tức tác vụ đang xử lý (Cancel)")
 
 
 def create_windows_launchers():

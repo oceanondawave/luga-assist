@@ -186,16 +186,19 @@ class NativeVoiceListener:
         on_command_callback: Optional[Callable[[str], None]] = None,
         on_mode_toggle_callback: Optional[Callable[[], None]] = None,
         on_spotlight_toggle_callback: Optional[Callable[[], None]] = None,
+        on_cancel_callback: Optional[Callable[[], None]] = None,
         on_status_callback: Optional[Callable[[str, str], None]] = None,
     ):
         self.on_command = on_command_callback
         self.on_mode_toggle = on_mode_toggle_callback
         self.on_spotlight_toggle = on_spotlight_toggle_callback
+        self.on_cancel = on_cancel_callback
         self.on_status = on_status_callback
         self.recognizer = sr.Recognizer()
         self.is_recording = False
         self.is_processing = False
         self._stop_requested = False
+        self._discard_recording = False
         self._last_trigger_time = 0.0
         self._recording_start_time = 0.0
         self.sample_rate = 16000
@@ -206,6 +209,22 @@ class NativeVoiceListener:
         self._hotkeys_active = False
         self._has_announced_hotkeys = False
         self._current_keys = set()
+
+    def cancel_all(self):
+        """Immediately halt recording, speech, and executing pipeline."""
+        print("\n[NativeVoice] ⏹️ Kích hoạt ngắt khẩn cấp (Emergency Stop / Cancel)...")
+        self._discard_recording = True
+        self._stop_requested = True
+        self.is_recording = False
+        self.is_processing = False
+        sound_manager.stop_pulsing()
+        sound_manager.play_error()
+        self._update_status("cancelled", "⏹️ Đã ngắt tác vụ đang xử lý!")
+        if self.on_cancel:
+            try:
+                self.on_cancel()
+            except Exception as e:
+                print(f"[NativeVoice] Lỗi trong on_cancel: {e}")
 
 
     def _update_status(self, state: str, text_or_msg: str = ""):
@@ -228,6 +247,7 @@ class NativeVoiceListener:
 
         self.is_recording = True
         self._stop_requested = False
+        self._discard_recording = False
         self._recording_start_time = time.time()
         self._update_status("recording", "🎙️ Đang lắng nghe... Hãy nói lệnh vào Micro")
         print("\n" + "=" * 60)
@@ -260,7 +280,7 @@ class NativeVoiceListener:
                 device=dev_idx,
                 blocksize=chunk_samples,
             ) as stream:
-                while self.is_recording and not self._stop_requested:
+                while self.is_recording and not self._stop_requested and not self._discard_recording:
                     data, overflowed = stream.read(chunk_samples)
                     raw_bytes = bytes(data)
                     recorded_frames.append(raw_bytes)
@@ -302,6 +322,11 @@ class NativeVoiceListener:
             return None
 
         self.is_recording = False
+        if self._discard_recording:
+            print("[NativeVoice] ⏹️ Đã hủy bản ghi âm theo yêu cầu.")
+            self._discard_recording = False
+            return None
+
         total_audio_duration = len(recorded_frames) * chunk_duration
         if not recorded_frames or total_audio_duration < 0.35:
             print("[NativeVoice] Không phát hiện thấy âm thanh ghi lại.")
@@ -406,7 +431,8 @@ class NativeVoiceListener:
             return
 
         if self.is_processing:
-            print("[NativeVoice] Hệ thống đang bận thực hiện tác vụ trước...")
+            print("[NativeVoice] ⏹️ Đang xử lý tác vụ, nhấn phím nóng để ngắt ngay lập tức (Cancel)!")
+            self.cancel_all()
             return
 
         self.is_processing = True
@@ -445,6 +471,14 @@ class NativeVoiceListener:
                 elif key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r):
                     self._current_keys.add("cmd")
 
+                # F10 or Ctrl+Esc: Emergency Cancel / Halt active task or speech
+                is_f10 = (key == keyboard.Key.f10)
+                is_ctrl_esc = (key == keyboard.Key.esc and "ctrl" in self._current_keys)
+                if is_f10 or is_ctrl_esc:
+                    print("\n[Global Hotkey] Đã nhấn F10 / Ctrl+Esc -> NGẮT TÁC VỤ ĐANG XỬ LÝ (Emergency Cancel)!")
+                    self.cancel_all()
+                    return
+
                 # F7: Spotlight Floating Chat (F7 physical, media_previous, or Ctrl+Alt+Space)
                 is_f7 = (key == keyboard.Key.f7)
                 if hasattr(keyboard.Key, "media_previous") and key == keyboard.Key.media_previous:
@@ -462,7 +496,7 @@ class NativeVoiceListener:
                     is_f8 = True
 
                 if is_f8 or (key == keyboard.Key.space and "ctrl" in self._current_keys and "alt" not in self._current_keys):
-                    print("\n[Global Hotkey] Đã nhấn F8 / Ctrl+Space -> Bắt đầu lắng nghe!")
+                    print("\n[Global Hotkey] Đã nhấn F8 / Ctrl+Space -> Kích hoạt lệnh giọng nói!")
                     self.trigger_voice_flow()
                     return
 
@@ -537,11 +571,12 @@ class NativeVoiceListener:
                             print("👉 F7                     : Bật/Tắt Cửa sổ Chat Nổi (Spotlight)")
                             print("👉 F8 (hoặc Ctrl + Space) : Nói lệnh điều khiển / hỏi đáp")
                             print("👉 F9                     : Chuyển đổi Chế độ Điều khiển <-> Chat Mode")
+                            print("👉 F10 (hoặc Ctrl + Esc)  : NGẮT NGAY LẬP TỨC tác vụ đang xử lý (Cancel)")
                             print("👉 KHÔNG CẦN MỞ TRÌNH DUYỆT - MÀN HÌNH HOÀN TOÀN THOÁNG ĐÃNG.")
                             print("=" * 65 + "\n")
                             try:
                                 from app.system_ui import show_desktop_notification
-                                show_desktop_notification("Luga Assist", "✅ Phím tắt F7, F8, F9 đã sẵn sàng hoạt động!")
+                                show_desktop_notification("Luga Assist", "✅ Phím tắt F7, F8, F9, F10 đã sẵn sàng hoạt động!")
                             except Exception:
                                 pass
             else:

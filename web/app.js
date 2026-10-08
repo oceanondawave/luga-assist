@@ -270,6 +270,11 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
       `;
       activityLog.innerHTML = "";
+    } else if (msg.type === "ACTION_CANCELLED") {
+      chatThinking.style.display = "none";
+      soundError();
+      appendChatBubble("ai", `⏹️ ${msg.message || "Đã ngắt thao tác theo lệnh người dùng."}`);
+      appendLog("Ngắt thao tác", msg.message || "Tác vụ đã bị hủy", { success: false, cancelled: true });
     } else if (msg.type === "ERROR") {
       chatThinking.style.display = "none";
       soundError();
@@ -277,6 +282,13 @@ document.addEventListener("DOMContentLoaded", () => {
       appendLog(msg.user_command || "Thao tác", msg.message, { success: false });
     }
   }
+
+  // Global Escape hotkey to cancel in WebUI
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && chatThinking.style.display === "flex") {
+      fetch("/api/cancel", { method: "POST" }).catch(() => {});
+    }
+  });
 
   // 3. Command Sending (Chat & Voice)
   function sendCommand(text) {

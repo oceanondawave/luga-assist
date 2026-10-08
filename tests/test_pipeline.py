@@ -812,6 +812,41 @@ def test_accessibility_permissions_and_hotkey_supervisor():
 
     print("test_accessibility_permissions_and_hotkey_supervisor: PASSED")
 
+def test_cancellation_and_emergency_stop():
+    import app.main as main_mod
+    from app.native_voice import NativeVoiceListener
+
+    # 1. Test pipeline_abort_event and cancel_active_pipeline
+    main_mod.pipeline_abort_event.clear()
+    assert main_mod.pipeline_abort_event.is_set() is False
+
+    main_mod.cancel_active_pipeline()
+    assert main_mod.pipeline_abort_event.is_set() is True
+
+    # 2. Test NativeVoiceListener cancellation
+    cancelled_called = False
+    def on_cancel_test():
+        nonlocal cancelled_called
+        cancelled_called = True
+
+    voice_listener = NativeVoiceListener(on_cancel_callback=on_cancel_test)
+    voice_listener.is_recording = True
+    voice_listener.is_processing = True
+
+    voice_listener.cancel_all()
+    assert cancelled_called is True
+    assert voice_listener.is_recording is False
+    assert voice_listener.is_processing is False
+    assert voice_listener._stop_requested is True
+    assert voice_listener._discard_recording is True
+
+    # 3. Test API /api/cancel endpoint directly
+    res = asyncio.run(main_mod.api_cancel())
+    assert res["status"] == "ok"
+    assert "Đã ngắt" in res["message"]
+
+    print("test_cancellation_and_emergency_stop: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -840,7 +875,8 @@ if __name__ == "__main__":
     test_window_control()
     test_click_safety_and_coordinates()
     test_accessibility_permissions_and_hotkey_supervisor()
-    print("\n🎉 ALL TESTS (INCLUDING AUDIO MANAGER & DEVICE SELECTION) PASSED SUCCESSFULLY!")
+    test_cancellation_and_emergency_stop()
+    print("\n🎉 ALL TESTS (INCLUDING EMERGENCY STOP & CANCELLATION) PASSED SUCCESSFULLY!")
 
 
 
