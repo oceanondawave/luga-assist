@@ -23,11 +23,10 @@ else:
     HAS_MACOS_AX = False
 
 
-def ensure_accessibility_permissions(prompt: bool = True) -> bool:
+def ensure_accessibility_permissions(prompt: bool = False) -> bool:
     """
     Check if the current process is trusted for macOS Accessibility (CGEventTap / AXUIElement).
-    If not trusted and prompt=True, requests permission from macOS (displaying system dialog)
-    and opens System Settings -> Privacy & Security -> Accessibility.
+    If not trusted and prompt=True, requests permission from macOS (displaying system dialog).
     On non-macOS platforms, always returns True.
     """
     if not IS_MACOS:
@@ -41,8 +40,6 @@ def ensure_accessibility_permissions(prompt: bool = True) -> bool:
                 return True
             if prompt:
                 AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True})
-                import subprocess
-                subprocess.Popen(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"])
             return False
         else:
             import ctypes
@@ -63,8 +60,6 @@ def ensure_accessibility_permissions(prompt: bool = True) -> bool:
                 as_lib.AXIsProcessTrustedWithOptions.restype = c_bool
                 as_lib.AXIsProcessTrustedWithOptions.argtypes = [c_void_p]
                 as_lib.AXIsProcessTrustedWithOptions(options)
-                import subprocess
-                subprocess.Popen(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"])
             return False
     except Exception as e:
         print(f"[Accessibility] Warning checking permissions: {e}")

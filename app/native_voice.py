@@ -514,19 +514,17 @@ class NativeVoiceListener:
         """
         from app.accessibility import ensure_accessibility_permissions
         has_prompted = False
-        last_prompt_time = 0.0
 
         while not self._stop_hotkeys:
             is_alive = (self._hotkey_listener is not None and self._hotkey_listener.is_alive())
 
             if not is_alive:
                 self._hotkeys_active = False
-                now = time.time()
-                should_prompt = not has_prompted or (now - last_prompt_time > 60.0)
-                is_trusted = ensure_accessibility_permissions(prompt=should_prompt)
-                if should_prompt:
+                # First check silently without any modal prompts
+                is_trusted = ensure_accessibility_permissions(prompt=False)
+                if not is_trusted and not has_prompted:
                     has_prompted = True
-                    last_prompt_time = now
+                    is_trusted = ensure_accessibility_permissions(prompt=True)
 
                 if is_trusted:
                     success = self._start_listener_internal()
