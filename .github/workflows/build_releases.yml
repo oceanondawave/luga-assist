@@ -43,7 +43,7 @@ jobs:
             dist/Luga-Assist-macOS.zip
 
   build-windows:
-    name: Build Windows Standalone (.exe, .zip)
+    name: Build Windows Standalone (.exe, .zip, Installer)
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -66,7 +66,12 @@ jobs:
         run: |
           pyinstaller --clean -y luga_assist_win.spec
 
-      - name: Create Windows ZIP Package
+      - name: Build Windows Setup Wizard Installer (.exe) with Inno Setup
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" scripts\windows\installer.iss
+
+      - name: Create Windows Portable ZIP Package
         shell: pwsh
         run: |
           Compress-Archive -Path 'dist\Luga Assist' -DestinationPath 'dist\Luga-Assist-Windows.zip' -Force
@@ -75,7 +80,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-release
-          path: dist/Luga-Assist-Windows.zip
+          path: |
+            dist/Luga-Assist-Windows-Installer.exe
+            dist/Luga-Assist-Windows.zip
 
   publish-release:
     name: Publish GitHub Release
@@ -101,6 +108,7 @@ jobs:
           files: |
             release-assets/Luga-Assist-macOS.dmg
             release-assets/Luga-Assist-macOS.zip
+            release-assets/Luga-Assist-Windows-Installer.exe
             release-assets/Luga-Assist-Windows.zip
           draft: false
           prerelease: false
