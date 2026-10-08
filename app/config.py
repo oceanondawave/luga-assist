@@ -4,6 +4,8 @@ Configuration settings for Luga Assist.
 from pathlib import Path
 import os
 
+import sys
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Server configuration
@@ -11,11 +13,37 @@ HOST = os.getenv("LUGA_HOST", "127.0.0.1")
 PORT = int(os.getenv("LUGA_PORT", "8000"))
 
 # Static and Web assets
-WEB_DIR = BASE_DIR / "web"
-TEMP_DIR = BASE_DIR / "temp"
-TEMP_DIR.mkdir(parents=True, exist_ok=True)
-LOGS_DIR = BASE_DIR / "logs"
-LOGS_DIR.mkdir(parents=True, exist_ok=True)
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    WEB_DIR = Path(sys._MEIPASS) / "web"
+    if not WEB_DIR.exists():
+        WEB_DIR = BASE_DIR / "web"
+else:
+    WEB_DIR = BASE_DIR / "web"
+
+# Runtime directories (temp and logs)
+# If running as standalone bundled app, use user home directory to guarantee write permissions
+# even if installed in /Applications or Program Files.
+if getattr(sys, "frozen", False):
+    USER_DATA_DIR = Path.home() / ".luga_assist"
+    TEMP_DIR = USER_DATA_DIR / "temp"
+    LOGS_DIR = USER_DATA_DIR / "logs"
+else:
+    TEMP_DIR = BASE_DIR / "temp"
+    LOGS_DIR = BASE_DIR / "logs"
+
+try:
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    USER_DATA_DIR = Path.home() / ".luga_assist"
+    TEMP_DIR = USER_DATA_DIR / "temp"
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
+try:
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    USER_DATA_DIR = Path.home() / ".luga_assist"
+    LOGS_DIR = USER_DATA_DIR / "logs"
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 LOG_FILE = LOGS_DIR / "luga_assist.log"
 ERROR_LOG_FILE = LOGS_DIR / "error.log"

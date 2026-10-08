@@ -88,8 +88,12 @@ def launch_spotlight_hud() -> Optional[subprocess.Popen]:
         env = os.environ.copy()
         env["PYTHONPATH"] = str(BASE_DIR)
         env["LUGA_SPAWNED_BY_MAIN"] = "1"
+        if getattr(sys, "frozen", False):
+            cmd = [sys.executable, "--spotlight-ui"]
+        else:
+            cmd = [sys.executable, "-m", "app.spotlight_ui"]
         proc = subprocess.Popen(
-            [sys.executable, "-m", "app.spotlight_ui"],
+            cmd,
             cwd=str(BASE_DIR),
             env=env,
             stdout=subprocess.DEVNULL,
@@ -1343,7 +1347,7 @@ def start():
     print("=" * 60)
 
     try:
-        uvicorn.run("app.main:app", host=HOST, port=PORT, reload=False, log_level="info")
+        uvicorn.run(app, host=HOST, port=PORT, reload=False, log_level="info")
     except (KeyboardInterrupt, SystemExit):
         pass
     finally:
@@ -1354,4 +1358,12 @@ def start():
         sys.exit(0)
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
+
+    if "--spotlight-ui" in sys.argv:
+        from app.spotlight_ui import start_spotlight_process
+        start_spotlight_process()
+        sys.exit(0)
+
     start()

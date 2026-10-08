@@ -157,7 +157,10 @@ async def trigger_graceful_restart(delay: float = 1.0) -> None:
 
     async def _delayed_restart():
         await asyncio.sleep(delay)
-        python = sys.executable
-        os.execl(python, python, "-m", "app.main")
+        if getattr(sys, "frozen", False):
+            os.execl(sys.executable, sys.executable)
+        else:
+            python = sys.executable
+            os.execl(python, python, "-m", "app.main")
 
     asyncio.create_task(_delayed_restart())
