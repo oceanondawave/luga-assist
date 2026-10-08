@@ -82,7 +82,14 @@ class SpotlightHUD:
         self.root.bind("<Escape>", lambda e: self.on_escape())
         self.root.protocol("WM_DELETE_WINDOW", self.hide)
 
-        # Start hidden initially unless show_immediately is requested
+        # Register macOS Dock click / reopen handler
+        if sys.platform == "darwin":
+            try:
+                self.root.createcommand("::tk::mac::ReopenApplication", lambda: self.show())
+            except Exception:
+                pass
+
+        # Start visible initially so user immediately sees the interface
         if show_immediately:
             self.show()
         else:
@@ -822,10 +829,10 @@ def get_spotlight_hud() -> Optional[SpotlightHUD]:
     return SpotlightHUD._instance
 
 
-def start_spotlight_process():
+def start_spotlight_process(show_immediately: bool = True):
     """Start Spotlight HUD as a detached subprocess or entry point."""
     hud = SpotlightHUD()
-    hud.run()
+    hud.run(show_immediately=show_immediately)
 
 
 if __name__ == "__main__":
