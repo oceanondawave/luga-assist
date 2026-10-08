@@ -54,6 +54,7 @@ if command -v hdiutil &> /dev/null; then
     mkdir -p "$DMG_DIR"
     cp -R "dist/Luga Assist.app" "$DMG_DIR/"
     cp -R "extension" "$DMG_DIR/Chrome_Extension"
+    ln -s /Applications "$DMG_DIR/Applications"
     cat << 'EOF' > "$DMG_DIR/HUONG_DAN_CAI_EXTENSION.txt"
 ============================================================
 BƯỚC BẮT BUỘC TRƯỚC KHI KHỞI CHẠY LUGA ASSIST:

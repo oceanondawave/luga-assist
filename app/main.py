@@ -1311,12 +1311,85 @@ async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, s
 
 
 
+def handle_single_instance_or_free_port(host: str = HOST, port: int = PORT) -> bool:
+    """
+    Ensure robust single-instance behavior:
+    1. If an active instance is running, trigger its Spotlight HUD to pop up and exit cleanly.
+    2. If port is occupied by a stale/zombie process, terminate it to guarantee Uvicorn binds successfully.
+    """
+    import urllib.request
+    import urllib.error
+    import socket
+    import signal
+
+    # 1. Check if existing instance is alive and healthy
+    try:
+        url = f"http://{host}:{port}/api/status"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=0.6) as res:
+            if res.status == 200:
+                # Active instance found! Trigger Spotlight HUD to appear on screen
+                try:
+                    show_req = urllib.request.Request(f"http://{host}:{port}/api/spotlight/show", data=b"{}", headers={"Content-Type": "application/json"})
+                    urllib.request.urlopen(show_req, timeout=0.8)
+                except Exception:
+                    pass
+                print("\n[SingleInstance] ℹ️ Luga Assist đã đang chạy! Đã kích hoạt Cửa sổ Spotlight HUD hiển thị trên màn hình.")
+                return False  # Signals to exit cleanly
+    except Exception:
+        pass
+
+    # 2. Check if port is bound by a stale or lingering process
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    is_in_use = False
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((host, port))
+        sock.close()
+    except OSError:
+        is_in_use = True
+
+    if is_in_use:
+        print(f"[Port] Cổng {port} đang bị giữ bởi tiến trình cũ. Đang giải phóng cổng...")
+        try:
+            if sys.platform == "darwin" or sys.platform.startswith("linux"):
+                res = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True)
+                for p in res.stdout.strip().split():
+                    pid = int(p)
+                    if pid != os.getpid() and pid > 0:
+                        try:
+                            os.kill(pid, signal.SIGTERM)
+                            time.sleep(0.1)
+                            os.kill(pid, signal.SIGKILL)
+                        except OSError:
+                            pass
+                time.sleep(0.4)
+            elif sys.platform.startswith("win"):
+                res = subprocess.run(["netstat", "-ano"], capture_output=True, text=True)
+                for line in res.stdout.splitlines():
+                    if f":{port}" in line and "LISTENING" in line:
+                        parts = line.strip().split()
+                        pid = int(parts[-1])
+                        if pid != os.getpid() and pid > 0:
+                            subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True)
+                time.sleep(0.4)
+        except Exception as e:
+            print(f"[Port] Cảnh báo giải phóng cổng: {e}")
+
+    return True
+
+
 def start():
     """Entry point for running server and native Spotlight HUD."""
     import threading
     import signal
 
-    # Terminate any previously running instance to prevent conflicting mic listeners/ports
+    # 1. Single-instance check or free lingering port
+    should_start = handle_single_instance_or_free_port(HOST, PORT)
+    if not should_start:
+        sys.exit(0)
+
+    # Terminate any previously recorded PID instance
     if PID_FILE.exists():
         try:
             with open(PID_FILE, "r") as f:
@@ -1325,7 +1398,7 @@ def start():
                 try:
                     os.kill(old_pid, 0)
                     os.kill(old_pid, signal.SIGTERM)
-                    time.sleep(0.4)
+                    time.sleep(0.3)
                 except (OSError, ProcessLookupError):
                     pass
         except Exception:
