@@ -463,6 +463,50 @@ class NativeVoiceListener:
                 pass
             self._hotkey_listener = None
 
+        def _is_f8(k) -> bool:
+            if k == keyboard.Key.f8:
+                return True
+            if hasattr(keyboard.Key, "media_play_pause") and k == keyboard.Key.media_play_pause:
+                return True
+            vk = getattr(k, "vk", getattr(getattr(k, "value", None), "vk", None))
+            if vk in (100, 119):
+                return True
+            s = str(k).lower()
+            return "f8" in s or s in ("<100>", "<119>", "'<100>'", "'<119>'")
+
+        def _is_f7(k) -> bool:
+            if k == keyboard.Key.f7:
+                return True
+            if hasattr(keyboard.Key, "media_previous") and k == keyboard.Key.media_previous:
+                return True
+            vk = getattr(k, "vk", getattr(getattr(k, "value", None), "vk", None))
+            if vk in (98, 118):
+                return True
+            s = str(k).lower()
+            return "f7" in s or s in ("<98>", "<118>", "'<98>'", "'<118>'")
+
+        def _is_f9(k) -> bool:
+            if k == keyboard.Key.f9:
+                return True
+            if hasattr(keyboard.Key, "media_next") and k == keyboard.Key.media_next:
+                return True
+            vk = getattr(k, "vk", getattr(getattr(k, "value", None), "vk", None))
+            if vk in (101, 120):
+                return True
+            s = str(k).lower()
+            return "f9" in s or s in ("<101>", "<120>", "'<101>'", "'<120>'")
+
+        def _is_f10(k) -> bool:
+            if k == keyboard.Key.f10:
+                return True
+            if hasattr(keyboard.Key, "media_volume_mute") and k == keyboard.Key.media_volume_mute:
+                return True
+            vk = getattr(k, "vk", getattr(getattr(k, "value", None), "vk", None))
+            if vk in (109, 121):
+                return True
+            s = str(k).lower()
+            return "f10" in s or s in ("<109>", "<121>", "'<109>'", "'<121>'")
+
         def on_press(key):
             try:
                 # Track modifier keys
@@ -475,35 +519,29 @@ class NativeVoiceListener:
                 elif key in (keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r):
                     self._current_keys.add("shift")
 
-                # F10 or Ctrl+Esc or Cmd+Esc: Emergency Cancel / Halt active task or speech
-                is_f10 = (key == keyboard.Key.f10)
+                # F10: Emergency Cancel / Halt active task or speech
+                is_f10 = _is_f10(key)
                 is_cancel = (key == keyboard.Key.esc and ("ctrl" in self._current_keys or "cmd" in self._current_keys))
                 if is_f10 or is_cancel:
-                    print("\n[Global Hotkey] Đã nhấn F10 / Ctrl+Esc -> NGẮT TÁC VỤ ĐANG XỬ LÝ (Emergency Cancel)!")
+                    print("\n[Global Hotkey] Đã nhấn F10 -> NGẮT TÁC VỤ ĐANG XỬ LÝ (Emergency Cancel)!")
                     self.cancel_all()
                     return
 
-                # F7: Spotlight Floating Chat (F7 physical, media_previous, Ctrl+Alt+Space, or Cmd+Alt+Space)
-                is_f7 = (key == keyboard.Key.f7)
-                if hasattr(keyboard.Key, "media_previous") and key == keyboard.Key.media_previous:
-                    is_f7 = True
-
+                # F7: Spotlight Floating Chat
+                is_f7 = _is_f7(key)
                 is_spotlight_combo = (
                     key == keyboard.Key.space
                     and "alt" in self._current_keys
                     and ("ctrl" in self._current_keys or "cmd" in self._current_keys)
                 )
                 if is_f7 or is_spotlight_combo:
-                    print("\n[Global Hotkey] Đã nhấn F7 / Ctrl+Alt+Space -> Bật/Tắt Cửa sổ Chat Nổi (Spotlight)!")
+                    print("\n[Global Hotkey] Đã nhấn F7 -> Bật/Tắt Cửa sổ Chat Nổi (Spotlight)!")
                     if self.on_spotlight_toggle:
                         self.on_spotlight_toggle()
                     return
 
-                # F8: Voice trigger (F8 physical, media_play_pause, Ctrl+Space, Option+Space, or Ctrl+Shift+Space)
-                is_f8 = (key == keyboard.Key.f8)
-                if hasattr(keyboard.Key, "media_play_pause") and key == keyboard.Key.media_play_pause:
-                    is_f8 = True
-
+                # F8: Voice trigger
+                is_f8 = _is_f8(key)
                 is_voice_space = (
                     key == keyboard.Key.space
                     and (
@@ -512,15 +550,12 @@ class NativeVoiceListener:
                     )
                 )
                 if is_f8 or is_voice_space:
-                    print("\n[Global Hotkey] Đã nhấn F8 / Ctrl+Space / Option+Space -> Kích hoạt lệnh giọng nói!")
+                    print("\n[Global Hotkey] Đã nhấn F8 -> Kích hoạt lệnh giọng nói!")
                     self.trigger_voice_flow()
                     return
 
-                # F9: Toggle Mode (F9 physical, media_next, Ctrl+Alt+M, or Cmd+Alt+M)
-                is_f9 = (key == keyboard.Key.f9)
-                if hasattr(keyboard.Key, "media_next") and key == keyboard.Key.media_next:
-                    is_f9 = True
-
+                # F9: Toggle Mode
+                is_f9 = _is_f9(key)
                 char_val = getattr(key, "char", None)
                 is_mode_m = (
                     char_val in ("m", "M")
@@ -528,7 +563,7 @@ class NativeVoiceListener:
                     and ("ctrl" in self._current_keys or "cmd" in self._current_keys)
                 )
                 if is_f9 or is_mode_m:
-                    print("\n[Global Hotkey] Đã nhấn F9 / Ctrl+Alt+M -> Chuyển đổi chế độ (Điều khiển <-> Trò chuyện AI)!")
+                    print("\n[Global Hotkey] Đã nhấn F9 -> Chuyển đổi chế độ (Điều khiển <-> Trò chuyện AI)!")
                     if self.on_mode_toggle:
                         self.on_mode_toggle()
                     return

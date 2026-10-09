@@ -809,10 +809,32 @@ class SpotlightHUD:
         - Ctrl + Alt + Space: Alternative hotkey
         - F10 or Ctrl + Esc: Emergency cancel
         """
+        def _is_f7(k) -> bool:
+            if k == keyboard.Key.f7:
+                return True
+            if hasattr(keyboard.Key, "media_previous") and k == keyboard.Key.media_previous:
+                return True
+            vk = getattr(k, "vk", getattr(getattr(k, "value", None), "vk", None))
+            if vk in (98, 118):
+                return True
+            s = str(k).lower()
+            return "f7" in s or s in ("<98>", "<118>", "'<98>'", "'<118>'")
+
+        def _is_f10(k) -> bool:
+            if k == keyboard.Key.f10:
+                return True
+            if hasattr(keyboard.Key, "media_volume_mute") and k == keyboard.Key.media_volume_mute:
+                return True
+            vk = getattr(k, "vk", getattr(getattr(k, "value", None), "vk", None))
+            if vk in (109, 121):
+                return True
+            s = str(k).lower()
+            return "f10" in s or s in ("<109>", "<121>", "'<109>'", "'<121>'")
+
         def on_press(key):
             try:
                 # F10 or Ctrl+Esc: Emergency cancel
-                is_f10 = (key == keyboard.Key.f10)
+                is_f10 = _is_f10(key)
                 is_ctrl_esc = (key == keyboard.Key.esc and "ctrl" in self._keys_held)
                 if is_f10 or is_ctrl_esc:
                     print("\n[Global Hotkey] Đã nhấn F10 / Ctrl+Esc -> Ngắt tác vụ!")
@@ -820,7 +842,7 @@ class SpotlightHUD:
                     return
 
                 # F7 key
-                if key == keyboard.Key.f7:
+                if _is_f7(key):
                     print("\n[Global Hotkey] Đã nhấn F7 -> Bật/Tắt Spotlight Chat!")
                     self.toggle()
                     return
