@@ -437,6 +437,25 @@ async def set_session(payload: SessionPayload):
     await hub.broadcast_status()
     return {"status": "ok" if ok else "error", "ready": gemini_service.is_ready}
 
+@app.get("/api/debug_status")
+def debug_status():
+    from app.accessibility import ensure_accessibility_permissions
+    import ApplicationServices
+    import HIServices
+    is_trusted = ensure_accessibility_permissions(prompt=False)
+    hi_trusted = HIServices.AXIsProcessTrusted()
+    as_trusted = ApplicationServices.AXIsProcessTrusted()
+    l = native_voice_instance._hotkey_listener if native_voice_instance else None
+    return {
+        "is_trusted": is_trusted,
+        "hi_trusted": hi_trusted,
+        "as_trusted": as_trusted,
+        "hotkeys_active": native_voice_instance._hotkeys_active if native_voice_instance else False,
+        "listener_is_none": l is None,
+        "listener_alive": l.is_alive() if l else False,
+        "listener_IS_TRUSTED": getattr(l, "IS_TRUSTED", None) if l else None,
+    }
+
 @app.get("/api/logs")
 async def get_system_logs(lines: int = 150):
     """Fetch recent system logs for debugging."""

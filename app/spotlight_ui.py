@@ -82,12 +82,15 @@ class SpotlightHUD:
         self.root.bind("<Escape>", lambda e: self.on_escape())
         self.root.protocol("WM_DELETE_WINDOW", self.hide)
 
-        # Register macOS Dock click / reopen handler
+        # Register macOS Dock click, reopen, and QuitApplication handlers
         if sys.platform == "darwin":
             try:
                 self.root.createcommand("::tk::mac::ReopenApplication", lambda: self.show())
+                self.root.createcommand("::tk::mac::QuitApplication", self.quit_app)
             except Exception:
                 pass
+            self.root.bind("<Command-q>", lambda e: self.quit_app())
+            self.root.bind("<Command-Q>", lambda e: self.quit_app())
 
         # Start visible initially so user immediately sees the interface
         if show_immediately:
@@ -698,9 +701,31 @@ class SpotlightHUD:
         except Exception:
             pass
 
+        # 1. Instruct background FastAPI server to shut down gracefully
         try:
+            import urllib.request
+            req = urllib.request.Request(
+                f"http://{self.host}:{self.port}/api/system/shutdown",
+                data=b'{"delay": 0.3, "speak": false}',
+                headers={"Content-Type": "application/json"}
+            )
+            urllib.request.urlopen(req, timeout=1.0)
+        except Exception:
+            pass
+
+        # 2. Terminate background server PID from PID_FILE if still active
+        try:
+            import signal
             from app.config import PID_FILE
-            PID_FILE.unlink(missing_ok=True)
+            if PID_FILE.exists():
+                with open(PID_FILE, "r") as f:
+                    main_pid = int(f.read().strip())
+                if main_pid != os.getpid() and main_pid > 0:
+                    try:
+                        os.kill(main_pid, signal.SIGTERM)
+                    except Exception:
+                        pass
+                PID_FILE.unlink(missing_ok=True)
         except Exception:
             pass
 
