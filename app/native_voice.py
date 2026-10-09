@@ -363,23 +363,25 @@ class NativeVoiceListener:
             pass
 
         def _recognize_lang(lang: str) -> Optional[tuple[str, float]]:
-            try:
-                res = self.recognizer.recognize_google(audio, language=lang, with_confidence=True)
-                if isinstance(res, tuple):
-                    return (res[0].strip(), float(res[1]))
-                return (str(res).strip(), 0.8)
-            except sr.UnknownValueError:
+            for attempt in range(2):
                 try:
-                    res = self.recognizer.recognize_google(audio, language=lang)
-                    return (str(res).strip(), 0.75)
-                except Exception:
+                    res = self.recognizer.recognize_google(audio, language=lang, with_confidence=True)
+                    if isinstance(res, tuple):
+                        return (res[0].strip(), float(res[1]))
+                    return (str(res).strip(), 0.8)
+                except sr.UnknownValueError:
+                    try:
+                        res = self.recognizer.recognize_google(audio, language=lang)
+                        return (str(res).strip(), 0.75)
+                    except Exception:
+                        return None
+                except (sr.RequestError, OSError, Exception) as e:
+                    if attempt == 0:
+                        time.sleep(0.25)
+                        continue
+                    print(f"[NativeVoice] ⚠️ Lỗi STT ({lang}): {e}")
                     return None
-            except sr.RequestError as e:
-                print(f"[NativeVoice] ⚠️ Lỗi kết nối Google STT ({lang}): {e}")
-                return None
-            except Exception as e:
-                print(f"[NativeVoice] ⚠️ Lỗi STT ({lang}): {e}")
-                return None
+            return None
 
         mode = VOICE_RECOGNITION_LANG.lower().strip()
         best_text = None
@@ -470,43 +472,63 @@ class NativeVoiceListener:
                     self._current_keys.add("alt")
                 elif key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r):
                     self._current_keys.add("cmd")
+                elif key in (keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r):
+                    self._current_keys.add("shift")
 
-                # F10 or Ctrl+Esc: Emergency Cancel / Halt active task or speech
+                # F10 or Ctrl+Esc or Cmd+Esc: Emergency Cancel / Halt active task or speech
                 is_f10 = (key == keyboard.Key.f10)
-                is_ctrl_esc = (key == keyboard.Key.esc and "ctrl" in self._current_keys)
-                if is_f10 or is_ctrl_esc:
+                is_cancel = (key == keyboard.Key.esc and ("ctrl" in self._current_keys or "cmd" in self._current_keys))
+                if is_f10 or is_cancel:
                     print("\n[Global Hotkey] Đã nhấn F10 / Ctrl+Esc -> NGẮT TÁC VỤ ĐANG XỬ LÝ (Emergency Cancel)!")
                     self.cancel_all()
                     return
 
-                # F7: Spotlight Floating Chat (F7 physical, media_previous, or Ctrl+Alt+Space)
+                # F7: Spotlight Floating Chat (F7 physical, media_previous, Ctrl+Alt+Space, or Cmd+Alt+Space)
                 is_f7 = (key == keyboard.Key.f7)
                 if hasattr(keyboard.Key, "media_previous") and key == keyboard.Key.media_previous:
                     is_f7 = True
 
-                if is_f7 or (key == keyboard.Key.space and "ctrl" in self._current_keys and "alt" in self._current_keys):
+                is_spotlight_combo = (
+                    key == keyboard.Key.space
+                    and "alt" in self._current_keys
+                    and ("ctrl" in self._current_keys or "cmd" in self._current_keys)
+                )
+                if is_f7 or is_spotlight_combo:
                     print("\n[Global Hotkey] Đã nhấn F7 / Ctrl+Alt+Space -> Bật/Tắt Cửa sổ Chat Nổi (Spotlight)!")
                     if self.on_spotlight_toggle:
                         self.on_spotlight_toggle()
                     return
 
-                # F8: Voice trigger (F8 physical, media_play_pause, or Ctrl+Space)
+                # F8: Voice trigger (F8 physical, media_play_pause, Ctrl+Space, Option+Space, or Ctrl+Shift+Space)
                 is_f8 = (key == keyboard.Key.f8)
                 if hasattr(keyboard.Key, "media_play_pause") and key == keyboard.Key.media_play_pause:
                     is_f8 = True
 
-                if is_f8 or (key == keyboard.Key.space and "ctrl" in self._current_keys and "alt" not in self._current_keys):
-                    print("\n[Global Hotkey] Đã nhấn F8 / Ctrl+Space -> Kích hoạt lệnh giọng nói!")
+                is_voice_space = (
+                    key == keyboard.Key.space
+                    and (
+                        ("ctrl" in self._current_keys and "alt" not in self._current_keys)
+                        or ("alt" in self._current_keys and "ctrl" not in self._current_keys and "cmd" not in self._current_keys)
+                    )
+                )
+                if is_f8 or is_voice_space:
+                    print("\n[Global Hotkey] Đã nhấn F8 / Ctrl+Space / Option+Space -> Kích hoạt lệnh giọng nói!")
                     self.trigger_voice_flow()
                     return
 
-                # F9: Toggle Mode (F9 physical, media_next, or Ctrl+Alt+M)
+                # F9: Toggle Mode (F9 physical, media_next, Ctrl+Alt+M, or Cmd+Alt+M)
                 is_f9 = (key == keyboard.Key.f9)
                 if hasattr(keyboard.Key, "media_next") and key == keyboard.Key.media_next:
                     is_f9 = True
 
-                if is_f9:
-                    print("\n[Global Hotkey] Đã nhấn F9 -> Chuyển đổi chế độ (Điều khiển <-> Trò chuyện AI)!")
+                char_val = getattr(key, "char", None)
+                is_mode_m = (
+                    char_val in ("m", "M")
+                    and "alt" in self._current_keys
+                    and ("ctrl" in self._current_keys or "cmd" in self._current_keys)
+                )
+                if is_f9 or is_mode_m:
+                    print("\n[Global Hotkey] Đã nhấn F9 / Ctrl+Alt+M -> Chuyển đổi chế độ (Điều khiển <-> Trò chuyện AI)!")
                     if self.on_mode_toggle:
                         self.on_mode_toggle()
                     return
@@ -522,6 +544,8 @@ class NativeVoiceListener:
                     self._current_keys.discard("alt")
                 elif key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r):
                     self._current_keys.discard("cmd")
+                elif key in (keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r):
+                    self._current_keys.discard("shift")
             except Exception:
                 pass
 

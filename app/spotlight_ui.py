@@ -768,9 +768,10 @@ class SpotlightHUD:
                         self.root.attributes("-topmost", True)
                     self.root.after(0, _update_ui)
             except Exception as e:
+                err_str = str(e)
                 def _err_ui():
                     self.is_executing = False
-                    self.status_lbl.config(text=f"⚠️ Lỗi kết nối: {e}", fg="#ef4444")
+                    self.status_lbl.config(text=f"⚠️ Lỗi kết nối: {err_str}", fg="#ef4444")
                     self.root.deiconify()
                 self.root.after(0, _err_ui)
 

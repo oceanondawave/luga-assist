@@ -407,6 +407,8 @@ async def api_chat(payload: ChatPayload):
         voice=payload.voice or DEFAULT_TTS_VOICE,
         speak=payload.speak if payload.speak is not None else True
     )
+    if not isinstance(res, dict):
+        res = {"success": False, "speech": "Không nhận được phản hồi từ hệ thống."}
     speech = res.get("speech", "")
     dyn = res.get("action_result", {}).get("speech_result")
     if dyn and dyn != speech:
@@ -1056,7 +1058,12 @@ async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, s
                     timeout_msg = "Quá thời gian chờ phản hồi từ Gemini. Vui lòng thử lại câu lệnh."
                     await hub.broadcast_webui({"type": "ERROR", "message": timeout_msg, "user_command": user_command})
                     await tts_service.speak(timeout_msg)
-                    return
+                    return {
+                        "success": False,
+                        "speech": timeout_msg,
+                        "action_result": {"success": False, "error": timeout_msg},
+                        "done": True,
+                    }
             else:
                 sound_manager.play_error()
                 err_text = (
@@ -1065,7 +1072,12 @@ async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, s
                 )
                 await hub.broadcast_webui({"type": "ERROR", "message": err_text, "user_command": user_command})
                 await tts_service.speak(err_text)
-                return
+                return {
+                    "success": False,
+                    "speech": err_text,
+                    "action_result": {"success": False, "error": err_text},
+                    "done": True,
+                }
 
         raw_response = strip_citations(raw_response)
         print(f"[Pipeline] [Bước {step}] Phản hồi từ Gemini:\n{raw_response}")

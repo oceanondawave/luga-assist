@@ -22,9 +22,9 @@ clang -O2 -target arm64-apple-macos11.0 scripts/macos/launcher.c -o scripts/maco
 echo "[Build] Đang đóng gói PyInstaller standalone .app..."
 pyinstaller --clean -y luga_assist_mac.spec
 
-# 4. Ad-hoc codesign the output .app
+# 4. Ad-hoc codesign the output .app with stable designated requirement
 echo "[Build] Đang ký mã quyền riêng tư TCC (Microphone, Accessibility, Screen Recording)..."
-codesign --force --deep --sign - "dist/Luga Assist.app"
+codesign --force --deep --sign - -r '=designated => identifier "com.luga.assist"' "dist/Luga Assist.app"
 
 # 5. Create Release Distribution Zip & DMG
 echo "[Build] Đang tạo file nén ZIP và đĩa cài đặt DMG cho GitHub Releases..."
