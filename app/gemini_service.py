@@ -86,7 +86,7 @@ class GeminiSessionService:
                     secure_1psid=cleaned_psid,
                     secure_1psidts=cleaned_psidts or None,
                 )
-                await self.client.init(timeout=30)
+                await self.client.init(timeout=60)
                 self._current_psid = cleaned_psid
                 self._current_psidts = cleaned_psidts
                 self.is_ready = True

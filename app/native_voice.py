@@ -550,12 +550,23 @@ class NativeVoiceListener:
         has_prompted = False
 
         while not self._stop_hotkeys:
+            is_trusted = ensure_accessibility_permissions(prompt=False)
             is_alive = (self._hotkey_listener is not None and self._hotkey_listener.is_alive())
+            is_trusted_listener = getattr(self._hotkey_listener, "IS_TRUSTED", True) if self._hotkey_listener else False
 
-            if not is_alive:
+            # If permissions were granted after listener started (or revoked and re-granted),
+            # recreate the listener so macOS CGEventTap binds with fresh authorization!
+            if is_trusted and is_alive and not is_trusted_listener:
+                print("\n[Global Hotkeys] 🔄 Phát hiện quyền Trợ năng vừa được cấp! Đang tự động kết nối lại phím tắt...")
+                try:
+                    self._hotkey_listener.stop()
+                except Exception:
+                    pass
+                self._hotkey_listener = None
+                is_alive = False
+
+            if not is_alive or not is_trusted_listener:
                 self._hotkeys_active = False
-                # First check silently without any modal prompts
-                is_trusted = ensure_accessibility_permissions(prompt=False)
                 if not is_trusted and not has_prompted:
                     has_prompted = True
                     is_trusted = ensure_accessibility_permissions(prompt=True)
@@ -568,11 +579,10 @@ class NativeVoiceListener:
                             self._has_announced_hotkeys = True
                             print("\n" + "=" * 65)
                             print("🎙️ GLOBAL WAY - TRỢ LÝ TOÀN HỆ THỐNG ĐÃ SẴN SÀNG!")
-                            print("👉 F7                     : Bật/Tắt Cửa sổ Chat Nổi (Spotlight)")
-                            print("👉 F8 (hoặc Ctrl + Space) : Nói lệnh điều khiển / hỏi đáp")
-                            print("👉 F9                     : Chuyển đổi Chế độ Điều khiển <-> Chat Mode")
-                            print("👉 F10 (hoặc Ctrl + Esc)  : NGẮT NGAY LẬP TỨC tác vụ đang xử lý (Cancel)")
-                            print("👉 KHÔNG CẦN MỞ TRÌNH DUYỆT - MÀN HÌNH HOÀN TOÀN THOÁNG ĐÃNG.")
+                            print("👉 F7 (hoặc Ctrl + Alt + Space) : Bật/Tắt Cửa sổ Chat Nổi (Spotlight)")
+                            print("👉 F8 (hoặc Ctrl + Space)       : Nói lệnh điều khiển / hỏi đáp")
+                            print("👉 F9 (hoặc Ctrl + Alt + M)     : Chuyển đổi Chế độ Điều khiển <-> Chat Mode")
+                            print("👉 F10 (hoặc Ctrl + Esc)        : NGẮT NGAY LẬP TỨC tác vụ đang xử lý (Cancel)")
                             print("=" * 65 + "\n")
                             try:
                                 from app.system_ui import show_desktop_notification
