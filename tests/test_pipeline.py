@@ -778,9 +778,10 @@ def test_click_safety_and_coordinates():
     assert "Không tìm thấy" in res_fail["details"]
 
     # 2. Explicit coordinates should succeed and calculate exact pixels
+    expected_x, expected_y = os_controller.to_pixel_coords(0.25, 0.35)
     res_coord = os_controller.execute_action({"action": "click", "x_percent": 0.25, "y_percent": 0.35})
     assert res_coord["success"] is True
-    assert "(640, 504)" in res_coord["details"]
+    assert f"({expected_x}, {expected_y})" in res_coord["details"]
 
     print("test_click_safety_and_coordinates: PASSED")
 

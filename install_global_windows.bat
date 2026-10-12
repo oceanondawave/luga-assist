@@ -1,28 +1,28 @@
 @echo off
-chcp 65001 > nul
+setlocal
 echo ==========================================================
-echo       CÀI ĐẶT LỆNH TOÀN CẦU 'luga' CHO WINDOWS
+echo       REGISTER GLOBAL 'luga' COMMAND FOR WINDOWS
 echo ==========================================================
 echo.
 
 set CURRENT_DIR=%~dp0
 if "%CURRENT_DIR:~-1%"=="\" set CURRENT_DIR=%CURRENT_DIR:~0,-1%
 
-echo Đang thêm thư mục Luga Assist vào Windows PATH của người dùng...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ';%CURRENT_DIR%', 'User')"
+echo Registering Luga Assist directory to Windows User PATH...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = [Environment]::GetEnvironmentVariable('Path', 'User'); if ($p -notlike '*%CURRENT_DIR%*') { [Environment]::SetEnvironmentVariable('Path', $p.TrimEnd(';') + ';%CURRENT_DIR%', 'User'); Write-Host '    [OK] Added to User PATH!' -ForegroundColor Green; } else { Write-Host '    [OK] Already in User PATH.' -ForegroundColor Green; }"
 
 echo.
-echo ✅ CÀI ĐẶT THÀNH CÔNG!
+echo [OK] INSTALLATION COMPLETED!
 echo ----------------------------------------------------------
-echo Từ bây giờ, ở BẤT KỲ ĐÂU trên Windows (CMD hoặc PowerShell),
-echo bạn không cần vào thư mục dự án mà chỉ cần gõ trực tiếp:
+echo From now on, in ANY Windows CMD or PowerShell window:
 echo.
-echo    luga start     - Bật app chạy ngầm
-echo    luga stop      - Dừng app chạy ngầm
-echo    luga status    - Kiểm tra trạng thái
-echo    luga logs      - Xem nhật ký hoạt động
-echo    luga fg        - Chạy trực tiếp có cửa sổ
+echo    luga start     - Start background agent
+echo    luga stop      - Stop background agent
+echo    luga status    - Check agent status
+echo    luga chat      - Open interactive terminal chat
+echo    luga logs      - View recent activity logs
+echo    luga fg        - Run directly in foreground
 echo ----------------------------------------------------------
-echo (Lưu ý: Hãy mở một cửa sổ CMD/PowerShell mới để nhận lệnh)
+echo Note: Please open a new CMD or PowerShell window to use 'luga'.
 echo.
 pause

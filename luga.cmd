@@ -1,5 +1,4 @@
 @echo off
-chcp 65001 > nul
 setlocal
 set PROJECT_DIR=%~dp0
 cd /d "%PROJECT_DIR%"
@@ -35,16 +34,16 @@ if "%1"=="start" (
     python -m app.spotlight_ui
 ) else (
     echo ==========================================================
-    echo               LỆNH ĐIỀU KHIỂN LUGA ASSIST (WINDOWS)
+    echo               LUGA ASSIST COMMANDS (WINDOWS)
     echo ==========================================================
-    echo   luga start     : Khởi động app chạy ngầm
-    echo   luga stop      : Dừng app đang chạy ngầm
-    echo   luga restart   : Khởi động lại app ngầm
-    echo   luga status    : Kiểm tra app có đang chạy không
-    echo   luga chat      : Giao diện Chat điều khiển máy tính cực đẹp trên Terminal
-    echo   luga logs      : Xem nhật ký hoạt động (logs)
-    echo   luga fg        : Chạy trực tiếp trên màn hình CMD
-    echo   luga install   : Chạy trình cài đặt toàn diện Windows
-    echo   luga uninstall : Gỡ cài đặt Luga Assist khỏi Windows
+    echo   luga start     : Start background agent
+    echo   luga stop      : Stop background agent
+    echo   luga restart   : Restart background agent
+    echo   luga status    : Check agent status
+    echo   luga chat      : Interactive Terminal chat
+    echo   luga logs      : View recent logs
+    echo   luga fg        : Run directly in console
+    echo   luga install   : Run full Windows installer
+    echo   luga uninstall : Uninstall Luga Assist from Windows
     echo ==========================================================
 )

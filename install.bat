@@ -1,5 +1,4 @@
 @echo off
-chcp 65001 > nul
 setlocal enabledelayedexpansion
 
 set PROJECT_DIR=%~dp0
@@ -8,75 +7,68 @@ cd /d "%PROJECT_DIR%"
 
 cls
 echo ======================================================================
-echo        🎙️   LUGA ASSIST - BỘ CÀI ĐẶT TOÀN DIỆN CHO WINDOWS             
+echo          LUGA ASSIST - WINDOWS FULL SETUP ^& INSTALLER
 echo ======================================================================
-echo Thư mục cài đặt: %PROJECT_DIR%
+echo Install Directory: %PROJECT_DIR%
 echo.
 
 :: 1. Check Python
-echo [1/4] Kiểm tra môi trường Python...
+echo [1/4] Checking Python environment...
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo.
-    echo [X] LỖI: Máy tính chưa cài đặt Python hoặc chưa bật tùy chọn Add to PATH.
-    echo Vui lòng tải Python từ trang chủ: https://www.python.org/downloads/
-    echo QUAN TRỌNG: Hãy tích chọn ô "Add Python to PATH" trong khi cài đặt!
+    echo [ERROR] Python is not installed or not added to PATH.
+    echo Please download Python from: https://www.python.org/downloads/
+    echo IMPORTANT: Make sure to check "Add Python to PATH" during installation!
     echo.
     pause
     exit /b 1
 )
-for /f "tokens=*" %%v in ('python --version') do echo [✓] Đã tìm thấy: %%v
+for /f "tokens=*" %%v in ('python --version') do echo [OK] Found %%v
 
 :: 2. Install requirements
 echo.
-echo [2/4] Đang cài đặt các thư viện cần thiết từ requirements.txt...
+echo [2/4] Installing required libraries from requirements.txt...
 python -m pip install --quiet --upgrade pip >nul 2>&1
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 if %errorlevel% neq 0 (
-    echo [!] Cảnh báo: Có lỗi khi cài đặt thư viện qua pip. Vui lòng kiểm tra kết nối mạng.
+    echo [WARNING] Failed to install some dependencies via pip. Please check network.
 ) else (
-    echo [✓] Đã cài đặt đầy đủ tất cả thư viện (FastAPI, Rich, SoundDevice, PyAutoGUI, v.v.)
+    echo [OK] All dependencies installed successfully.
 )
 
 :: 3. Setup Global 'luga' command via User PATH
 echo.
-echo [3/4] Đang đăng ký lệnh toàn cầu 'luga' vào PATH của Windows...
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$path = [Environment]::GetEnvironmentVariable('Path', 'User'); " ^
-    "if ($path -notlike '*%PROJECT_DIR%*') { " ^
-    "    [Environment]::SetEnvironmentVariable('Path', $path.TrimEnd(';') + ';%PROJECT_DIR%', 'User'); " ^
-    "    Write-Host '    [✓] Đã thêm thư mục dự án vào User PATH!' -ForegroundColor Green; " ^
-    "} else { " ^
-    "    Write-Host '    [✓] Lệnh luga đã có sẵn trong User PATH.' -ForegroundColor Green; " ^
-    "}"
+echo [3/4] Registering 'luga' CLI command in Windows User PATH...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = [Environment]::GetEnvironmentVariable('Path', 'User'); if ($p -notlike '*%PROJECT_DIR%*') { [Environment]::SetEnvironmentVariable('Path', $p.TrimEnd(';') + ';%PROJECT_DIR%', 'User'); Write-Host '    [OK] Added project folder to User PATH!' -ForegroundColor Green; } else { Write-Host '    [OK] Luga command is already in User PATH.' -ForegroundColor Green; }"
 
-:: 4. Create Desktop Shortcuts (Zero Terminal Required)
+:: 4. Create Desktop Shortcuts
 echo.
-echo [4/4] Tạo các biểu tượng lối tắt trên Màn hình chính (Desktop)...
+echo [4/4] Creating Desktop shortcut (Zero terminal required)...
 python scripts\create_desktop_launchers.py
 
 echo.
 echo ======================================================================
-echo              🎉 CÀI ĐẶT LUGA ASSIST HOÀN TẤT THÀNH CÔNG!              
+echo                 LUGA ASSIST SETUP COMPLETED!
 echo ======================================================================
-echo CHỈ 1 ỨNG DỤNG DUY NHẤT - ĐIỀU KHIỂN TOÀN BỘ QUA PHÍM TẮT:
-echo   🖱️ Bấm đôi 'Luga Assist' trên Desktop : Khởi động app và hiện thanh Chat Nổi
-echo   ⌨️ Phím F7 (hoặc Ctrl+Alt+Space)       : Bật / Tắt thanh Chat Nổi (Auto focus)
-echo   ⌨️ Phím Esc                            : Ẩn thanh chat để màn hình thông thoáng cho AI
-echo   🎙️ Phím F8                             : Nhấn để nói trực tiếp qua Micro
-echo   🔄 Phím F9                             : Chuyển đổi giữa [Điều khiển PC] và [Trò chuyện AI]
-echo   🛑 Nút '🛑 Tắt Luga' trên thanh chat   : Tắt hoàn toàn ứng dụng
+echo SINGLE UNIFIED APP - CONTROLLED VIA SHORTCUTS:
+echo   Double click 'Luga Assist' on Desktop : Starts app and shows Chat HUD
+echo   Key F7 (or Ctrl+Alt+Space)            : Toggle Floating Chat HUD
+echo   Key Esc                               : Hide chat bar
+echo   Key F8                                : Speak directly via Microphone
+echo   Key F9                                : Switch mode [OS Control] vs [AI Chat]
+echo   'Turn Off Luga' button in chat bar    : Completely exit application
 echo.
-echo DÀNH CHO LẬP TRÌNH VIÊN / CMD (Toàn cục ở mọi thư mục):
-echo   • luga start    : Khởi động app chạy ngầm
-echo   • luga stop     : Dừng app đang chạy ngầm
-echo   • luga status   : Kiểm tra app có đang chạy hay không
-echo   • luga chat     : Mở giao diện Chat điều khiển trên CMD
-echo   • luga logs     : Xem nhật ký hoạt động gần nhất
+echo COMMAND LINE USAGE (Global from any directory):
+echo   luga start    : Start background agent
+echo   luga stop     : Stop background agent
+echo   luga status   : Check status
+echo   luga chat     : Open interactive terminal chat
+echo   luga logs     : View recent logs
 echo ======================================================================
 echo.
 
-set /p START_CHOICE="👉 Bạn có muốn mở ngay phòng Chat điều khiển (luga chat) không? (Y/n): "
+set /p START_CHOICE="Do you want to start Luga Chat now? (Y/n): "
 if /i "%START_CHOICE%"=="y" (
     call "%PROJECT_DIR%\luga.cmd" chat
 ) else if "%START_CHOICE%"=="" (

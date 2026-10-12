@@ -1,16 +1,20 @@
 @echo off
-chcp 65001 > nul
+setlocal
+cd /d "%~dp0"
 echo ==========================================================
 echo          LUGA ASSIST - GLOBAL DESKTOP AGENT (WINDOWS)
 echo ==========================================================
-
 echo.
-echo 🎙️ TRỢ LÝ TOÀN HỆ THỐNG ĐÃ KÍCH HOẠT (GLOBAL WAY)!
-echo 👉 Nhấn phím F8 (hoặc Ctrl + Space) BẤT CỨ ĐÂU trên máy tính để nói lệnh.
-echo 👉 KHÔNG CẦN MỞ TRÌNH DUYỆT - Màn hình hoàn toàn thoáng đãng để AI quan sát.
-echo 💡 Chạy ngầm 100% không cần mở cửa sổ cmd: start_hidden.vbs hoặc start_background.bat
+echo [INFO] Global Desktop Agent is starting...
+echo [INFO] Press F8 (or Ctrl+Space) anywhere to speak.
+echo [INFO] Press F7 (or Ctrl+Alt+Space) to toggle Floating Chat.
+echo [INFO] Press F9 to switch mode: OS Control vs AI Chat.
+echo [INFO] Background mode: start_background.bat or start_windows.vbs
 echo.
 set PYTHONPATH=.
 python app/main.py
-
-pause
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo [ERROR] Luga Assist exited with code %ERRORLEVEL%.
+    pause
+)
