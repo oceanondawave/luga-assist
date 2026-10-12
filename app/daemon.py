@@ -21,27 +21,23 @@ from app.config import (
 )
 
 def is_pid_running(pid: int) -> bool:
-    """Check if process with given PID is currently active."""
+    """Check if process with given PID is currently active on Windows."""
     if pid <= 0:
         return False
-    if sys.platform == "darwin" or sys.platform.startswith("linux"):
+    try:
+        res = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}"],
+            capture_output=True,
+            text=True,
+            creationflags=0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+        )
+        return str(pid) in res.stdout
+    except Exception:
         try:
             os.kill(pid, 0)
             return True
-        except (OSError, ProcessLookupError):
-            return False
-    elif sys.platform.startswith("win"):
-        try:
-            res = subprocess.run(
-                ["tasklist", "/FI", f"PID eq {pid}"],
-                capture_output=True,
-                text=True,
-                creationflags=0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
-            )
-            return str(pid) in res.stdout
         except Exception:
             return False
-    return False
 
 
 def get_running_pid() -> Optional[int]:
@@ -102,45 +98,25 @@ def start_daemon():
     env["LUGA_DAEMON_MODE"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
 
-    # Detach process according to OS
-    if sys.platform == "darwin" or sys.platform.startswith("linux"):
-        # POSIX: use start_new_session=True to detach from current terminal
-        with open(LOG_FILE, "a", encoding="utf-8") as log_out:
-            process = subprocess.Popen(
-                cmd,
-                cwd=str(BASE_DIR),
-                env=env,
-                stdout=log_out,
-                stderr=log_out,
-                stdin=subprocess.DEVNULL,
-                start_new_session=True,
-                close_fds=True,
-            )
-            pid = process.pid
+    # Windows: Use pythonw.exe if available to avoid ANY cmd window
+    pythonw = Path(sys.executable).parent / "pythonw.exe"
+    if pythonw.exists():
+        cmd[0] = str(pythonw)
 
-    elif sys.platform.startswith("win"):
-        # Windows: Use pythonw.exe if available to avoid ANY cmd window
-        pythonw = Path(sys.executable).parent / "pythonw.exe"
-        if pythonw.exists():
-            cmd[0] = str(pythonw)
-
-        # DETACHED_PROCESS = 0x00000008, CREATE_NEW_PROCESS_GROUP = 0x00000200
-        flags = 0x00000008 | 0x00000200
-        with open(LOG_FILE, "a", encoding="utf-8") as log_out:
-            process = subprocess.Popen(
-                cmd,
-                cwd=str(BASE_DIR),
-                env=env,
-                stdout=log_out,
-                stderr=log_out,
-                stdin=subprocess.DEVNULL,
-                creationflags=flags,
-                close_fds=True,
-            )
-            pid = process.pid
-    else:
-        print(f"Hệ điều hành không hỗ trợ daemon: {sys.platform}")
-        return False
+    # DETACHED_PROCESS = 0x00000008, CREATE_NEW_PROCESS_GROUP = 0x00000200
+    flags = 0x00000008 | 0x00000200
+    with open(LOG_FILE, "a", encoding="utf-8") as log_out:
+        process = subprocess.Popen(
+            cmd,
+            cwd=str(BASE_DIR),
+            env=env,
+            stdout=log_out,
+            stderr=log_out,
+            stdin=subprocess.DEVNULL,
+            creationflags=flags,
+            close_fds=True,
+        )
+        pid = process.pid
 
     # Save PID
     with open(PID_FILE, "w") as f:
@@ -177,25 +153,11 @@ def stop_daemon():
     print(f"🛑 Đang dừng tiến trình Luga Assist ngầm (PID: {pid})...")
 
     try:
-        if sys.platform == "darwin" or sys.platform.startswith("linux"):
-            os.kill(pid, signal.SIGTERM)
-            # Wait up to 3 seconds for graceful shutdown
-            for _ in range(10):
-                if not is_pid_running(pid):
-                    break
-                time.sleep(0.3)
-
-            # If still alive, force kill
-            if is_pid_running(pid):
-                os.kill(pid, signal.SIGKILL)
-
-        elif sys.platform.startswith("win"):
-            subprocess.run(
-                ["taskkill", "/F", "/PID", str(pid), "/T"],
-                capture_output=True,
-                creationflags=0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
-            )
-
+        subprocess.run(
+            ["taskkill", "/F", "/PID", str(pid), "/T"],
+            capture_output=True,
+            creationflags=0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+        )
         PID_FILE.unlink(missing_ok=True)
         print("✅ Đã dừng Luga Assist ngầm thành công!")
         return True

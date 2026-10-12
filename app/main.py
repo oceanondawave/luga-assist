@@ -11,8 +11,6 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-if sys.platform == "darwin":
-    os.environ["ApplePersistence"] = "NO"
 
 import json
 import time
@@ -440,20 +438,13 @@ async def set_session(payload: SessionPayload):
 @app.get("/api/debug_status")
 def debug_status():
     from app.accessibility import ensure_accessibility_permissions
-    import ApplicationServices
-    import HIServices
     is_trusted = ensure_accessibility_permissions(prompt=False)
-    hi_trusted = HIServices.AXIsProcessTrusted()
-    as_trusted = ApplicationServices.AXIsProcessTrusted()
     l = native_voice_instance._hotkey_listener if native_voice_instance else None
     return {
         "is_trusted": is_trusted,
-        "hi_trusted": hi_trusted,
-        "as_trusted": as_trusted,
         "hotkeys_active": native_voice_instance._hotkeys_active if native_voice_instance else False,
         "listener_is_none": l is None,
         "listener_alive": l.is_alive() if l else False,
-        "listener_IS_TRUSTED": getattr(l, "IS_TRUSTED", None) if l else None,
     }
 
 @app.get("/api/logs")
@@ -1383,27 +1374,14 @@ def handle_single_instance_or_free_port(host: str = HOST, port: int = PORT) -> b
     if is_in_use:
         print(f"[Port] Cổng {port} đang bị giữ bởi tiến trình cũ. Đang giải phóng cổng...")
         try:
-            if sys.platform == "darwin" or sys.platform.startswith("linux"):
-                res = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True)
-                for p in res.stdout.strip().split():
-                    pid = int(p)
+            res = subprocess.run(["netstat", "-ano"], capture_output=True, text=True)
+            for line in res.stdout.splitlines():
+                if f":{port}" in line and "LISTENING" in line:
+                    parts = line.strip().split()
+                    pid = int(parts[-1])
                     if pid != os.getpid() and pid > 0:
-                        try:
-                            os.kill(pid, signal.SIGTERM)
-                            time.sleep(0.1)
-                            os.kill(pid, signal.SIGKILL)
-                        except OSError:
-                            pass
-                time.sleep(0.4)
-            elif sys.platform.startswith("win"):
-                res = subprocess.run(["netstat", "-ano"], capture_output=True, text=True)
-                for line in res.stdout.splitlines():
-                    if f":{port}" in line and "LISTENING" in line:
-                        parts = line.strip().split()
-                        pid = int(parts[-1])
-                        if pid != os.getpid() and pid > 0:
-                            subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True)
-                time.sleep(0.4)
+                        subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True)
+            time.sleep(0.4)
         except Exception as e:
             print(f"[Port] Cảnh báo giải phóng cổng: {e}")
 

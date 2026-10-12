@@ -121,20 +121,19 @@ class SoundManager:
             wf.writeframes(data)
 
     def _play_file(self, file_path: str, volume: float = 0.5):
-        """Play sound file non-blocking in background."""
+        """Play sound file non-blocking in background on Windows."""
         try:
-            if sys.platform == "darwin":  # macOS
-                subprocess.Popen(
-                    ["/usr/bin/afplay", "-v", str(volume), file_path],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-            elif sys.platform.startswith("win"):  # Windows
-                subprocess.Popen(
-                    ["powershell", "-c", f"(New-Object Media.SoundPlayer '{file_path}').Play()"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
+            try:
+                import winsound
+                winsound.PlaySound(file_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+                return
+            except Exception:
+                pass
+            subprocess.Popen(
+                ["powershell.exe", "-c", f"(New-Object Media.SoundPlayer '{file_path}').Play()"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
         except Exception:
             pass
 
@@ -161,7 +160,6 @@ class SoundManager:
         self._stop_pulse.clear()
 
         def _pulse_loop():
-            # Soft procedural ambient thinking droplet tone across all operating systems
             pulse_sound = str(self.snd_pulse)
             while not self._stop_pulse.is_set():
                 self._play_file(pulse_sound, volume=0.25)
@@ -183,19 +181,13 @@ class SoundManager:
     def play_done(self):
         """Chime when processing and action execution is complete."""
         self.stop_pulsing()
-        if sys.platform == "darwin" and os.path.exists("/System/Library/Sounds/Glass.aiff"):
-            self._play_file("/System/Library/Sounds/Glass.aiff", volume=0.7)
-        else:
-            self._play_file(str(self.snd_done), volume=0.5)
+        self._play_file(str(self.snd_done), volume=0.5)
         print("[Sound] 🔔 GLASS (Xử lý hoàn tất!)")
 
     def play_error(self):
         """Error sound."""
         self.stop_pulsing()
-        if sys.platform == "darwin" and os.path.exists("/System/Library/Sounds/Basso.aiff"):
-            self._play_file("/System/Library/Sounds/Basso.aiff", volume=0.6)
-        else:
-            self._play_file(str(self.snd_error), volume=0.5)
+        self._play_file(str(self.snd_error), volume=0.5)
         print("[Sound] ⚠️ BASSO (Có lỗi xảy ra)")
 
     def play_success(self):

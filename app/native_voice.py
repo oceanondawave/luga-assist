@@ -144,40 +144,7 @@ def select_best_transcript(
         return en_text
     return vi_text
 
-
-def check_macos_microphone_permission() -> bool:
-    """
-    Check and proactively trigger macOS system permission prompt for Microphone.
-    This guarantees that when the app is launched as a native .app bundle or outside Terminal,
-    macOS displays the 'Luga Assist would like to access the Microphone' dialog instead of failing silently.
-    """
-    if sys.platform != "darwin":
-        return True
-    try:
-        import objc
-        objc.loadBundle('AVFoundation', globals(), bundle_path='/System/Library/Frameworks/AVFoundation.framework')
-        av_cls = objc.lookUpClass('AVCaptureDevice')
-        if not av_cls:
-            return True
-        # AVMediaTypeAudio is 'soun'
-        status = av_cls.authorizationStatusForMediaType_('soun')
-        # status: 0 = NotDetermined, 1 = Restricted, 2 = Denied, 3 = Authorized
-        if status == 0:
-            print("[NativeVoice] 🎙️ Yêu cầu macOS cấp quyền Micro lần đầu...")
-            done_evt = threading.Event()
-            def handler(granted):
-                done_evt.set()
-            av_cls.requestAccessForMediaType_completionHandler_('soun', handler)
-            done_evt.wait(timeout=10.0)
-            status = av_cls.authorizationStatusForMediaType_('soun')
-        if status == 3:
-            return True
-        elif status == 2:
-            print("[NativeVoice] ⚠️ Quyền Micro bị từ chối trong Cài đặt hệ thống (System Settings -> Privacy & Security -> Microphone).")
-            return False
-    except Exception as e:
-        print(f"[NativeVoice] macOS mic permission check notice: {e}")
-    return True
+    return vi_text
 
 
 class NativeVoiceListener:
@@ -240,11 +207,6 @@ class NativeVoiceListener:
         Record audio from system microphone using the active OS microphone directly.
         Stops automatically when user stops speaking (natural silence pause), or when F8 is pressed again.
         """
-        if not check_macos_microphone_permission():
-            self._update_status("error", "⚠️ Quyền Micro bị từ chối trong Cài đặt hệ thống.")
-            sound_manager.play_error()
-            return None
-
         self.is_recording = True
         self._stop_requested = False
         self._discard_recording = False
@@ -344,8 +306,8 @@ class NativeVoiceListener:
             peak = audioop.max(audio_bytes, 2)
             if peak == 0:
                 print("\n[NativeVoice] ⚠️ Micro trả về tín hiệu bằng 0 (Hoàn toàn im lặng).")
-                print("[NativeVoice] 👉 Vui lòng chạy './start.sh' trong Terminal hoặc cấp quyền Micro trong Cài đặt hệ thống (Privacy & Security -> Microphone)!")
-                self._update_status("error", "⚠️ Micro không nhận được tín hiệu (bị chặn quyền hoặc tắt mic).")
+                print("[NativeVoice] 👉 Vui lòng kiểm tra Microphone trong Windows Settings (Settings -> Privacy & Security -> Microphone)!")
+                self._update_status("error", "⚠️ Micro không nhận được tín hiệu (vui lòng bật mic trong Windows).")
                 sound_manager.play_error()
                 return None
             elif 0 < peak < 22000:
@@ -357,7 +319,9 @@ class NativeVoiceListener:
         audio = sr.AudioData(audio_bytes, self.sample_rate, 2)
 
         try:
-            with open("/tmp/last_voice_command.wav", "wb") as f:
+            import tempfile
+            wav_path = Path(tempfile.gettempdir()) / "last_voice_command.wav"
+            with open(wav_path, "wb") as f:
                 f.write(audio.get_wav_data())
         except Exception:
             pass
@@ -601,53 +565,31 @@ class NativeVoiceListener:
 
     def _hotkey_supervisor_loop(self):
         """
-        Background watchdog thread that continuously ensures global hotkeys are active.
-        If macOS Accessibility permission is missing, prompts user and opens System Settings.
-        The instant permission is granted by the user, automatically activates hotkeys without restarting!
+        Background watchdog thread that continuously ensures global hotkeys are active on Windows.
+        Automatically starts listener and restarts if disconnected.
         """
-        from app.accessibility import ensure_accessibility_permissions
-        has_prompted = False
-
         while not self._stop_hotkeys:
-            is_trusted = ensure_accessibility_permissions(prompt=False)
             is_alive = (self._hotkey_listener is not None and self._hotkey_listener.is_alive())
-            is_trusted_listener = getattr(self._hotkey_listener, "IS_TRUSTED", True) if self._hotkey_listener else False
 
-            # If permissions were granted after listener started (or revoked and re-granted),
-            # recreate the listener so macOS CGEventTap binds with fresh authorization!
-            if is_trusted and is_alive and not is_trusted_listener:
-                print("\n[Global Hotkeys] 🔄 Phát hiện quyền Trợ năng vừa được cấp! Đang tự động kết nối lại phím tắt...")
-                try:
-                    self._hotkey_listener.stop()
-                except Exception:
-                    pass
-                self._hotkey_listener = None
-                is_alive = False
-
-            if not is_alive or not is_trusted_listener:
+            if not is_alive:
                 self._hotkeys_active = False
-                if not is_trusted and not has_prompted:
-                    has_prompted = True
-                    is_trusted = ensure_accessibility_permissions(prompt=True)
-
-                if is_trusted:
-                    success = self._start_listener_internal()
-                    if success:
-                        self._hotkeys_active = True
-                        if not self._has_announced_hotkeys:
-                            self._has_announced_hotkeys = True
-                            print("\n" + "=" * 65)
-                            print("🎙️ GLOBAL WAY - TRỢ LÝ TOÀN HỆ THỐNG ĐÃ SẴN SÀNG!")
-                            print("👉 F7 (hoặc Ctrl + Alt + Space) : Bật/Tắt Cửa sổ Chat Nổi (Spotlight)")
-                            print("👉 F8 (hoặc Ctrl + Space)       : Nói lệnh điều khiển / hỏi đáp")
-                            print("👉 F9 (hoặc Ctrl + Alt + M)     : Chuyển đổi Chế độ Điều khiển <-> Chat Mode")
-                            print("👉 F10 (hoặc Ctrl + Esc)        : NGẮT NGAY LẬP TỨC tác vụ đang xử lý (Cancel)")
-                            print("=" * 65 + "\n")
-                            try:
-                                from app.system_ui import show_desktop_notification
-                                show_desktop_notification("Luga Assist", "✅ Phím tắt F7, F8, F9, F10 đã sẵn sàng hoạt động!")
-                            except Exception:
-                                pass
+                success = self._start_listener_internal()
+                if success:
+                    self._hotkeys_active = True
+                    if not self._has_announced_hotkeys:
+                        self._has_announced_hotkeys = True
+                        print("\n" + "=" * 65)
+                        print("🎙️ GLOBAL WAY - TRỢ LÝ TOÀN HỆ THỐNG ĐÃ SẴN SÀNG!")
+                        print("👉 F7 (hoặc Ctrl + Alt + Space) : Bật/Tắt Cửa sổ Chat Nổi (Spotlight)")
+                        print("👉 F8 (hoặc Ctrl + Space)       : Nói lệnh điều khiển / hỏi đáp")
+                        print("👉 F9 (hoặc Ctrl + Alt + M)     : Chuyển đổi Chế độ Điều khiển <-> Chat Mode")
+                        print("👉 F10 (hoặc Ctrl + Esc)        : NGẮT NGAY LẬP TỨC tác vụ đang xử lý (Cancel)")
+                        print("=" * 65 + "\n")
+                        try:
+                            from app.system_ui import show_desktop_notification
+                            show_desktop_notification("Luga Assist", "✅ Phím tắt F7, F8, F9, F10 đã sẵn sàng hoạt động!")
+                        except Exception:
+                            pass
             else:
                 self._hotkeys_active = True
 

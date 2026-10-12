@@ -69,19 +69,14 @@ class TTSService:
             except Exception:
                 pass
 
-        if sys.platform == "darwin":  # macOS
-            cmd = ["/usr/bin/afplay", str(audio_file)]
-        elif sys.platform.startswith("win"):  # Windows
-            # WMPlayer.OCX COM object natively supports MP3 playback on all Windows versions
-            ps_script = (
-                f"$w = New-Object -ComObject WMPlayer.OCX; "
-                f"$w.URL = '{audio_file}'; "
-                f"$w.controls.play(); "
-                f"while($w.playState -ne 1) {{ Start-Sleep -Milliseconds 100 }}"
-            )
-            cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script]
-        else:  # Linux
-            cmd = ["mpg123", str(audio_file)]
+        # Windows: WMPlayer.OCX COM object natively supports MP3 playback without extra dependencies
+        ps_script = (
+            f"$w = New-Object -ComObject WMPlayer.OCX; "
+            f"$w.URL = '{audio_file}'; "
+            f"$w.controls.play(); "
+            f"while($w.playState -ne 1) {{ Start-Sleep -Milliseconds 100 }}"
+        )
+        cmd = ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps_script]
 
         try:
             if block:

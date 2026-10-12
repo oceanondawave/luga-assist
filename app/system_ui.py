@@ -22,26 +22,11 @@ logger = get_logger("SystemUI")
 
 def show_desktop_notification(title: str, message: str, subtitle: str = "") -> bool:
     """
-    Display a native desktop notification without any third-party GUI library.
-    Works on macOS (osascript), Windows (PowerShell Toast / Balloon), and Linux (notify-send).
+    Display a native Windows notification without any third-party GUI library.
     """
     logger.info(f"Desktop Notification: [{title}] {message}")
     try:
-        if sys.platform == "darwin":
-            # Sanitize double quotes
-            safe_title = title.replace('"', '\\"')
-            safe_msg = message.replace('"', '\\"')
-            safe_sub = subtitle.replace('"', '\\"')
-            if safe_sub:
-                script = f'display notification "{safe_msg}" with title "{safe_title}" subtitle "{safe_sub}"'
-            else:
-                script = f'display notification "{safe_msg}" with title "{safe_title}"'
-            subprocess.run(["osascript", "-e", script], check=False, capture_output=True)
-            return True
-
-        elif sys.platform.startswith("win"):
-            # PowerShell Balloon / Toast notification
-            ps_script = f"""
+        ps_script = f"""
 [void] [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms");
 $notify = New-Object System.Windows.Forms.NotifyIcon;
 $notify.Icon = [System.Drawing.SystemIcons]::Information;
@@ -50,19 +35,14 @@ $notify.BalloonTipText = "{message.replace('"', '`"')}";
 $notify.Visible = $True;
 $notify.ShowBalloonTip(3000);
 """
-            flags = 0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
-            subprocess.run(
-                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
-                check=False,
-                capture_output=True,
-                creationflags=flags
-            )
-            return True
-
-        elif sys.platform.startswith("linux"):
-            subprocess.run(["notify-send", title, message], check=False, capture_output=True)
-            return True
-
+        flags = 0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+        subprocess.run(
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
+            check=False,
+            capture_output=True,
+            creationflags=flags
+        )
+        return True
     except Exception as e:
         logger.error(f"Error displaying desktop notification: {e}")
     return False
@@ -70,27 +50,11 @@ $notify.ShowBalloonTip(3000);
 
 def show_desktop_dialog(title: str, message: str) -> None:
     """
-    Display a native modal dialog box (alert) on the desktop.
+    Display a native modal dialog box (alert) on the Windows desktop.
     """
     try:
-        if sys.platform == "darwin":
-            safe_msg = message.replace('"', '\\"').replace('\n', '\\n')
-            safe_title = title.replace('"', '\\"')
-            script = f'display dialog "{safe_msg}" with title "{safe_title}" buttons {{"OK"}} default button "OK"'
-            subprocess.run(["osascript", "-e", script], check=False, capture_output=True)
-        elif sys.platform.startswith("win"):
-            ps_script = f"""
-[void] [System.Windows.Forms.MessageBox]::Show("{message.replace('"', '`"')}", "{title.replace('"', '`"')}", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information);
-"""
-            flags = 0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
-            subprocess.run(
-                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
-                check=False,
-                capture_output=True,
-                creationflags=flags
-            )
-        elif sys.platform.startswith("linux"):
-            subprocess.run(["zenity", "--info", f"--title={title}", f"--text={message}"], check=False, capture_output=True)
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(0, message, title, 0x40)
     except Exception as e:
         logger.error(f"Error displaying desktop dialog: {e}")
 
@@ -133,11 +97,7 @@ async def trigger_graceful_shutdown(delay: float = 1.0, speak: bool = True, good
     async def _delayed_kill():
         await asyncio.sleep(delay)
         logger.info("Process terminating now...")
-        my_pid = os.getpid()
-        if sys.platform == "darwin" or sys.platform.startswith("linux"):
-            os.kill(my_pid, signal.SIGTERM)
-        else:
-            sys.exit(0)
+        sys.exit(0)
 
     asyncio.create_task(_delayed_kill())
 

@@ -1,7 +1,7 @@
 """
-File Management & Terminal Execution Suite for Luga Assist.
-Provides 100% reliable, cross-platform file searching, file manipulation,
-and unlimited Terminal (macOS/Linux) & PowerShell/CMD (Windows) execution.
+File Management & Terminal Execution Suite for Luga Assist on Windows.
+Provides 100% reliable file searching, manipulation,
+and PowerShell/CMD execution for Windows.
 Designed for high accessibility with rich spoken feedback for visually impaired users.
 """
 import os
@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-# Standard user directories mapped across macOS, Windows, Linux
+# Standard user directories on Windows
 def get_user_folder(name: str) -> Path:
     home = Path.home()
     clean = name.strip().lower()
@@ -24,7 +24,7 @@ def get_user_folder(name: str) -> Path:
         "document": home / "Documents",
         "music": home / "Music",
         "pictures": home / "Pictures",
-        "movies": home / "Movies" if sys.platform == "darwin" else home / "Videos",
+        "movies": home / "Videos",
         "videos": home / "Videos",
         "home": home,
         "~": home,
@@ -71,9 +71,8 @@ class FileAndTerminalManager:
         open_first: bool = False
     ) -> Dict[str, Any]:
         """
-        Fast, intelligent file search across the filesystem.
-        Uses macOS Spotlight index (mdfind) for near-instant 0.02s searches.
-        Uses Windows PowerShell Get-ChildItem or native Python search on Windows/Linux.
+        Fast, intelligent file search across the Windows filesystem.
+        Uses Windows PowerShell Get-ChildItem and native recursive search.
         Automatically filters out noise (node_modules, caches, .git).
         """
         query_clean = query.strip().strip("'\"")
@@ -97,64 +96,41 @@ class FileAndTerminalManager:
             ".cache", "AppData/Local/Temp", "System Volume Information"
         }
 
-        # 1. macOS: Use ultra-fast Spotlight index via `mdfind`
-        if sys.platform == "darwin":
-            try:
-                cmd = ["mdfind"]
-                if search_dir and search_dir.exists():
-                    cmd.extend(["-onlyin", str(search_dir)])
-                cmd.extend(["-name", query_clean])
-
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
-                raw_lines = [
-                    l for l in proc.stdout.strip().split("\n") 
-                    if l and not l.startswith("2026-") and not any(ig in l for ig in ignored_substrings)
-                ]
-                for line in raw_lines:
+        # Windows: Use PowerShell Get-ChildItem for fast indexing
+        try:
+            target_root = str(search_dir or self.home)
+            ps_cmd = (
+                f"Get-ChildItem -Path '{target_root}' -Recurse -Filter '*{query_clean}*' "
+                f"-ErrorAction SilentlyContinue | Select-Object -First {limit * 2} -ExpandProperty FullName"
+            )
+            proc = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
+                capture_output=True, text=True, timeout=10
+            )
+            for line in proc.stdout.strip().splitlines():
+                line = line.strip()
+                if line and not any(ig in line for ig in ignored_substrings):
                     p = Path(line)
                     if p.exists() and p not in results:
                         results.append(p)
                         if len(results) >= limit:
                             break
-            except Exception as e:
-                print(f"[FileAndTerminal] mdfind error: {e}, falling back to Python search")
+        except Exception as e:
+            print(f"[FileAndTerminal] Windows PS search notice: {e}")
 
-        # 2. Windows: Use PowerShell Get-ChildItem
-        elif sys.platform.startswith("win"):
-            try:
-                target_root = str(search_dir or self.home)
-                ps_cmd = (
-                    f"Get-ChildItem -Path '{target_root}' -Recurse -Filter '*{query_clean}*' "
-                    f"-ErrorAction SilentlyContinue | Select-Object -First {limit * 2} -ExpandProperty FullName"
-                )
-                proc = subprocess.run(
-                    ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
-                    capture_output=True, text=True, timeout=10
-                )
-                for line in proc.stdout.strip().splitlines():
-                    line = line.strip()
-                    if line and not any(ig in line for ig in ignored_substrings):
-                        p = Path(line)
-                        if p.exists() and p not in results:
-                            results.append(p)
-                            if len(results) >= limit:
-                                break
-            except Exception as e:
-                print(f"[FileAndTerminal] Windows PS search error: {e}")
-
-        # 3. Python fallback if needed (prioritizing user folders Desktop, Downloads, Documents)
+        # 3. Python recursive search fallback
         if not results:
             search_roots = [search_dir] if search_dir else [
+                Path.cwd(),
                 self.home / "Desktop",
                 self.home / "Downloads",
                 self.home / "Documents",
-                Path.cwd()
             ]
             for root in search_roots:
                 if not root or not root.exists():
                     continue
                 try:
-                    for item in root.glob(f"*{query_clean}*"):
+                    for item in root.rglob(f"*{query_clean}*"):
                         if item not in results and not any(ig in str(item) for ig in ignored_substrings):
                             results.append(item)
                             if len(results) >= limit:
@@ -234,12 +210,10 @@ class FileAndTerminalManager:
                 }
 
         try:
-            if sys.platform == "darwin":
-                subprocess.Popen(["open", str(p)])
-            elif sys.platform.startswith("win"):
+            if hasattr(os, "startfile"):
                 os.startfile(str(p))
             else:
-                subprocess.Popen(["xdg-open", str(p)])
+                subprocess.Popen(["cmd.exe", "/c", "start", "", str(p)], shell=True)
 
             kind = "thư mục" if p.is_dir() else "file"
             return {
@@ -384,14 +358,8 @@ class FileAndTerminalManager:
 
         try:
             if safe_trash:
-                if sys.platform == "darwin":
-                    # AppleScript sends to Finder Trash safely
-                    subprocess.run(
-                        ["osascript", "-e", f'tell application "Finder" to delete POSIX file "{str(p)}"'],
-                        capture_output=True, check=True
-                    )
-                elif sys.platform.startswith("win"):
-                    # PowerShell RecycleBin delete
+                try:
+                    # Windows PowerShell RecycleBin delete
                     ps_cmd = (
                         f"Add-Type -AssemblyName Microsoft.VisualBasic; "
                         f"[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('{str(p)}', "
@@ -401,7 +369,7 @@ class FileAndTerminalManager:
                         ["powershell.exe", "-NoProfile", "-Command", ps_cmd],
                         capture_output=True, check=True
                     )
-                else:
+                except Exception:
                     if p.is_dir():
                         shutil.rmtree(p)
                     else:
@@ -433,9 +401,9 @@ class FileAndTerminalManager:
         timeout: int = 30
     ) -> Dict[str, Any]:
         """
-        Execute terminal / bash / zsh / PowerShell commands without restriction.
+        Execute terminal / PowerShell / CMD commands without restriction on Windows.
         Supports both background execution (capturing stdout/stderr)
-        and launching a visible desktop Terminal/PowerShell window.
+        and launching a visible desktop PowerShell or Command Prompt window.
         """
         cmd_clean = command.strip()
         if not cmd_clean:
@@ -450,22 +418,10 @@ class FileAndTerminalManager:
         # CASE 1: Open a visible interactive Terminal / PowerShell window on Desktop
         if open_visible:
             try:
-                if sys.platform == "darwin":  # macOS Terminal.app
-                    escaped = cmd_clean.replace('\\', '\\\\').replace('"', '\\"')
-                    apple_script = (
-                        f'tell application "Terminal"\n'
-                        f'  activate\n'
-                        f'  do script "cd {work_dir} && {escaped}"\n'
-                        f'end tell'
-                    )
-                    subprocess.run(["osascript", "-e", apple_script], capture_output=True, check=True)
-                elif sys.platform.startswith("win"):  # Windows PowerShell / CMD window
-                    if shell_type == "cmd":
-                        subprocess.Popen(f'start cmd /k "cd /d {work_dir} && {cmd_clean}"', shell=True)
-                    else:
-                        subprocess.Popen(f'start powershell -NoExit -Command "Set-Location \'{work_dir}\'; {cmd_clean}"', shell=True)
-                else:  # Linux
-                    subprocess.Popen(f'x-terminal-emulator -e "bash -c \\"cd {work_dir} && {cmd_clean}; exec bash\\""', shell=True)
+                if shell_type == "cmd":
+                    subprocess.Popen(f'start cmd /k "cd /d {work_dir} && {cmd_clean}"', shell=True)
+                else:
+                    subprocess.Popen(f'start powershell -NoExit -Command "Set-Location \'{work_dir}\'; {cmd_clean}"', shell=True)
 
                 return {
                     "success": True,
@@ -481,24 +437,20 @@ class FileAndTerminalManager:
 
         # CASE 2: Background execution with stdout / stderr capture
         try:
-            if sys.platform.startswith("win"):
-                # Windows: Default to PowerShell for full modern scripting capabilities
-                if shell_type == "cmd":
-                    proc = subprocess.run(
-                        ["cmd.exe", "/c", cmd_clean],
-                        cwd=work_dir, capture_output=True, text=True, timeout=timeout
-                    )
-                else:
-                    proc = subprocess.run(
-                        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", cmd_clean],
-                        cwd=work_dir, capture_output=True, text=True, timeout=timeout
-                    )
+            if shell_type == "cmd":
+                proc = subprocess.run(
+                    ["cmd.exe", "/c", cmd_clean],
+                    cwd=work_dir, capture_output=True, text=True, timeout=timeout
+                )
+            elif sys.platform.startswith("win"):
+                proc = subprocess.run(
+                    ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", cmd_clean],
+                    cwd=work_dir, capture_output=True, text=True, timeout=timeout
+                )
             else:
-                # macOS / Linux: Use user shell (/bin/zsh or /bin/bash)
-                shell_bin = "/bin/zsh" if os.path.exists("/bin/zsh") else "/bin/bash"
                 proc = subprocess.run(
                     cmd_clean,
-                    shell=True, executable=shell_bin, cwd=work_dir,
+                    shell=True, cwd=work_dir,
                     capture_output=True, text=True, timeout=timeout
                 )
 

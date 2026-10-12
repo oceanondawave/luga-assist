@@ -47,45 +47,7 @@ class OSController:
         pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
         time.sleep(0.02)
 
-        # 2. Native macOS CoreGraphics click with exact clickState & dwell time
-        if sys.platform == "darwin":
-            try:
-                import Quartz
-                pt = (float(x), float(y))
-                # Hover event to ensure UI element updates hover state
-                move_ev = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, pt, 0)
-                Quartz.CGEventPost(Quartz.kCGHIDEventTap, move_ev)
-                time.sleep(0.02)
-
-                if button == "right":
-                    down_t = Quartz.kCGEventRightMouseDown
-                    up_t = Quartz.kCGEventRightMouseUp
-                    cg_btn = Quartz.kCGMouseButtonRight
-                elif button == "middle":
-                    down_t = Quartz.kCGEventOtherMouseDown
-                    up_t = Quartz.kCGEventOtherMouseUp
-                    cg_btn = Quartz.kCGMouseButtonCenter
-                else:
-                    down_t = Quartz.kCGEventLeftMouseDown
-                    up_t = Quartz.kCGEventLeftMouseUp
-                    cg_btn = Quartz.kCGMouseButtonLeft
-
-                for c in range(1, click_count + 1):
-                    down_ev = Quartz.CGEventCreateMouseEvent(None, down_t, pt, cg_btn)
-                    Quartz.CGEventSetIntegerValueField(down_ev, Quartz.kCGMouseEventClickState, c)
-                    Quartz.CGEventPost(Quartz.kCGHIDEventTap, down_ev)
-                    time.sleep(0.04)
-
-                    up_ev = Quartz.CGEventCreateMouseEvent(None, up_t, pt, cg_btn)
-                    Quartz.CGEventSetIntegerValueField(up_ev, Quartz.kCGMouseEventClickState, c)
-                    Quartz.CGEventPost(Quartz.kCGHIDEventTap, up_ev)
-                    if c < click_count:
-                        time.sleep(0.05)
-                return
-            except Exception as e:
-                print(f"[OSController] Native macOS Quartz click notice: {e}")
-
-        # 3. Fallback / Windows / Linux with realistic dwell time
+        # Physical click with realistic hardware dwell time
         if button == "right":
             pyautogui.mouseDown(x, y, button="right")
             time.sleep(0.04)
@@ -163,11 +125,11 @@ class OSController:
                     self._press_key_combo("shift+tab")
                     result["details"] = "Focused previous input field (Shift+Tab)"
                 elif target_str in ("address", "url", "search_bar"):
-                    self._press_key_combo("cmd+l" if sys.platform == "darwin" else "ctrl+l")
+                    self._press_key_combo("ctrl+l")
                     result["details"] = "Focused address bar"
                 elif target_str in ("find", "in_page_search"):
-                    self._press_key_combo("cmd+f" if sys.platform == "darwin" else "ctrl+f")
-                    result["details"] = "Focused find bar (Cmd+F)"
+                    self._press_key_combo("ctrl+f")
+                    result["details"] = "Focused find bar (Ctrl+F)"
                 else:
                     ok = accessibility_manager.focus_element_by_name(target_str)
                     if ok:
@@ -190,7 +152,7 @@ class OSController:
                 if not accessibility_manager.is_compose_window_active():
                     new_btn_ok = accessibility_manager.focus_element_by_name("new mail")
                     if not new_btn_ok:
-                        self._press_key_combo("cmd+n" if sys.platform == "darwin" else "ctrl+n")
+                        self._press_key_combo("ctrl+n")
                     time.sleep(0.6)
 
                 # 1. Focus To field
@@ -199,7 +161,7 @@ class OSController:
 
                 # 2. Type recipient and commit contact chip
                 if to_addr:
-                    self._press_key_combo("cmd+a" if sys.platform == "darwin" else "ctrl+a")
+                    self._press_key_combo("ctrl+a")
                     time.sleep(0.04)
                     self._paste_unicode_text(to_addr)
                     time.sleep(0.1)
@@ -214,7 +176,7 @@ class OSController:
                     time.sleep(0.1)
 
                 if subject:
-                    self._press_key_combo("cmd+a" if sys.platform == "darwin" else "ctrl+a")
+                    self._press_key_combo("ctrl+a")
                     time.sleep(0.04)
                     self._paste_unicode_text(subject)
                     time.sleep(0.1)
@@ -227,7 +189,7 @@ class OSController:
                     time.sleep(0.1)
 
                 if body:
-                    self._press_key_combo("cmd+a" if sys.platform == "darwin" else "ctrl+a")
+                    self._press_key_combo("ctrl+a")
                     time.sleep(0.04)
                     self._paste_unicode_text(body)
                     time.sleep(0.15)
@@ -238,7 +200,7 @@ class OSController:
                 if send_clicked:
                     details.append("Clicked Send button")
                 else:
-                    send_key = "cmd+return" if sys.platform == "darwin" else "ctrl+enter"
+                    send_key = "ctrl+enter"
                     self._press_key_combo(send_key)
                     details.append(f"Pressed {send_key}")
 
@@ -263,7 +225,7 @@ class OSController:
                     # Clear existing content if requested (default True for clean input)
                     clear_first = action_data.get("clear_first", True)
                     if clear_first:
-                        self._press_key_combo("cmd+a" if sys.platform == "darwin" else "ctrl+a")
+                        self._press_key_combo("ctrl+a")
                         time.sleep(0.04)
 
                     # Paste Unicode text reliably without IME interference
@@ -297,45 +259,27 @@ class OSController:
                 cmd_clean = str(cmd_type).lower().strip()
 
                 if cmd_clean in ("sleep", "ngủ"):
-                    if sys.platform == "darwin":
-                        subprocess.Popen(["osascript", "-e", 'tell application "System Events" to sleep'])
-                    elif sys.platform.startswith("win"):
-                        subprocess.Popen(["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"])
+                    subprocess.Popen(["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"])
                     result["details"] = "Put computer into Sleep mode"
 
                 elif cmd_clean in ("mute", "tắt tiếng", "tắt âm"):
-                    if sys.platform == "darwin":
-                        subprocess.run(["osascript", "-e", "set volume output muted true"], capture_output=True)
-                    else:
-                        pyautogui.press("volumemute")
+                    pyautogui.press("volumemute")
                     result["details"] = "Muted system audio"
 
                 elif cmd_clean in ("unmute", "bật tiếng", "bật âm"):
-                    if sys.platform == "darwin":
-                        subprocess.run(["osascript", "-e", "set volume output muted false"], capture_output=True)
-                    else:
-                        pyautogui.press("volumemute")
+                    pyautogui.press("volumemute")
                     result["details"] = "Unmuted system audio"
 
                 elif cmd_clean in ("volume_up", "tăng âm", "tăng âm lượng"):
-                    if sys.platform == "darwin":
-                        subprocess.run(["osascript", "-e", "set volume output volume ((output volume of (get volume settings)) + 10)"], capture_output=True)
-                    else:
-                        pyautogui.press("volumeup")
+                    pyautogui.press("volumeup")
                     result["details"] = "Increased volume"
 
                 elif cmd_clean in ("volume_down", "giảm âm", "giảm âm lượng"):
-                    if sys.platform == "darwin":
-                        subprocess.run(["osascript", "-e", "set volume output volume ((output volume of (get volume settings)) - 10)"], capture_output=True)
-                    else:
-                        pyautogui.press("volumedown")
+                    pyautogui.press("volumedown")
                     result["details"] = "Decreased volume"
 
                 elif cmd_clean in ("lock", "khóa màn hình"):
-                    if sys.platform == "darwin":
-                        subprocess.Popen(["osascript", "-e", 'tell application "System Events" to key code 12 using {control down, command down}'])
-                    elif sys.platform.startswith("win"):
-                        subprocess.Popen(["rundll32.exe", "user32.dll,LockWorkStation"])
+                    subprocess.Popen(["rundll32.exe", "user32.dll,LockWorkStation"])
                     result["details"] = "Locked computer screen"
 
             elif action in ("window_control", "manage_window", "window"):
@@ -488,269 +432,95 @@ class OSController:
 
     def _paste_unicode_text(self, text: str):
         """
-        Copy text to clipboard and simulate Cmd+V (macOS) or Ctrl+V (Windows/Linux)
+        Copy text to clipboard and simulate Ctrl+V (Windows)
         to preserve full Vietnamese accents and diacritics without dropping modifiers.
         """
         pyperclip.copy(text)
         time.sleep(0.05)
-        if sys.platform == "darwin":
-            try:
-                # AppleScript keystroke guarantees Command modifier is held (prevents typing literal 'v')
-                subprocess.run(
-                    ["osascript", "-e", 'tell application "System Events" to keystroke "v" using command down'],
-                    capture_output=True,
-                    check=True
-                )
-            except Exception:
-                pyautogui.hotkey("command", "v")
-        elif sys.platform.startswith("win"):
-            # Windows: Cleanly hold Ctrl, press V, and release to avoid IME drops
-            pyautogui.keyDown("ctrl")
-            time.sleep(0.02)
-            pyautogui.press("v")
-            time.sleep(0.02)
-            pyautogui.keyUp("ctrl")
-        else:
-            pyautogui.hotkey("ctrl", "v")
+        # Windows: Cleanly hold Ctrl, press V, and release to avoid IME drops
+        pyautogui.keyDown("ctrl")
+        time.sleep(0.02)
+        pyautogui.press("v")
+        time.sleep(0.02)
+        pyautogui.keyUp("ctrl")
         time.sleep(0.05)
 
     def _press_key_combo(self, combo: str):
-        """Parse and press single keys or combinations like 'cmd+space', 'cmd+return', 'tab'."""
+        """Parse and press single keys or combinations like 'ctrl+l', 'alt+f4', 'win', 'enter'."""
         combo_clean = combo.strip().lower()
+        parts = [p.strip() for p in combo_clean.split("+")]
 
-        if sys.platform == "darwin":
-            parts = [p.strip() for p in combo_clean.split("+")]
-            modifiers = []
-            key = ""
-            for p in parts:
-                if p in ("cmd", "command"):
-                    modifiers.append("command down")
-                elif p in ("ctrl", "control"):
-                    modifiers.append("control down")
-                elif p in ("alt", "option"):
-                    modifiers.append("option down")
-                elif p in ("shift",):
-                    modifiers.append("shift down")
-                else:
-                    key = p
+        # Automatically translate legacy/cross-platform names to Windows equivalents
+        normalized_parts = []
+        for p in parts:
+            if p in ("cmd", "command"):
+                normalized_parts.append("ctrl")
+            elif p in ("return",):
+                normalized_parts.append("enter")
+            elif p in ("esc",):
+                normalized_parts.append("escape")
+            elif p in ("super", "windows"):
+                normalized_parts.append("win")
+            else:
+                normalized_parts.append(p)
 
-            mod_str = f" using {{{', '.join(modifiers)}}}" if modifiers else ""
-            cmd = ""
-            if key in ("enter", "return"):
-                cmd = f'tell application "System Events" to key code 36{mod_str}'
-            elif key == "tab":
-                cmd = f'tell application "System Events" to key code 48{mod_str}'
-            elif key == "space":
-                cmd = f'tell application "System Events" to key code 49{mod_str}'
-            elif key in ("escape", "esc"):
-                cmd = f'tell application "System Events" to key code 53{mod_str}'
-            elif key in ("backspace", "delete"):
-                cmd = f'tell application "System Events" to key code 51{mod_str}'
-            elif len(key) == 1:
-                cmd = f'tell application "System Events" to keystroke "{key}"{mod_str}'
-
-            if cmd:
-                try:
-                    subprocess.run(["osascript", "-e", cmd], capture_output=True, check=True)
-                    return
-                except Exception:
-                    pass
-
-        elif sys.platform.startswith("win"):
-            parts = [p.strip() for p in combo_clean.split("+")]
-            # Automatically translate macOS shortcuts to Windows equivalents
-            normalized_parts = []
-            for p in parts:
-                if p in ("cmd", "command"):
-                    normalized_parts.append("ctrl")
-                elif p in ("return",):
-                    normalized_parts.append("enter")
-                elif p in ("esc",):
-                    normalized_parts.append("escape")
-                else:
-                    normalized_parts.append(p)
-
-            # Shortcut: cmd+space -> win (Windows Start)
-            if normalized_parts == ["ctrl", "space"] and ("cmd" in combo_clean or "command" in combo_clean):
-                pyautogui.press("win")
-                return
-
-            # Press modifiers cleanly without dropping
-            modifiers = [p for p in normalized_parts if p in ("ctrl", "alt", "shift", "win")]
-            main_keys = [p for p in normalized_parts if p not in ("ctrl", "alt", "shift", "win")]
-
-            for m in modifiers:
-                pyautogui.keyDown(m)
-            time.sleep(0.02)
-            for k in main_keys:
-                pyautogui.press(k)
-            time.sleep(0.02)
-            for m in reversed(modifiers):
-                pyautogui.keyUp(m)
+        # Shortcut: cmd+space -> win (Windows Start)
+        if normalized_parts == ["ctrl", "space"] and ("cmd" in combo_clean or "command" in combo_clean):
+            pyautogui.press("win")
             return
 
-        # Fallback to pyautogui for Linux/other
-        keys = [k.strip() for k in combo_clean.split("+")]
-        mapped_keys = []
-        for k in keys:
-            if k in ("cmd", "command", "win", "windows", "super"):
-                mapped_keys.append("win")
-            elif k in ("ctrl", "control"):
-                mapped_keys.append("ctrl")
-            elif k in ("alt", "option"):
-                mapped_keys.append("alt")
-            elif k in ("return",):
-                mapped_keys.append("enter")
-            elif k in ("esc",):
-                mapped_keys.append("escape")
-            else:
-                mapped_keys.append(k)
+        # Press modifiers cleanly without dropping
+        modifiers = [p for p in normalized_parts if p in ("ctrl", "alt", "shift", "win")]
+        main_keys = [p for p in normalized_parts if p not in ("ctrl", "alt", "shift", "win")]
 
-        if len(mapped_keys) == 1:
-            pyautogui.press(mapped_keys[0])
-        else:
-            pyautogui.hotkey(*mapped_keys)
+        for m in modifiers:
+            pyautogui.keyDown(m)
+        time.sleep(0.02)
+        for k in main_keys:
+            pyautogui.press(k)
+        time.sleep(0.02)
+        for m in reversed(modifiers):
+            pyautogui.keyUp(m)
 
     def _launch_app(self, app_name: str):
-        """Open application natively across operating systems."""
-        if sys.platform == "darwin":  # macOS
-            try:
-                subprocess.Popen(["open", "-a", app_name])
-            except Exception:
-                # Fallback: Trigger Spotlight
-                pyautogui.hotkey("command", "space")
-                time.sleep(0.3)
-                self._paste_unicode_text(app_name)
-                time.sleep(0.2)
-                pyautogui.press("enter")
-        elif sys.platform.startswith("win"):  # Windows
-            try:
-                subprocess.Popen(["cmd", "/c", "start", "", app_name], shell=True)
-            except Exception:
-                pyautogui.press("win")
-                time.sleep(0.3)
-                self._paste_unicode_text(app_name)
-                time.sleep(0.2)
-                pyautogui.press("enter")
-        else:  # Linux
-            subprocess.Popen([app_name])
+        """Open application natively on Windows."""
+        try:
+            subprocess.Popen(["cmd", "/c", "start", "", app_name], shell=True)
+        except Exception:
+            pyautogui.press("win")
+            time.sleep(0.3)
+            self._paste_unicode_text(app_name)
+            time.sleep(0.2)
+            pyautogui.press("enter")
 
     def window_control(self, command: str, app_name: str = "") -> Dict[str, Any]:
         """
-        Manage window states natively (maximize, zoom, minimize, close, fullscreen, restore).
-        Uses macOS Accessibility / AppleScript on macOS, and native Windows shortcuts on Windows.
+        Manage window states natively on Windows (maximize, zoom, minimize, close, fullscreen, restore).
         """
         cmd = str(command or "maximize").lower().strip()
         details = ""
         success = False
 
-        if sys.platform == "darwin":
-            try:
-                import AppKit
-                import ApplicationServices
-                ws = AppKit.NSWorkspace.sharedWorkspace()
-                target_app = None
-                if app_name:
-                    for app in ws.runningApplications():
-                        if app.localizedName() and app.localizedName().lower() == app_name.lower():
-                            target_app = app
-                            break
-                if not target_app:
-                    target_app = ws.frontmostApplication()
-
-                if target_app:
-                    pid = target_app.processIdentifier()
-                    app_elem = ApplicationServices.AXUIElementCreateApplication(pid)
-                    err, windows = ApplicationServices.AXUIElementCopyAttributeValue(app_elem, "AXWindows", None)
-                    if windows and len(windows) > 0:
-                        front_win = windows[0]
-                        # Map command to button attribute
-                        btn_attr_map = {
-                            "maximize": ["AXZoomButton", "AXFullScreenButton"],
-                            "zoom": ["AXZoomButton", "AXFullScreenButton"],
-                            "phóng to": ["AXZoomButton", "AXFullScreenButton"],
-                            "fullscreen": ["AXFullScreenButton", "AXZoomButton"],
-                            "toàn màn hình": ["AXFullScreenButton", "AXZoomButton"],
-                            "minimize": ["AXMinimizeButton"],
-                            "thu nhỏ": ["AXMinimizeButton"],
-                            "close": ["AXCloseButton"],
-                            "đóng": ["AXCloseButton"],
-                        }
-
-                        attrs_to_try = btn_attr_map.get(cmd, ["AXZoomButton", "AXFullScreenButton"])
-                        target_btn = None
-                        for attr in attrs_to_try:
-                            err_b, btn = ApplicationServices.AXUIElementCopyAttributeValue(front_win, attr, None)
-                            if err_b == 0 and btn:
-                                target_btn = btn
-                                break
-
-                        if target_btn:
-                            # 1. Move cursor visibly to button so user sees physical mouse feedback
-                            err_pos, pos_val = ApplicationServices.AXUIElementCopyAttributeValue(target_btn, "AXPosition", None)
-                            err_sz, size_val = ApplicationServices.AXUIElementCopyAttributeValue(target_btn, "AXSize", None)
-                            if err_pos == 0 and err_sz == 0 and pos_val and size_val:
-                                ok_p, pt = ApplicationServices.AXValueGetValue(pos_val, ApplicationServices.kAXValueCGPointType, None)
-                                ok_s, sz = ApplicationServices.AXValueGetValue(size_val, ApplicationServices.kAXValueCGSizeType, None)
-                                if ok_p and ok_s:
-                                    cx = int(pt.x + sz.width / 2.0)
-                                    cy = int(pt.y + sz.height / 2.0)
-                                    pyautogui.moveTo(cx, cy, duration=MOUSE_MOVE_DURATION)
-                                    pyautogui.click(cx, cy)
-                            # 2. Also perform native AXPress for 100% guarantee
-                            ApplicationServices.AXUIElementPerformAction(target_btn, "AXPress")
-                            success = True
-                            details = f"Executed '{cmd}' on window of '{target_app.localizedName()}' via Accessibility"
-            except Exception as e:
-                print(f"[OSController] Window control AX notice: {e}")
-
-            # Fallback for macOS if AX didn't succeed
-            if not success:
-                if cmd in ("maximize", "zoom", "phóng to"):
-                    as_code = '''
-                    tell application "System Events"
-                        set frontApp to first application process whose frontmost is true
-                        tell frontApp
-                            try
-                                set frontWin to front window
-                                set value of attribute "AXZoom" of frontWin to true
-                            end try
-                        end tell
-                    end tell
-                    '''
-                    res = subprocess.run(["osascript", "-e", as_code], capture_output=True, text=True)
-                    success = (res.returncode == 0)
-                    details = "Maximized window via AppleScript AXZoom"
-                elif cmd in ("minimize", "thu nhỏ"):
-                    pyautogui.hotkey("command", "m")
-                    success = True
-                    details = "Minimized window via Cmd+M"
-                elif cmd in ("close", "đóng"):
-                    pyautogui.hotkey("command", "w")
-                    success = True
-                    details = "Closed window via Cmd+W"
-                elif cmd in ("fullscreen", "toàn màn hình"):
-                    pyautogui.hotkey("ctrl", "command", "f")
-                    success = True
-                    details = "Toggled fullscreen via Ctrl+Cmd+F"
-
-        elif sys.platform.startswith("win"):
-            if cmd in ("maximize", "zoom", "phóng to", "fullscreen"):
-                pyautogui.hotkey("win", "up")
-                success = True
-                details = "Maximized window (Win+Up)"
-            elif cmd in ("minimize", "thu nhỏ"):
-                pyautogui.hotkey("win", "down")
-                success = True
-                details = "Minimized window (Win+Down)"
-            elif cmd in ("close", "đóng"):
-                pyautogui.hotkey("alt", "f4")
-                success = True
-                details = "Closed window (Alt+F4)"
-            elif cmd in ("restore", "khôi phục"):
-                pyautogui.hotkey("win", "down")
-                success = True
-                details = "Restored window size (Win+Down)"
+        if cmd in ("maximize", "zoom", "phóng to", "fullscreen"):
+            pyautogui.hotkey("win", "up")
+            success = True
+            details = "Maximized window (Win+Up)"
+        elif cmd in ("minimize", "thu nhỏ"):
+            pyautogui.hotkey("win", "down")
+            success = True
+            details = "Minimized window (Win+Down)"
+        elif cmd in ("close", "đóng"):
+            pyautogui.hotkey("alt", "f4")
+            success = True
+            details = "Closed window (Alt+F4)"
+        elif cmd in ("restore", "khôi phục"):
+            pyautogui.hotkey("win", "down")
+            success = True
+            details = "Restored window size (Win+Down)"
+        else:
+            pyautogui.hotkey("win", "up")
+            success = True
+            details = f"Default window action executed for '{cmd}' (Win+Up)"
 
         return {"success": success, "details": details}
 

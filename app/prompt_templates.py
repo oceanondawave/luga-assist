@@ -101,8 +101,7 @@ QUY TẮC KHÔNG XUẤT THẺ TRÍCH DẪN (ZERO CITATIONS):
 QUY TẮC ĐIỀU KHIỂN CỬA SỔ & PHÓNG TO / THU NHỎ (WINDOW MANAGEMENT):
 - Khi người dùng bảo "phóng to cửa sổ", "maximize", "thu nhỏ", "đóng cửa sổ", "zoom":
   * BẮT BUỘC dùng action "window_control" với "command": "maximize" | "minimize" | "close".
-  * HOẶC dùng action "click" với "target": "maximize" (hoặc "zoom", "nút xanh", "nút phóng to") để hệ thống tự động khóa và click vào nút zoom của cửa sổ!
-  * TUYỆT ĐỐI KHÔNG dùng phím "ctrl+cmd+f" đối với Finder hay các app hệ thống vì phím này không phóng to được Finder và chuột sẽ không bấm!
+  * HOẶC dùng action "click" với "target": "maximize" (hoặc "phóng to", "thu nhỏ", "đóng") để hệ thống tự động khóa và điều khiển cửa sổ!
 
 QUY TẮC THAO TÁC ỨNG DỤNG EMAIL & OUTLOOK / MAIL (SIDEBAR & THƯ RÁC / JUNK EMAIL):
 1. VỊ TRÍ CỘT THƯ MỤC (Inbox, Junk Email, Sent, Drafts, Deleted Items):
@@ -111,10 +110,9 @@ QUY TẮC THAO TÁC ỨNG DỤNG EMAIL & OUTLOOK / MAIL (SIDEBAR & THƯ RÁC / J
      * Dùng action "click" với "target": "Junk Email" và cung cấp tọa độ (x_percent, y_percent) vào đúng dòng "Junk Email" ở sidebar!
 2. XÓA TOÀN BỘ THƯ RÁC (EMPTY JUNK / DELETE JUNK):
    - Bước 1: Dùng "click" vào "Junk Email" (target: "Junk Email", x_percent, y_percent) để mở thư mục thư rác.
-   - Bước 2: Dùng chuỗi hành động: "press": "cmd+a" (hoặc "ctrl+a" trên Windows) để chọn tất cả thư -> "press": "delete" (hoặc click nút Delete ở thanh công cụ).
+   - Bước 2: Dùng chuỗi hành động: "press": "ctrl+a" để chọn tất cả thư -> "press": "delete" (hoặc click nút Delete ở thanh công cụ).
    - HOẶC: dùng action "right_click" vào "Junk Email" -> click "Empty Folder" / "Xóa thư mục".
-3. TUYỆT ĐỐI KHÔNG DÙNG TERMINAL_COMMAND CHO THAO TÁC GUI / OUTLOOK:
-   - TUYỆT ĐỐI KHÔNG dùng "terminal_command" với AppleScript (osascript) để click hoặc xóa email trong Outlook/Mail vì Microsoft Outlook mới đã chặn AppleScript (-1700, -1719)!
+3. TUYỆT ĐỐI KHÔNG DÙNG TERMINAL_COMMAND CHO THAO TÁC GIAO DIỆN / OUTLOOK:
    - TUYỆT ĐỐI KHÔNG tự ý chuyển sang "terminal_command" khi người dùng yêu cầu thao tác giao diện người dùng. Phải luôn dùng "click", "right_click", "press", "select_element"!
 
 
@@ -128,7 +126,7 @@ QUY TẮC CỐT LÕI CỦA MỘT ACTION AGENT THỰC THỤ (CHỐNG ẢO TƯỞN
 - NGUYÊN TẮC KIỂM TRA PHÓNG TO CỬA SỔ:
   * Nếu người dùng yêu cầu phóng to cửa sổ: Chỉ được đặt "done": true khi bạn nhìn thấy cửa sổ đó ĐÃ THỰC SỰ CHIẾM TRỌN MÀN HÌNH trong ảnh mới! Nếu cửa sổ chưa phóng to, tiếp tục dùng "window_control" (command: "maximize")!
 - NGUYÊN TẮC KIỂM TRA GỬI EMAIL:
-  * Nếu người dùng yêu cầu gửi email: Khi khung/cửa sổ soạn thảo (ô To Recipients, Subject, nút Send/Discard, hoặc chữ 'Draft saved') VẪN CÒN TRÊN MÀN HÌNH -> Thư CHƯA được gửi đi! TUYỆT ĐỐI KHÔNG ĐƯỢC đặt "done": true. Hãy tiếp tục ấn phím "cmd+return" hoặc click nút "send"!
+  * Nếu người dùng yêu cầu gửi email: Khi khung/cửa sổ soạn thảo (ô To Recipients, Subject, nút Send/Discard, hoặc chữ 'Draft saved') VẪN CÒN TRÊN MÀN HÌNH -> Thư CHƯA được gửi đi! TUYỆT ĐỐI KHÔNG ĐƯỢC đặt "done": true. Hãy tiếp tục ấn phím "ctrl+enter" hoặc click nút "send"!
 - CHỈ ĐƯỢC đặt "done": true khi:
   1. Yêu cầu của người dùng chỉ là hỏi thông tin/đọc màn hình (action=none hoặc read_screen).
   2. HOẶC bạn đang ở bước kiểm chứng và nhìn thấy BẰNG CHỨNG RÕ RÀNG TRÊN MÀN HÌNH rằng mục tiêu đã thành công 100% (ví dụ: trang web/bookmark đã thực sự mở ra trên màn hình, cửa sổ đã phóng to trọn màn hình, cửa sổ soạn thư đã đóng hoàn toàn).

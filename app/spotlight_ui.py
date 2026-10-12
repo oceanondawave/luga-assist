@@ -10,9 +10,6 @@ import sys
 import os
 import time
 
-if sys.platform == "darwin":
-    os.environ["ApplePersistence"] = "NO"
-
 import json
 import threading
 import urllib.request
@@ -82,15 +79,10 @@ class SpotlightHUD:
         self.root.bind("<Escape>", lambda e: self.on_escape())
         self.root.protocol("WM_DELETE_WINDOW", self.hide)
 
-        # Register macOS Dock click, reopen, and QuitApplication handlers
-        if sys.platform == "darwin":
-            try:
-                self.root.createcommand("::tk::mac::ReopenApplication", lambda: self.show())
-                self.root.createcommand("::tk::mac::QuitApplication", self.quit_app)
-            except Exception:
-                pass
-            self.root.bind("<Command-q>", lambda e: self.quit_app())
-            self.root.bind("<Command-Q>", lambda e: self.quit_app())
+        # Bind Alt+F4 and Ctrl+Q to cleanly exit Luga Assist
+        self.root.bind("<Alt-F4>", lambda e: self.quit_app())
+        self.root.bind("<Control-q>", lambda e: self.quit_app())
+        self.root.bind("<Control-Q>", lambda e: self.quit_app())
 
         # Start visible initially so user immediately sees the interface
         if show_immediately:
@@ -398,16 +390,6 @@ class SpotlightHUD:
                 self.root.deiconify()
                 self.root.lift()
                 self.root.attributes("-topmost", True)
-                if sys.platform == "darwin":
-                    try:
-                        import subprocess
-                        subprocess.run(
-                            ["osascript", "-e", f'tell application "System Events" to set frontmost of first process whose unix id is {os.getpid()} to true'],
-                            capture_output=True,
-                            timeout=0.4
-                        )
-                    except Exception:
-                        pass
                 self.root.focus_force()
                 self.txt_input.focus_set()
                 self.txt_input.select_range(0, tk.END)

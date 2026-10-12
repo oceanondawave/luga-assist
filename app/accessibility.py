@@ -9,61 +9,15 @@ import time
 from typing import Dict, Any, List, Optional, Tuple
 import pyautogui
 
-IS_MACOS = sys.platform == "darwin"
-IS_WINDOWS = sys.platform.startswith("win")
-
-if IS_MACOS:
-    try:
-        import ApplicationServices
-        import AppKit
-        HAS_MACOS_AX = True
-    except ImportError:
-        HAS_MACOS_AX = False
-else:
-    HAS_MACOS_AX = False
+IS_WINDOWS = True
 
 
 def ensure_accessibility_permissions(prompt: bool = False) -> bool:
     """
-    Check if the current process is trusted for macOS Accessibility (CGEventTap / AXUIElement).
-    If not trusted and prompt=True, requests permission from macOS (displaying system dialog).
-    On non-macOS platforms, always returns True.
+    On Windows, application processes do not require macOS-style TCC permissions.
+    Always returns True.
     """
-    if not IS_MACOS:
-        return True
-
-    try:
-        if HAS_MACOS_AX:
-            from ApplicationServices import AXIsProcessTrusted, AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
-            is_trusted = AXIsProcessTrusted()
-            if is_trusted:
-                return True
-            if prompt:
-                AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True})
-            return False
-        else:
-            import ctypes
-            from ctypes import c_bool, c_void_p
-            as_lib = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")
-            as_lib.AXIsProcessTrusted.restype = c_bool
-            if as_lib.AXIsProcessTrusted():
-                return True
-            if prompt:
-                cf_lib = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
-                prompt_key = ctypes.c_void_p.in_dll(as_lib, "kAXTrustedCheckOptionPrompt")
-                kCFBooleanTrue = ctypes.c_void_p.in_dll(cf_lib, "kCFBooleanTrue")
-                cf_lib.CFDictionaryCreate.restype = c_void_p
-                cf_lib.CFDictionaryCreate.argtypes = [c_void_p, ctypes.POINTER(c_void_p), ctypes.POINTER(c_void_p), ctypes.c_long, c_void_p, c_void_p]
-                keys = (c_void_p * 1)(prompt_key.value)
-                values = (c_void_p * 1)(kCFBooleanTrue.value)
-                options = cf_lib.CFDictionaryCreate(None, keys, values, 1, None, None)
-                as_lib.AXIsProcessTrustedWithOptions.restype = c_bool
-                as_lib.AXIsProcessTrustedWithOptions.argtypes = [c_void_p]
-                as_lib.AXIsProcessTrustedWithOptions(options)
-            return False
-    except Exception as e:
-        print(f"[Accessibility] Warning checking permissions: {e}")
-        return True
+    return True
 
 
 
@@ -159,180 +113,8 @@ class AccessibilityManager:
         high-confidence interactive UI elements (buttons, inputs, search fields).
         Returns exact normalized coordinates (0.00 - 1.00) and pixel centers across macOS and Windows.
         """
-        if IS_MACOS and HAS_MACOS_AX:
-            return self._get_macos_app_elements(max_elements)
-        elif IS_WINDOWS:
-            return self._get_windows_app_elements(max_elements)
-        return {"app": "", "window": "", "elements": []}
+        return self._get_windows_app_elements(max_elements)
 
-    def _get_macos_app_elements(self, max_elements: int = 35) -> Dict[str, Any]:
-        try:
-            ws = AppKit.NSWorkspace.sharedWorkspace()
-            front_app = ws.frontmostApplication()
-            if not front_app:
-                return {"app": "", "window": "", "elements": []}
-
-            app_name = front_app.localizedName() or ""
-            pid = front_app.processIdentifier()
-            self.last_app_name = app_name
-
-            app_elem = ApplicationServices.AXUIElementCreateApplication(pid)
-            # Ensure Chromium browsers (Chrome, Edge, Brave, Arc) expose full web & UI DOM tree
-            try:
-                ApplicationServices.AXUIElementSetAttributeValue(app_elem, "AXEnhancedUserInterface", True)
-            except Exception:
-                pass
-
-            err, windows = ApplicationServices.AXUIElementCopyAttributeValue(app_elem, "AXWindows", None)
-            if not windows:
-                return {"app": app_name, "window": "", "elements": []}
-
-            screen_w, screen_h = pyautogui.size()
-            candidates: List[Dict[str, Any]] = []
-            seen_keys = set()
-            visited_nodes = [0]
-
-            interactive_roles = (
-                "AXTextField", "AXTextArea", "AXButton", "AXPopUpButton",
-                "AXComboBox", "AXCheckBox", "AXRadioButton", "AXMenuItem",
-                "AXSearchField", "AXLink", "AXTab",
-                "AXRow", "AXCell", "AXOutlineRow", "AXStaticText"
-            )
-
-            # Check if active window contains an AXWebArea (Chrome, Safari, Edge, Firefox, Electron apps)
-            def find_web_area(elem, depth: int = 0):
-                if depth > 8:
-                    return None
-                e, r = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXRole", None)
-                if r == "AXWebArea":
-                    return elem
-                e, ch = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXChildren", None)
-                if ch:
-                    for c in ch:
-                        res = find_web_area(c, depth + 1)
-                        if res:
-                            return res
-                return None
-
-            primary_win = windows[0]
-            web_area = find_web_area(primary_win)
-
-            # If web browser window, extract web elements directly from AXWebArea first
-            if web_area:
-                def walk_web(elem, depth: int = 0):
-                    visited_nodes[0] += 1
-                    if depth > 18 or visited_nodes[0] > 700 or len(candidates) >= max_elements * 2:
-                        return
-                    e, role = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXRole", None)
-                    e, desc = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXDescription", None)
-                    e, title = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXTitle", None)
-                    e, val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXValue", None)
-                    e, placeholder = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXPlaceholderValue", None)
-
-                    name = desc or title or placeholder or (str(val)[:30] if role in ("AXTextField", "AXButton") and val else "")
-                    name_str = str(name).strip() if name else ""
-
-                    if role in interactive_roles and name_str and len(name_str) > 1:
-                        e, pos_val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXPosition", None)
-                        e, size_val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXSize", None)
-                        if pos_val and size_val:
-                            ok_p, pt = ApplicationServices.AXValueGetValue(pos_val, ApplicationServices.kAXValueCGPointType, None)
-                            ok_s, sz = ApplicationServices.AXValueGetValue(size_val, ApplicationServices.kAXValueCGSizeType, None)
-                            if ok_p and ok_s and sz.width >= 10 and sz.height >= 10:
-                                cx = int(pt.x + sz.width / 2.0)
-                                cy = int(pt.y + sz.height / 2.0)
-                                xp = round(cx / float(screen_w), 3)
-                                yp = round(cy / float(screen_h), 3)
-                                dedup_key = f"{role}:{name_str}"
-                                if dedup_key not in seen_keys:
-                                    seen_keys.add(dedup_key)
-                                    candidates.append({
-                                        "role": role.replace("AX", ""),
-                                        "name": name_str,
-                                        "x_percent": xp,
-                                        "y_percent": yp,
-                                        "pixel_x": cx,
-                                        "pixel_y": cy,
-                                        "width": int(sz.width),
-                                        "height": int(sz.height),
-                                    })
-                    e, ch = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXChildren", None)
-                    if ch:
-                        for c in ch:
-                            walk_web(c, depth + 1)
-
-                walk_web(web_area)
-
-            # Also walk native window controls (or top browser address bar / search)
-            def walk(elem, depth: int = 0):
-                visited_nodes[0] += 1
-                if depth > 14 or visited_nodes[0] > 900:
-                    return
-                # Skip re-traversing web area if already extracted
-                e, role = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXRole", None)
-                if web_area and role == "AXWebArea":
-                    return
-
-                e, desc = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXDescription", None)
-                e, title = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXTitle", None)
-                e, val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXValue", None)
-                e, placeholder = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXPlaceholderValue", None)
-
-                name = desc or title or placeholder or (str(val)[:25] if role in ("AXTextField", "AXButton") and val else "")
-                name_str = str(name).strip() if name else ""
-
-                if role in interactive_roles and name_str and len(name_str) > 1:
-                    e, pos_val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXPosition", None)
-                    e, size_val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXSize", None)
-
-                    if pos_val and size_val:
-                        ok_p, pt = ApplicationServices.AXValueGetValue(pos_val, ApplicationServices.kAXValueCGPointType, None)
-                        ok_s, sz = ApplicationServices.AXValueGetValue(size_val, ApplicationServices.kAXValueCGSizeType, None)
-
-                        if ok_p and ok_s and sz.width >= 12 and sz.height >= 12:
-                            if "TextField" in role or "TextArea" in role or "ComboBox" in role:
-                                click_x = int(pt.x + min(80, sz.width * 0.2))
-                            else:
-                                click_x = int(pt.x + sz.width / 2.0)
-                            click_y = int(pt.y + sz.height / 2.0)
-
-                            xp = round(click_x / float(screen_w), 3)
-                            yp = round(click_y / float(screen_h), 3)
-
-                            dedup_key = f"{role}:{name_str}"
-                            if dedup_key not in seen_keys:
-                                seen_keys.add(dedup_key)
-                                candidates.append({
-                                    "role": role.replace("AX", ""),
-                                    "name": name_str,
-                                    "x_percent": xp,
-                                    "y_percent": yp,
-                                    "pixel_x": click_x,
-                                    "pixel_y": click_y,
-                                    "width": int(sz.width),
-                                    "height": int(sz.height),
-                                })
-
-                e, children = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXChildren", None)
-                if children:
-                    for c in children:
-                        walk(c, depth + 1)
-
-            win_title = ""
-            for w in windows[:2]:
-                if not win_title:
-                    e, t = ApplicationServices.AXUIElementCopyAttributeValue(w, "AXTitle", None)
-                    win_title = str(t) if t else ""
-                walk(w)
-
-            # Sort candidates by relevance score (real web content & form inputs at top)
-            candidates.sort(key=lambda el: _score_element(el["role"], el["name"]), reverse=True)
-            self.cached_elements = candidates[:max_elements]
-            return {"app": app_name, "window": win_title, "elements": self.cached_elements}
-
-        except Exception as e:
-            print(f"[AccessibilityManager] Warning during macOS UI element extraction: {e}")
-            return {"app": "", "window": "", "elements": []}
 
     def _get_windows_app_elements(self, max_elements: int = 35) -> Dict[str, Any]:
         """
@@ -444,95 +226,7 @@ class AccessibilityManager:
 
         return {"app": "", "window": "", "elements": []}
 
-    def _search_live_macos(self, search_tokens: List[str], allowed_roles: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
-        """Live deep search in active macOS window when element is not in top cached list."""
-        if not (IS_MACOS and HAS_MACOS_AX):
-            return None
-        try:
-            ws = AppKit.NSWorkspace.sharedWorkspace()
-            front_app = ws.frontmostApplication()
-            if not front_app:
-                return None
-            pid = front_app.processIdentifier()
-            app_elem = ApplicationServices.AXUIElementCreateApplication(pid)
-            try:
-                ApplicationServices.AXUIElementSetAttributeValue(app_elem, "AXEnhancedUserInterface", True)
-            except Exception:
-                pass
-            err, windows = ApplicationServices.AXUIElementCopyAttributeValue(app_elem, "AXWindows", None)
-            if not windows:
-                return None
 
-            screen_w, screen_h = pyautogui.size()
-
-            def search_node(elem, depth: int = 0):
-                if depth > 15:
-                    return None
-                e, role = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXRole", None)
-                e, desc = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXDescription", None)
-                e, title = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXTitle", None)
-                e, ph = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXPlaceholderValue", None)
-                e, val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXValue", None)
-
-                name_str = str(desc or title or ph or (val if role in ("AXTextField", "AXButton") else "") or "").lower().strip()
-
-                if allowed_roles is None or role in allowed_roles:
-                    for token in search_tokens:
-                        score = _match_element_score(token, name_str)
-                        if score >= 100.0:
-                            e, pos_val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXPosition", None)
-                            e, size_val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXSize", None)
-                            if pos_val and size_val:
-                                ok_p, pt = ApplicationServices.AXValueGetValue(pos_val, ApplicationServices.kAXValueCGPointType, None)
-                                ok_s, sz = ApplicationServices.AXValueGetValue(size_val, ApplicationServices.kAXValueCGSizeType, None)
-                                if ok_p and ok_s and sz.width >= 10 and sz.height >= 10:
-                                    if "TextField" in role or "TextArea" in role or "ComboBox" in role:
-                                        cx = int(pt.x + min(80, sz.width * 0.2))
-                                    else:
-                                        cx = int(pt.x + sz.width / 2.0)
-                                    cy = int(pt.y + sz.height / 2.0)
-                                    return {
-                                        "role": role.replace("AX", ""),
-                                        "name": name_str,
-                                        "pixel_x": cx,
-                                        "pixel_y": cy,
-                                        "x_percent": round(cx / float(screen_w), 3),
-                                        "y_percent": round(cy / float(screen_h), 3),
-                                    }
-
-                e, children = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXChildren", None)
-                if children:
-                    for c in children:
-                        res = search_node(c, depth + 1)
-                        if res:
-                            return res
-                return None
-
-            # Prioritize searching inside AXWebArea for web pages
-            def find_web_area(elem, depth: int = 0):
-                if depth > 8:
-                    return None
-                e, r = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXRole", None)
-                if r == "AXWebArea":
-                    return elem
-                e, ch = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXChildren", None)
-                if ch:
-                    for c in ch:
-                        res = find_web_area(c, depth + 1)
-                        if res:
-                            return res
-                return None
-
-            web_area = find_web_area(windows[0])
-            if web_area:
-                web_match = search_node(web_area)
-                if web_match:
-                    return web_match
-
-            return search_node(windows[0])
-        except Exception as e:
-            print(f"[AccessibilityManager] Live search warning: {e}")
-            return None
 
     def focus_element_by_name(self, target_name: str) -> bool:
         """
@@ -586,17 +280,6 @@ class AccessibilityManager:
         if best_score < 100.0:
             best_elem = None
 
-        # 2. If not found in cached list with sufficient score, perform live targeted search
-        if not best_elem and IS_MACOS:
-            allowed_roles = None
-            if target_category in ("to", "subject"):
-                allowed_roles = ["AXTextField", "AXTextArea", "AXComboBox"]
-            elif target_category in ("send", "discard", "new mail"):
-                allowed_roles = ["AXButton"]
-            elif target_category in ("junk", "inbox", "sent", "trash", "drafts"):
-                allowed_roles = ["AXRow", "AXCell", "AXOutlineRow", "AXStaticText", "AXGroup", "AXButton"]
-            best_elem = self._search_live_macos(search_tokens, allowed_roles=allowed_roles)
-
         if best_elem:
             px = best_elem["pixel_x"]
             py = best_elem["pixel_y"]
@@ -604,26 +287,9 @@ class AccessibilityManager:
             print(f"[AccessibilityManager] 🎯 Khóa chính xác phần tử '{best_elem['name']}' ({role}) tại ({px}, {py})")
             pyautogui.moveTo(px, py, duration=0.08)
             time.sleep(0.02)
-            if IS_MACOS:
-                try:
-                    import Quartz
-                    pt = (float(px), float(py))
-                    move_ev = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, pt, 0)
-                    Quartz.CGEventPost(Quartz.kCGHIDEventTap, move_ev)
-                    time.sleep(0.02)
-                    down_ev = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseDown, pt, Quartz.kCGMouseButtonLeft)
-                    Quartz.CGEventSetIntegerValueField(down_ev, Quartz.kCGMouseEventClickState, 1)
-                    Quartz.CGEventPost(Quartz.kCGHIDEventTap, down_ev)
-                    time.sleep(0.04)
-                    up_ev = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseUp, pt, Quartz.kCGMouseButtonLeft)
-                    Quartz.CGEventSetIntegerValueField(up_ev, Quartz.kCGMouseEventClickState, 1)
-                    Quartz.CGEventPost(Quartz.kCGHIDEventTap, up_ev)
-                except Exception:
-                    pyautogui.click()
-            else:
-                pyautogui.mouseDown()
-                time.sleep(0.04)
-                pyautogui.mouseUp()
+            pyautogui.mouseDown()
+            time.sleep(0.04)
+            pyautogui.mouseUp()
             time.sleep(0.12)
             return True
 
@@ -638,47 +304,14 @@ class AccessibilityManager:
         Accurately inspect whether an email composer / draft is currently open on screen.
         Used to prevent premature completion claims until the email is genuinely sent.
         """
-        if IS_MACOS and HAS_MACOS_AX:
-            try:
-                ws = AppKit.NSWorkspace.sharedWorkspace()
-                front_app = ws.frontmostApplication()
-                if not front_app:
-                    return False
-                pid = front_app.processIdentifier()
-                app_elem = ApplicationServices.AXUIElementCreateApplication(pid)
-                err, windows = ApplicationServices.AXUIElementCopyAttributeValue(app_elem, "AXWindows", None)
-                if not windows:
-                    return False
+        if self.cached_elements:
+            markers = [el["name"].lower() for el in self.cached_elements]
+            has_to = any("to recipients" in m or "to:" in m for m in markers)
+            has_subject = any("subject" in m for m in markers)
+            has_discard = any("discard" in m for m in markers)
+            return (has_to and has_subject) or (has_discard and has_to)
 
-                found_markers = set()
-
-                def check_node(elem, depth: int = 0):
-                    if depth > 12 or len(found_markers) >= 2:
-                        return
-                    e, role = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXRole", None)
-                    e, desc = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXDescription", None)
-                    e, title = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXTitle", None)
-                    e, val = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXValue", None)
-                    text = f"{desc or ''} {title or ''} {val or ''}".lower()
-
-                    if "to recipients" in text or "to:" in text:
-                        found_markers.add("to")
-                    if "subject" in text and role in ("AXTextField", "AXStaticText"):
-                        found_markers.add("subject")
-                    if "discard" in text and role == "AXButton":
-                        found_markers.add("discard")
-                    if "draft saved" in text:
-                        found_markers.add("draft")
-
-                    e, children = ApplicationServices.AXUIElementCopyAttributeValue(elem, "AXChildren", None)
-                    if children:
-                        for c in children:
-                            check_node(c, depth + 1)
-
-                check_node(windows[0])
-                return len(found_markers) >= 1
-            except Exception:
-                pass
+        return False
 
         # Fallback inspection on cached elements
         if self.cached_elements:
