@@ -35,26 +35,27 @@ def zip_directory(source_dir: Path, zip_file_path: Path):
                 archive_name = file_path.relative_to(source_dir.parent)
                 zipf.write(file_path, arcname=str(archive_name))
 
-def check_python_architecture():
-    # Detect 32-bit Python on modern Windows
+def check_python_environment():
+    # 1. Detect 32-bit Python on modern Windows
     if sys.maxsize <= 2**32:
         # Check if 64-bit Python is already installed via 'py' launcher
-        try:
-            check = subprocess.run(
-                ["py", "-3-64", "-c", "import sys; print(sys.executable)"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if check.returncode == 0 and check.stdout.strip():
-                py64_exe = check.stdout.strip()
-                print(f"[Notice] Current Python is 32-bit ({sys.executable}).")
-                print(f"[Auto-Switch] Found 64-bit Python: {py64_exe}")
-                print(f"[Auto-Switch] Switching to 64-bit Python to build...\n")
-                res = subprocess.run([py64_exe, str(Path(__file__).resolve())] + sys.argv[1:], cwd=str(BASE_DIR))
-                sys.exit(res.returncode)
-        except Exception:
-            pass
+        for ver in ["-3.11-64", "-3.12-64", "-3.13-64", "-3-64"]:
+            try:
+                check = subprocess.run(
+                    ["py", ver, "-c", "import sys; print(sys.executable)"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if check.returncode == 0 and check.stdout.strip():
+                    py64_exe = check.stdout.strip()
+                    print(f"[Notice] Current Python is 32-bit ({sys.executable}).")
+                    print(f"[Auto-Switch] Found 64-bit Python: {py64_exe}")
+                    print(f"[Auto-Switch] Switching to 64-bit Python to build...\n")
+                    res = subprocess.run([py64_exe, str(Path(__file__).resolve())] + sys.argv[1:], cwd=str(BASE_DIR))
+                    sys.exit(res.returncode)
+            except Exception:
+                pass
 
         # If no 64-bit Python found, print detailed explanation
         print_banner("WARNING: 32-BIT PYTHON DETECTED (win32)")
@@ -65,17 +66,55 @@ def check_python_architecture():
         print("  - Running under 32-bit Python forces pip to compile from C++ source,")
         print("    which fails without Microsoft Visual C++ Build Tools installed.\n")
         print("RECOMMENDED SOLUTION (No C++ compiler needed):")
-        print("  1. Download and install official 64-bit Python (x64 / AMD64):")
+        print("  1. Download and install official 64-bit Python (Python 3.11 64-bit):")
         print("     https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe")
+        print("  2. During installation, make sure to check: [X] 'Add python.exe to PATH'")
+        print("  3. Re-run 'build_windows.bat'!\n")
+        print("=" * 65)
+        sys.exit(1)
+
+    # 2. Detect experimental/unsupported Python versions (>= 3.14, e.g. 3.15 alpha)
+    if sys.version_info >= (3, 14):
+        # Try to find a stable 64-bit Python (3.11, 3.12, 3.13) via py launcher
+        for ver in ["-3.11-64", "-3.12-64", "-3.13-64", "-3.11", "-3.12", "-3.13"]:
+            try:
+                check = subprocess.run(
+                    ["py", ver, "-c", "import sys; exit(0 if (3, 10) <= sys.version_info < (3, 14) and sys.maxsize > 2**32 else 1)"],
+                    capture_output=True,
+                    check=False,
+                )
+                if check.returncode == 0:
+                    py_stable = subprocess.run(["py", ver, "-c", "import sys; print(sys.executable)"], capture_output=True, text=True).stdout.strip()
+                    if py_stable:
+                        print(f"[Notice] Current Python {sys.version.split()[0]} is an experimental pre-release version.")
+                        print(f"[Auto-Switch] Found stable 64-bit Python: {py_stable}")
+                        print(f"[Auto-Switch] Switching to stable Python to build...\n")
+                        res = subprocess.run([py_stable, str(Path(__file__).resolve())] + sys.argv[1:], cwd=str(BASE_DIR))
+                        sys.exit(res.returncode)
+            except Exception:
+                pass
+
+        print_banner("WARNING: EXPERIMENTAL PYTHON VERSION DETECTED")
+        print(f"Current Python executable: {sys.executable}")
+        print(f"Detected version: Python {sys.version.split()[0]} (cp{sys.version_info.major}{sys.version_info.minor})\n")
+        print("Reason for 'Failed building wheel for pydantic-core, orjson, pyyaml':")
+        print("  - Python 3.14+ / 3.15 is an experimental pre-release version.")
+        print("  - Third-party packages (pydantic-core, orjson, pyyaml, etc.) do NOT have")
+        print("    pre-compiled binary wheels (.whl) for Python 3.15 on PyPI yet.")
+        print("  - Therefore, pip tries to compile Rust & C++ code from source, failing")
+        print("    without Microsoft Visual C++ ('link.exe') and Rust build tools.\n")
+        print("RECOMMENDED SOLUTION (No C++ or Rust compilers needed):")
+        print("  1. Download official STABLE Python (Python 3.11 64-bit):")
+        print("     👉 Direct link: https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe")
         print("     (Or Python 3.12 64-bit: https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe)")
-        print("  2. During installation, make sure to check:")
-        print("     [X] 'Add python.exe to PATH'")
-        print("  3. Re-run 'build_windows.bat' (it will install in seconds with pre-built wheels)!\n")
+        print("  2. During installation, make sure to check: [X] 'Add python.exe to PATH'")
+        print("  3. (Recommended) Uninstall Python 3.15 from Windows Settings to avoid version confusion.")
+        print("  4. Re-run 'build_windows.bat'. Everything will install in seconds!\n")
         print("=" * 65)
         sys.exit(1)
 
 def main():
-    check_python_architecture()
+    check_python_environment()
     print_banner("LUGA ASSIST - WINDOWS STANDALONE PACKAGING & RELEASE")
     print(f"Working Directory: {BASE_DIR}")
     print(f"Python: {sys.executable}")

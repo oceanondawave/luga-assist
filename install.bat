@@ -12,10 +12,23 @@ echo ======================================================================
 echo Install Directory: %PROJECT_DIR%
 echo.
 
-:: Prefer 64-bit Python
-set PYTHON_CMD=python
-py -3-64 -c "import sys; exit(0 if sys.maxsize > 2**32 else 1)" >nul 2>&1
-if %ERRORLEVEL% EQU 0 set PYTHON_CMD=py -3-64
+:: Prefer stable 64-bit Python
+set PYTHON_CMD=
+py -3.11-64 -c "import sys; exit(0)" >nul 2>&1
+if %ERRORLEVEL% EQU 0 set PYTHON_CMD=py -3.11-64
+if "%PYTHON_CMD%"=="" (
+    py -3.12-64 -c "import sys; exit(0)" >nul 2>&1
+    if %ERRORLEVEL% EQU 0 set PYTHON_CMD=py -3.12-64
+)
+if "%PYTHON_CMD%"=="" (
+    py -3.13-64 -c "import sys; exit(0)" >nul 2>&1
+    if %ERRORLEVEL% EQU 0 set PYTHON_CMD=py -3.13-64
+)
+if "%PYTHON_CMD%"=="" (
+    py -3-64 -c "import sys; exit(0 if sys.version_info < (3, 14) else 1)" >nul 2>&1
+    if %ERRORLEVEL% EQU 0 set PYTHON_CMD=py -3-64
+)
+if "%PYTHON_CMD%"=="" set PYTHON_CMD=python
 
 :: 1. Check Python
 echo [1/4] Checking Python environment...
@@ -23,7 +36,7 @@ echo [1/4] Checking Python environment...
 if %errorlevel% neq 0 (
     echo.
     echo [ERROR] Python is not installed or not added to PATH.
-    echo Please download Python 64-bit from: https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe
+    echo Please download Python 3.11 64-bit: https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe
     echo IMPORTANT: Make sure to check "Add Python to PATH" during installation!
     echo.
     pause
@@ -31,13 +44,15 @@ if %errorlevel% neq 0 (
 )
 for /f "tokens=*" %%v in ('%PYTHON_CMD% --version') do echo [OK] Found %%v
 
-:: Warn if 32-bit
-%PYTHON_CMD% -c "import sys; exit(0 if sys.maxsize > 2**32 else 1)" >nul 2>&1
+:: Warn if 32-bit or experimental
+%PYTHON_CMD% -c "import sys; exit(0 if (3, 10) <= sys.version_info < (3, 14) and sys.maxsize > 2**32 else 1)" >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo [WARNING] 32-bit Python detected. Essential dependencies (e.g. curl-cffi)
-    echo           require Python 64-bit to install without Visual C++ Build Tools.
-    echo           Please install 64-bit Python: https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe
+    echo [WARNING] Current Python is either 32-bit or an experimental pre-release (e.g. 3.15).
+    echo           Essential dependencies (pydantic-core, orjson, pyyaml, curl-cffi)
+    echo           only have pre-compiled wheels for stable Python 3.11 / 3.12 64-bit.
+    echo           Please install official Python 3.11 64-bit:
+    echo           https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe
     echo.
 )
 
