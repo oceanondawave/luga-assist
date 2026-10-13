@@ -35,7 +35,47 @@ def zip_directory(source_dir: Path, zip_file_path: Path):
                 archive_name = file_path.relative_to(source_dir.parent)
                 zipf.write(file_path, arcname=str(archive_name))
 
+def check_python_architecture():
+    # Detect 32-bit Python on modern Windows
+    if sys.maxsize <= 2**32:
+        # Check if 64-bit Python is already installed via 'py' launcher
+        try:
+            check = subprocess.run(
+                ["py", "-3-64", "-c", "import sys; print(sys.executable)"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if check.returncode == 0 and check.stdout.strip():
+                py64_exe = check.stdout.strip()
+                print(f"[Notice] Current Python is 32-bit ({sys.executable}).")
+                print(f"[Auto-Switch] Found 64-bit Python: {py64_exe}")
+                print(f"[Auto-Switch] Switching to 64-bit Python to build...\n")
+                res = subprocess.run([py64_exe, str(Path(__file__).resolve())] + sys.argv[1:], cwd=str(BASE_DIR))
+                sys.exit(res.returncode)
+        except Exception:
+            pass
+
+        # If no 64-bit Python found, print detailed explanation
+        print_banner("WARNING: 32-BIT PYTHON DETECTED (win32)")
+        print(f"Current Python executable: {sys.executable}\n")
+        print("Reason for 'Microsoft Visual C++ 14.0 or greater is required':")
+        print("  - Essential dependencies (like 'curl-cffi' for Gemini API) only provide")
+        print("    pre-built binary wheels for 64-bit Python (win_amd64).")
+        print("  - Running under 32-bit Python forces pip to compile from C++ source,")
+        print("    which fails without Microsoft Visual C++ Build Tools installed.\n")
+        print("RECOMMENDED SOLUTION (No C++ compiler needed):")
+        print("  1. Download and install official 64-bit Python (x64 / AMD64):")
+        print("     https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe")
+        print("     (Or Python 3.12 64-bit: https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe)")
+        print("  2. During installation, make sure to check:")
+        print("     [X] 'Add python.exe to PATH'")
+        print("  3. Re-run 'build_windows.bat' (it will install in seconds with pre-built wheels)!\n")
+        print("=" * 65)
+        sys.exit(1)
+
 def main():
+    check_python_architecture()
     print_banner("LUGA ASSIST - WINDOWS STANDALONE PACKAGING & RELEASE")
     print(f"Working Directory: {BASE_DIR}")
     print(f"Python: {sys.executable}")
