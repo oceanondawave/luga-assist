@@ -81,12 +81,13 @@ echo.
 echo ======================================================================
 echo                 LUGA ASSIST SETUP COMPLETED!
 echo ======================================================================
-echo SINGLE UNIFIED APP - CONTROLLED VIA SHORTCUTS:
+echo SINGLE UNIFIED APP - CONTROLLED VIA SHORTCUTS (NO Fn KEY NEEDED):
 echo   Double click 'Luga Assist' on Desktop : Starts app and shows Chat HUD
-echo   Key F7 (or Ctrl+Alt+Space)            : Toggle Floating Chat HUD
-echo   Key Esc                               : Hide chat bar
-echo   Key F8                                : Speak directly via Microphone
-echo   Key F9                                : Switch mode [OS Control] vs [AI Chat]
+echo   Ctrl+Shift+Space (or F7, Ctrl+`)      : Toggle Floating Chat HUD
+echo   Ctrl+Space (or F8)                    : Speak directly via Microphone
+echo   Ctrl+Shift+M (or F9)                  : Switch mode [OS Control] vs [AI Chat]
+echo   Shift+Esc (or F10)                    : Emergency Cancel active task
+echo   Esc (in Chat bar)                     : Hide chat bar
 echo   'Turn Off Luga' button in chat bar    : Completely exit application
 echo.
 echo COMMAND LINE USAGE (Global from any directory):

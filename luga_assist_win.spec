@@ -7,9 +7,15 @@ base_dir = Path.cwd()
 datas = [
     (str(base_dir / "web"), "web"),
     (str(base_dir / "temp"), "temp"),
+    (str(base_dir / "extension"), "extension"),
 ]
 
 hiddenimports = [
+    "tkinter",
+    "tkinter.font",
+    "tkinter.ttk",
+    "tkinter.messagebox",
+    "tkinter.filedialog",
     "sounddevice",
     "speech_recognition",
     "pynput",
@@ -36,11 +42,22 @@ hiddenimports = [
     "uvicorn.lifespan",
     "uvicorn.lifespan.on",
     "websockets",
+    "websockets.sync",
+    "websockets.sync.client",
+    "websockets.legacy",
+    "websockets.legacy.client",
+    "websockets.legacy.server",
     "gemini_webapi",
+    "curl_cffi",
     "audioop",
     "pyperclip",
     "mss",
     "loguru",
+    "ctypes",
+    "ctypes.wintypes",
+    "app.spotlight_ui",
+    "app.chat_cli",
+    "app.daemon",
 ]
 
 a = Analysis(

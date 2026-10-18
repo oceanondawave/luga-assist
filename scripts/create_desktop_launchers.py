@@ -79,7 +79,7 @@ $s = $wsh.CreateShortcut("$desktop\\Luga Assist.lnk");
 $s.TargetPath = "wscript.exe";
 $s.Arguments = '"{vbs_start}"';
 $s.WorkingDirectory = '{BASE_DIR}';
-$s.Description = "Luga Assist - F7 to Chat, F8 to Speak";
+$s.Description = "Luga Assist - Ctrl+Shift+Space to Chat, Ctrl+Space to Speak";
 $s.Save();
 '''
     flags = 0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0

@@ -90,12 +90,17 @@ def launch_spotlight_hud() -> Optional[subprocess.Popen]:
             cmd = [sys.executable, "--spotlight-ui"]
         else:
             cmd = [sys.executable, "-m", "app.spotlight_ui"]
+        
+        log_file = BASE_DIR / "logs" / "spotlight_ui.log"
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        fp = open(log_file, "a", encoding="utf-8")
+        
         proc = subprocess.Popen(
             cmd,
             cwd=str(BASE_DIR),
             env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            stdout=fp,
+            stderr=fp
         )
         print(f"[Lifespan] 🚀 Đã khởi động Cửa sổ Chat Nổi Spotlight HUD (PID: {proc.pid})")
         return proc

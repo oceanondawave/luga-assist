@@ -6,9 +6,11 @@ echo          LUGA ASSIST - GLOBAL DESKTOP AGENT (WINDOWS)
 echo ==========================================================
 echo.
 echo [INFO] Global Desktop Agent is starting...
-echo [INFO] Press F8 (or Ctrl+Space) anywhere to speak.
-echo [INFO] Press F7 (or Ctrl+Alt+Space) to toggle Floating Chat.
-echo [INFO] Press F9 to switch mode: OS Control vs AI Chat.
+echo [INFO] Toggle Chat Bar: Ctrl + Shift + Space (or F7, Ctrl + `)
+echo [INFO] Direct Voice   : Ctrl + Space (or F8)
+echo [INFO] Toggle Mode    : Ctrl + Shift + M (or F9)
+echo [INFO] Cancel Task    : Shift + Esc (or F10)
+echo [INFO] No Fn key needed - all shortcuts work on any keyboard!
 echo [INFO] Background mode: start_background.bat or start_windows.vbs
 echo.
 

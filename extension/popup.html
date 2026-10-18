@@ -5,26 +5,26 @@
   <title>Luga Assist Bridge</title>
   <style>
     body {
-      width: 300px;
-      padding: 16px;
+      width: 280px;
+      padding: 14px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       margin: 0;
       background: #0f172a;
       color: #f8fafc;
     }
     h2 {
-      font-size: 16px;
-      margin: 0 0 12px 0;
-      color: #60a5fa;
+      font-size: 15px;
+      margin: 0 0 10px 0;
+      color: #38bdf8;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
     .status-card {
       background: #1e293b;
-      border-radius: 10px;
-      padding: 12px;
-      margin-bottom: 14px;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
       display: flex;
       flex-direction: column;
       gap: 8px;
@@ -33,67 +33,53 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 13px;
+      font-size: 12px;
     }
     .dot {
-      width: 10px;
-      height: 10px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
       background: #ef4444;
       flex-shrink: 0;
     }
     .dot.connected {
       background: #10b981;
-      box-shadow: 0 0 8px #10b981;
+      box-shadow: 0 0 6px #10b981;
     }
     p {
-      font-size: 12px;
+      font-size: 11px;
       color: #94a3b8;
-      line-height: 1.5;
+      line-height: 1.4;
       margin: 0 0 12px 0;
     }
-    .btn-primary {
+    .btn-sync {
       width: 100%;
-      padding: 10px 12px;
+      padding: 9px 12px;
       border: none;
-      border-radius: 8px;
-      background: #2563eb;
+      border-radius: 6px;
+      background: #0284c7;
       color: white;
-      font-size: 13px;
-      font-weight: 700;
+      font-size: 12px;
+      font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
-      transition: background 0.2s;
+      transition: background 0.15s;
     }
-    .btn-primary:hover {
-      background: #1d4ed8;
-    }
-    .btn-secondary {
-      width: 100%;
-      padding: 8px 12px;
-      border: 1px solid #334155;
-      border-radius: 8px;
-      background: transparent;
-      color: #94a3b8;
-      font-size: 12px;
-      cursor: pointer;
-      margin-top: 8px;
-    }
-    .btn-secondary:hover {
-      background: #1e293b;
-      color: #e2e8f0;
+    .btn-sync:hover {
+      background: #0369a1;
     }
     .notice {
-      background: rgba(59, 130, 246, 0.1);
-      border-left: 3px solid #3b82f6;
-      padding: 8px 10px;
+      background: rgba(56, 189, 248, 0.08);
+      border-left: 3px solid #0284c7;
+      padding: 6px 8px;
       font-size: 11px;
-      color: #93c5fd;
+      color: #7dd3fc;
       border-radius: 4px;
       margin-top: 10px;
+      line-height: 1.4;
     }
   </style>
 </head>
@@ -103,50 +89,22 @@
   <div class="status-card">
     <div class="status-row">
       <span id="agentDot" class="dot"></span>
-      <span id="agentStatus">Local Agent: Đang kiểm tra...</span>
+      <span id="agentStatus">Luga Assist: Đang kiểm tra...</span>
     </div>
     <div class="status-row">
       <span id="geminiDot" class="dot"></span>
-      <span id="geminiStatus">Google Gemini: Đang kiểm tra...</span>
+      <span id="geminiStatus">Google Session: Đang kiểm tra...</span>
     </div>
   </div>
 
-  <p>Extension tự động lấy Session Google trên Chrome để Gemini chạy ngầm 100% không cần mở tab.</p>
+  <p>Cầu nối tự động đồng bộ phiên Google trên Chrome để Luga Assist chạy ngầm mà không cần mở tab trình duyệt.</p>
 
-  <button id="btnOpenApp" class="btn-primary">
-    🚀 Mở Luga Assist App
+  <button id="btnSyncSession" class="btn-sync">
+    ⚡ Đồng bộ lại tài khoản Google
   </button>
-
-  <button id="btnSyncSession" class="btn-secondary">
-    ⚡ Đồng bộ lại Session Google
-  </button>
-
-  <div style="margin-top: 14px; border-top: 1px solid #334155; padding-top: 12px;">
-    <div style="font-size: 13px; font-weight: 700; color: #38bdf8; margin-bottom: 6px; display: flex; justify-content: space-between;">
-      <span>💬 Chat Nhanh (Popup)</span>
-      <span style="font-size: 11px; color: #64748b;">Phím: Alt + L</span>
-    </div>
-    <form id="extChatForm" style="display: flex; gap: 6px;">
-      <input
-        type="text"
-        id="extChatInput"
-        placeholder="Nhập lệnh điều khiển..."
-        style="flex: 1; background: #020617; border: 1px solid #334155; color: #fff; padding: 7px 10px; border-radius: 6px; font-size: 12px; outline: none;"
-        autofocus
-      >
-      <button
-        type="submit"
-        id="extBtnSend"
-        style="background: #0284c7; border: none; color: #fff; padding: 7px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer;"
-      >
-        Gửi
-      </button>
-    </form>
-    <div id="extChatResult" style="margin-top: 8px; font-size: 12px; color: #e2e8f0; line-height: 1.4; display: none;"></div>
-  </div>
 
   <div class="notice">
-    💡 Bạn chỉ cần đăng nhập Google trên Chrome 1 lần, hệ thống sẽ tự động sử dụng miễn phí vĩnh viễn!
+    💡 Chỉ cần đăng nhập tài khoản Google trên Chrome một lần, hệ thống sẽ tự động duy trì kết nối.
   </div>
 
   <script src="popup.js"></script>

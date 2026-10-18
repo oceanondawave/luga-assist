@@ -53,11 +53,11 @@ class SpotlightHUD:
         # Thread synchronization
         self.ready_event = threading.Event()
 
-    def run(self, show_immediately: bool = False):
+    def run(self, show_immediately: bool = True):
         """Run the Tkinter GUI main loop on this thread."""
         logger.info("Initializing Spotlight Tkinter HUD...")
         self.root = tk.Tk()
-        self.root.title("Luga Assist - Spotlight Chat (F7)")
+        self.root.title("Luga Assist - Spotlight Chat (Ctrl+Shift+Space / F7)")
 
         # Configure window properties
         self.root.attributes("-topmost", True)
@@ -370,7 +370,7 @@ class SpotlightHUD:
 
         hints = tk.Label(
             footer,
-            text="Phím tắt: [F7] Bật/Tắt Chat • [F8] Nói Micro • [F9] Đổi chế độ • [F10/Esc] Ngắt xử lý",
+            text="Phím tắt: [Ctrl+Shift+Space / F7] Chat • [Ctrl+Space / F8] Nói • [Ctrl+Shift+M / F9] Đổi chế độ • [Esc] Ẩn/Ngắt",
             font=("Arial", 10),
             fg="#64748b",
             bg="#0f172a"
@@ -815,29 +815,35 @@ class SpotlightHUD:
 
         def on_press(key):
             try:
-                # F10 or Ctrl+Esc: Emergency cancel
-                is_f10 = _is_f10(key)
-                is_ctrl_esc = (key == keyboard.Key.esc and "ctrl" in self._keys_held)
-                if is_f10 or is_ctrl_esc:
-                    print("\n[Global Hotkey] Đã nhấn F10 / Ctrl+Esc -> Ngắt tác vụ!")
-                    self.cancel_active_task()
-                    return
-
-                # F7 key
-                if _is_f7(key):
-                    print("\n[Global Hotkey] Đã nhấn F7 -> Bật/Tắt Spotlight Chat!")
-                    self.toggle()
-                    return
-
                 if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
                     self._keys_held.add("ctrl")
                 elif key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
                     self._keys_held.add("alt")
-                elif key == keyboard.Key.space:
-                    if "ctrl" in self._keys_held and "alt" in self._keys_held:
-                        print("\n[Global Hotkey] Đã nhấn Ctrl + Alt + Space -> Bật/Tắt Spotlight Chat!")
-                        self.toggle()
-                        return
+                elif key in (keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r):
+                    self._keys_held.add("shift")
+
+                char_val = getattr(key, "char", None)
+                str_key = str(key).lower()
+
+                # F10, Ctrl+Esc, Shift+Esc: Emergency cancel
+                is_f10 = _is_f10(key)
+                is_esc_cancel = (key == keyboard.Key.esc and ("ctrl" in self._keys_held or "shift" in self._keys_held))
+                if is_f10 or is_esc_cancel:
+                    print("\n[Global Hotkey] Đã nhấn F10 / Esc -> Ngắt tác vụ!")
+                    self.cancel_active_task()
+                    return
+
+                # F7, Ctrl+Shift+Space, Ctrl+Alt+Space, Ctrl+`
+                is_f7 = _is_f7(key)
+                is_ctrl_shift_space = (key == keyboard.Key.space and "ctrl" in self._keys_held and "shift" in self._keys_held)
+                is_ctrl_alt_space = (key == keyboard.Key.space and "ctrl" in self._keys_held and "alt" in self._keys_held)
+                is_ctrl_tilde = (char_val in ("`", "~") or str_key in ("'`'", "'~'")) and "ctrl" in self._keys_held
+                is_alt_z = (char_val in ("z", "Z") or str_key in ("'z'", "'Z'")) and "alt" in self._keys_held and "ctrl" not in self._keys_held
+
+                if is_f7 or is_ctrl_shift_space or is_ctrl_alt_space or is_ctrl_tilde or is_alt_z:
+                    print("\n[Global Hotkey] Đã kích hoạt -> Bật/Tắt Spotlight Chat!")
+                    self.toggle()
+                    return
             except Exception:
                 pass
 
@@ -847,6 +853,8 @@ class SpotlightHUD:
                     self._keys_held.discard("ctrl")
                 elif key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
                     self._keys_held.discard("alt")
+                elif key in (keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r):
+                    self._keys_held.discard("shift")
             except Exception:
                 pass
 

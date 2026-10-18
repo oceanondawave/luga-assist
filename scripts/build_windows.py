@@ -122,7 +122,7 @@ def main():
     # 1. Ensure dependencies installed
     run_cmd([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], "Upgrading pip")
     run_cmd([sys.executable, "-m", "pip", "install", "pyinstaller"], "Installing PyInstaller")
-    run_cmd([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"], "Installing requirements.txt")
+    run_cmd([sys.executable, "-m", "pip", "install", "--prefer-binary", "-r", "requirements.txt"], "Installing requirements.txt (preferring pre-built wheels)")
 
     # 2. Run PyInstaller
     spec_path = BASE_DIR / "luga_assist_win.spec"
