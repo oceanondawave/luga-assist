@@ -131,11 +131,15 @@ def setup_logging(level: int = logging.INFO, tee_stdout: bool = True):
         err_handler.setFormatter(formatter)
         root_logger.addHandler(err_handler)
 
-        # 3. Console handler
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(level)
-        console_handler.setFormatter(formatter)
-        root_logger.addHandler(console_handler)
+        # 3. Console handler (safe for windowless GUI mode)
+        if sys.stdout is not None:
+            try:
+                console_handler = logging.StreamHandler(sys.stdout)
+                console_handler.setLevel(level)
+                console_handler.setFormatter(formatter)
+                root_logger.addHandler(console_handler)
+            except Exception:
+                pass
 
     # Tee sys.stdout and sys.stderr if requested, not already teed, and not running as daemon
     is_daemon = os.environ.get("LUGA_DAEMON_MODE") == "1"

@@ -14,8 +14,12 @@ from typing import Optional, Dict, Any
 from gemini_webapi import GeminiClient, set_log_level
 from app.config import TEMP_DIR
 
-# Suppress verbose quota logs in terminal
-set_log_level("WARNING")
+# Suppress verbose quota logs in terminal safely (guards against windowless PyInstaller NoneType)
+try:
+    if getattr(sys, "stderr", None) is not None:
+        set_log_level("WARNING")
+except Exception:
+    pass
 
 SESSION_FILE = TEMP_DIR / "gemini_session.json"
 

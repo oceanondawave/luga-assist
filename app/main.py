@@ -5,7 +5,21 @@ Coordinates Voice UI, Screen Capture, Gemini Web Extension, OS Controller, and T
 import re
 import os
 import sys
+import io
 from pathlib import Path
+
+# Guard against PyInstaller windowless mode (console=False) setting stdout/stderr to None
+if sys.stdout is None:
+    try:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    except Exception:
+        sys.stdout = io.StringIO()
+
+if sys.stderr is None:
+    try:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")
+    except Exception:
+        sys.stderr = io.StringIO()
 
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
@@ -17,7 +31,6 @@ import time
 import uuid
 import asyncio
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Dict, Any, Optional
 
 from pydantic import BaseModel
@@ -39,6 +52,10 @@ from app.config import (
     PID_FILE,
 )
 from app.logger import setup_logging, get_logger, read_recent_logs, clear_logs
+
+# Initialize persistent logging and stdout teeing BEFORE importing other app services
+setup_logging()
+
 from app.browser_helper import ensure_background_browser
 from app.screen_capture import screen_capturer
 from app.os_controller import os_controller
@@ -53,9 +70,6 @@ from app.system_ui import (
     trigger_graceful_shutdown,
     trigger_graceful_restart,
 )
-
-# Initialize persistent logging and stdout teeing
-setup_logging()
 
 spotlight_process: Optional[subprocess.Popen] = None
 spotlight_clients: set = set()
