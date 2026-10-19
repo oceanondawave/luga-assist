@@ -94,6 +94,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=str(base_dir / "app.ico") if (base_dir / "app.ico").exists() else None,
 )
 
 coll = COLLECT(

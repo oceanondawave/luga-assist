@@ -20,19 +20,23 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 LicenseFile=LICENSE
 OutputDir=dist
-OutputBaseFilename=Luga-Assist-Windows-Installer
+OutputBaseFilename=Luga-Assist-Setup
+SetupIconFile=app.ico
+UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
+CloseApplications=yes
+CloseApplicationsFilter=*.exe
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
-Name: "autostart"; Description: "Tự động khởi động cùng Windows (Run on startup)"; GroupDescription: "Cấu hình khởi động:"; Flags: unchecked
+Name: "autostart"; Description: "Khoi dong cung Windows (Run on startup)"; GroupDescription: "Cau hinh khoi dong:"; Flags: unchecked
 
 [Files]
 Source: "dist\Luga Assist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -41,9 +45,14 @@ Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\Gỡ cài đặt {#MyAppName}"; Filename: "{uninstallexe}"
+Name: "{group}\Thu muc Chrome Extension (Cai vao Chrome)"; Filename: "{app}\extension"
+Name: "{group}\Go cai dat {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: autostart
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{cmd}"; Parameters: "/c taskkill /F /IM ""{#MyAppExeName}"" >nul 2>&1"; Flags: runhidden
+

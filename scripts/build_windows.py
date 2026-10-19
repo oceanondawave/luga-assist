@@ -1,7 +1,8 @@
 """
 Luga Assist - Standalone Windows Build & Release Tool.
-Packages Luga Assist into a windowless .exe, packages the Chrome Extension,
-and creates release ZIP archives without batch file encoding issues.
+Packages Luga Assist into a windowless standalone executable, compiles
+the Windows Setup Wizard (Luga-Assist-Setup.exe) via Inno Setup, packages
+the Chrome Extension, and creates release archives.
 """
 import sys
 import os
@@ -13,9 +14,9 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 def print_banner(text: str):
-    print("\n" + "=" * 65)
+    print("\n" + "=" * 68)
     print(f"  {text}")
-    print("=" * 65 + "\n")
+    print("=" * 68 + "\n")
 
 def run_cmd(cmd_list, description: str):
     print(f"--> [Build] {description}...")
@@ -34,6 +35,18 @@ def zip_directory(source_dir: Path, zip_file_path: Path):
                 file_path = Path(root) / file
                 archive_name = file_path.relative_to(source_dir.parent)
                 zipf.write(file_path, arcname=str(archive_name))
+
+def ensure_app_icon():
+    ico_path = BASE_DIR / "app.ico"
+    png_path = BASE_DIR / "extension" / "icons" / "icon128.png"
+    if not ico_path.exists() and png_path.exists():
+        try:
+            from PIL import Image
+            img = Image.open(png_path)
+            img.save(ico_path, format="ICO", sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128)])
+            print("--> [Build] Generated app.ico from extension/icons/icon128.png")
+        except Exception as e:
+            print(f"--> [Build] Notice: Could not generate app.ico ({e})")
 
 def check_python_environment():
     # 1. Detect 32-bit Python on modern Windows
@@ -70,7 +83,7 @@ def check_python_environment():
         print("     https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe")
         print("  2. During installation, make sure to check: [X] 'Add python.exe to PATH'")
         print("  3. Re-run 'build_windows.bat'!\n")
-        print("=" * 65)
+        print("=" * 68)
         sys.exit(1)
 
     # 2. Detect experimental/unsupported Python versions (>= 3.14, e.g. 3.15 alpha)
@@ -105,13 +118,87 @@ def check_python_environment():
         print("    without Microsoft Visual C++ ('link.exe') and Rust build tools.\n")
         print("RECOMMENDED SOLUTION (No C++ or Rust compilers needed):")
         print("  1. Download official STABLE Python (Python 3.11 64-bit):")
-        print("     👉 Direct link: https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe")
+        print("     Direct link: https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe")
         print("     (Or Python 3.12 64-bit: https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe)")
         print("  2. During installation, make sure to check: [X] 'Add python.exe to PATH'")
         print("  3. (Recommended) Uninstall Python 3.15 from Windows Settings to avoid version confusion.")
         print("  4. Re-run 'build_windows.bat'. Everything will install in seconds!\n")
-        print("=" * 65)
+        print("=" * 68)
         sys.exit(1)
+
+def find_iscc_binary() -> str | None:
+    candidates = [
+        shutil.which("ISCC.exe"),
+        shutil.which("iscc"),
+        Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "Inno Setup 6" / "ISCC.exe",
+        Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "Inno Setup 6" / "ISCC.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Inno Setup 6" / "ISCC.exe",
+        Path("C:/Program Files (x86)/Inno Setup 6/ISCC.exe"),
+        Path("C:/Program Files/Inno Setup 6/ISCC.exe"),
+    ]
+    for c in candidates:
+        if c and Path(c).is_file():
+            return str(Path(c).resolve())
+    return None
+
+def ensure_iscc_compiler() -> str | None:
+    iscc = find_iscc_binary()
+    if iscc:
+        return iscc
+
+    print("--> [Installer] Inno Setup compiler (ISCC.exe) not found on system.")
+
+    # Method 1: winget
+    winget = shutil.which("winget")
+    if winget:
+        print("--> [Installer] Attempting silent installation of Inno Setup via winget...")
+        try:
+            subprocess.run(
+                [winget, "install", "--id", "JRSoftware.InnoSetup", "-e", "--accept-source-agreements", "--accept-package-agreements", "--silent"],
+                check=False,
+            )
+            iscc = find_iscc_binary()
+            if iscc:
+                print(f"--> [Installer] Inno Setup installed successfully via winget: {iscc}")
+                return iscc
+        except Exception as e:
+            print(f"--> [Installer] winget install notice: {e}")
+
+    # Method 2: direct download and silent setup
+    print("--> [Installer] Attempting direct download of official Inno Setup installer...")
+    try:
+        import urllib.request
+        temp_dir = BASE_DIR / "temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        setup_installer = temp_dir / "innosetup-setup.exe"
+
+        urls = [
+            "https://files.jrsoftware.org/is/6/innosetup-6.3.3.exe",
+            "https://www.jrsoftware.org/download.php/is.exe"
+        ]
+        downloaded = False
+        for url in urls:
+            try:
+                print(f"--> [Installer] Downloading Inno Setup from {url}...")
+                urllib.request.urlretrieve(url, str(setup_installer))
+                if setup_installer.exists() and setup_installer.stat().st_size > 1000000:
+                    downloaded = True
+                    break
+            except Exception as dl_err:
+                print(f"--> [Installer] Download failed: {dl_err}")
+                continue
+
+        if downloaded:
+            print("--> [Installer] Running silent installation of Inno Setup (/VERYSILENT)...")
+            subprocess.run([str(setup_installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"], check=False)
+            iscc = find_iscc_binary()
+            if iscc:
+                print(f"--> [Installer] Inno Setup installed successfully: {iscc}")
+                return iscc
+    except Exception as e:
+        print(f"--> [Installer] Direct download notice: {e}")
+
+    return None
 
 def main():
     check_python_environment()
@@ -124,7 +211,10 @@ def main():
     run_cmd([sys.executable, "-m", "pip", "install", "pyinstaller"], "Installing PyInstaller")
     run_cmd([sys.executable, "-m", "pip", "install", "--prefer-binary", "-r", "requirements.txt"], "Installing requirements.txt (preferring pre-built wheels)")
 
-    # 2. Run PyInstaller
+    # 2. Ensure application icon
+    ensure_app_icon()
+
+    # 3. Run PyInstaller
     spec_path = BASE_DIR / "luga_assist_win.spec"
     if not spec_path.exists():
         print(f"[X] Spec file not found: {spec_path}")
@@ -140,7 +230,7 @@ def main():
         print(f"[X] Expected output folder not found: {dist_app_dir}")
         sys.exit(1)
 
-    # 3. Copy extension into dist/Luga Assist/extension
+    # 4. Copy extension into dist/Luga Assist/extension
     ext_src = BASE_DIR / "extension"
     ext_dest = dist_app_dir / "extension"
     if ext_src.exists():
@@ -149,15 +239,33 @@ def main():
             shutil.rmtree(ext_dest)
         shutil.copytree(ext_src, ext_dest)
 
-    # 4. Copy launcher scripts for portability
+    # 5. Copy launcher scripts for portability
     vbs_src = BASE_DIR / "start_windows.vbs"
     if vbs_src.exists():
         shutil.copy2(vbs_src, dist_app_dir / "start_windows.vbs")
 
-    # 5. Create release ZIPs
     dist_dir = BASE_DIR / "dist"
     dist_dir.mkdir(parents=True, exist_ok=True)
 
+    # 6. Build the Standalone Setup Wizard Installer (Luga-Assist-Setup.exe)
+    iss_file = BASE_DIR / "scripts" / "windows" / "installer.iss"
+    iscc_bin = ensure_iscc_compiler()
+
+    if iscc_bin and iss_file.exists():
+        print(f"--> [Installer] Compiling Windows Setup Wizard via {iscc_bin}...")
+        res = subprocess.run([iscc_bin, str(iss_file)], cwd=str(BASE_DIR))
+        if res.returncode == 0:
+            print(f"--> [Installer] Setup Wizard (Luga-Assist-Setup.exe) created successfully!")
+        else:
+            print(f"--> [Installer] Warning: ISCC compilation returned exit code {res.returncode}")
+    else:
+        print_banner("WARNING: INNO SETUP NOT FOUND")
+        print("To generate the Windows Setup Wizard (.exe installer):")
+        print("  1. Download Inno Setup 6 from: https://jrsoftware.org/isdl.php")
+        print("  2. Install it, then run 'build_windows.bat' again.")
+        print("=" * 68)
+
+    # 7. Create release ZIPs (Extension & Portable App)
     win_zip = dist_dir / "Luga-Assist-Windows.zip"
     zip_directory(dist_app_dir, win_zip)
 
@@ -173,32 +281,28 @@ def main():
                     zipf.write(file_path, arcname=str(archive_name))
         print(f"--> [Build] Created: {ext_zip.name}")
 
-    # 6. Check for Inno Setup compiler to build Installer
-    iscc_candidates = [
-        shutil.which("ISCC.exe") or shutil.which("iscc"),
-        Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "Inno Setup 6" / "ISCC.exe",
-        Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "Inno Setup 6" / "ISCC.exe",
-    ]
-    iscc_bin = next((str(p) for p in iscc_candidates if p and Path(p).exists()), None)
-    iss_file = BASE_DIR / "scripts" / "windows" / "installer.iss"
-
-    if iscc_bin and iss_file.exists():
-        print(f"--> [Build] Compiling Inno Setup installer via {iscc_bin}...")
-        res = subprocess.run([iscc_bin, str(iss_file)], cwd=str(BASE_DIR))
-        if res.returncode == 0:
-            print(f"--> [Build] Inno Setup Installer created successfully!")
-        else:
-            print(f"--> [Build] Inno Setup notice: compilation returned {res.returncode}")
-
+    # 8. Print Complete Release Summary
+    installer_exe = dist_dir / "Luga-Assist-Setup.exe"
     print_banner("BUILD COMPLETED SUCCESSFULLY!")
-    print("Artifacts generated in dist/:")
-    print(f"  1. Standalone Executable : {dist_app_dir / 'Luga Assist.exe'}")
-    print(f"  2. Portable Release ZIP  : {win_zip}")
-    print(f"  3. Chrome Extension ZIP  : {ext_zip}")
-    installer_exe = dist_dir / "Luga-Assist-Windows-Installer.exe"
     if installer_exe.exists():
-        print(f"  4. Setup Installer EXE   : {installer_exe}")
-    print("\nReminder: Load the extension folder into Chrome/Edge before launching Luga Assist.")
+        mb = installer_exe.stat().st_size / (1024 * 1024)
+        print("  🎉 BO CAI DAT CHINH (STANDALONE SETUP WIZARD):")
+        print(f"  👉 {installer_exe} ({mb:.1f} MB)\n")
+        print("  * Day la file duy nhat can gui cho nguoi dung Windows.")
+        print("  * May tinh dich KHONG CAN cai dat Python.")
+        print("  * Click dup vao file .exe nay de bat Setup Wizard cai dat:")
+        print("      + Tu dong giai nen vao thu muc he thong.")
+        print("      + Tao bieu tuong Luga Assist tren Desktop.")
+        print("      + Tao menu trong Start Menu va loi tat den Chrome Extension.")
+        print("      + Tich hop trinh Go cai dat (Uninstaller) chuan Windows.")
+    else:
+        print(f"  * Luu y: Bo cai dat Setup.exe chua duoc tao do thieu Inno Setup.")
+        print(f"  * Ban co the dung ban chay truc tiep: {dist_app_dir / 'Luga Assist.exe'}")
+
+    print("\n  Cac file ho tro khac trong dist/:")
+    print(f"    - Portable ZIP: {win_zip}")
+    print(f"    - Extension ZIP: {ext_zip}")
+    print("=" * 68 + "\n")
 
 if __name__ == "__main__":
     main()

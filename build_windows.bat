@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 echo ============================================================
-echo   LUGA ASSIST - WINDOWS STANDALONE PACKAGING ^& RELEASE
+echo   LUGA ASSIST - BUILD STANDALONE SETUP INSTALLER (SETUP.EXE)
 echo ============================================================
 
 set PYTHON_CMD=
