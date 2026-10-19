@@ -1,5 +1,5 @@
 """
-Luga Assist - Standalone Windows Build & Release Tool.
+Luga Assist - Fast Standalone Windows Build & Release Tool.
 Packages Luga Assist into a windowless standalone executable, compiles
 the Windows Setup Wizard (Luga-Assist-Setup.exe) via Inno Setup, packages
 the Chrome Extension, and creates release archives.
@@ -9,9 +9,33 @@ import os
 import shutil
 import zipfile
 import subprocess
+import time
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+def disable_windows_quickedit():
+    """
+    Disables QuickEdit mode in Windows Command Prompt.
+    When QuickEdit mode is enabled (default in Windows cmd.exe), clicking
+    inside the terminal window highlights text and pauses/freezes the entire
+    process (blocking stdout) until the user presses Enter or Esc.
+    """
+    if os.name == "nt":
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            STD_INPUT_HANDLE = -10
+            hStdin = kernel32.GetStdHandle(STD_INPUT_HANDLE)
+            mode = ctypes.c_ulong()
+            if kernel32.GetConsoleMode(hStdin, ctypes.byref(mode)):
+                ENABLE_QUICK_EDIT_MODE = 0x0040
+                ENABLE_EXTENDED_FLAGS = 0x0080
+                new_mode = (mode.value & ~ENABLE_QUICK_EDIT_MODE) | ENABLE_EXTENDED_FLAGS
+                kernel32.SetConsoleMode(hStdin, new_mode)
+                print("--> [Console] Windows QuickEdit mode disabled (no more freezing on click).")
+        except Exception:
+            pass
 
 def print_banner(text: str):
     print("\n" + "=" * 68)
@@ -20,10 +44,13 @@ def print_banner(text: str):
 
 def run_cmd(cmd_list, description: str):
     print(f"--> [Build] {description}...")
+    t0 = time.time()
     res = subprocess.run(cmd_list, cwd=str(BASE_DIR))
     if res.returncode != 0:
         print(f"\n[X] Error during: {description} (Exit code: {res.returncode})")
         sys.exit(res.returncode)
+    elapsed = time.time() - t0
+    print(f"    Done ({elapsed:.1f}s)")
 
 def zip_directory(source_dir: Path, zip_file_path: Path):
     print(f"--> [Build] Creating archive: {zip_file_path.name}...")
@@ -51,7 +78,6 @@ def ensure_app_icon():
 def check_python_environment():
     # 1. Detect 32-bit Python on modern Windows
     if sys.maxsize <= 2**32:
-        # Check if 64-bit Python is already installed via 'py' launcher
         for ver in ["-3.11-64", "-3.12-64", "-3.13-64", "-3-64"]:
             try:
                 check = subprocess.run(
@@ -70,16 +96,14 @@ def check_python_environment():
             except Exception:
                 pass
 
-        # If no 64-bit Python found, print detailed explanation
         print_banner("WARNING: 32-BIT PYTHON DETECTED (win32)")
         print(f"Current Python executable: {sys.executable}\n")
         print("Reason for 'Microsoft Visual C++ 14.0 or greater is required':")
-        print("  - Essential dependencies (like 'curl-cffi' for Gemini API) only provide")
+        print("  - Essential dependencies (like 'curl-cffi') only provide")
         print("    pre-built binary wheels for 64-bit Python (win_amd64).")
-        print("  - Running under 32-bit Python forces pip to compile from C++ source,")
-        print("    which fails without Microsoft Visual C++ Build Tools installed.\n")
+        print("  - Running under 32-bit forces pip to compile from C++ source.\n")
         print("RECOMMENDED SOLUTION (No C++ compiler needed):")
-        print("  1. Download and install official 64-bit Python (Python 3.11 64-bit):")
+        print("  1. Download official 64-bit Python (Python 3.11 64-bit):")
         print("     https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe")
         print("  2. During installation, make sure to check: [X] 'Add python.exe to PATH'")
         print("  3. Re-run 'build_windows.bat'!\n")
@@ -88,7 +112,6 @@ def check_python_environment():
 
     # 2. Detect experimental/unsupported Python versions (>= 3.14, e.g. 3.15 alpha)
     if sys.version_info >= (3, 14):
-        # Try to find a stable 64-bit Python (3.11, 3.12, 3.13) via py launcher
         for ver in ["-3.11-64", "-3.12-64", "-3.13-64", "-3.11", "-3.12", "-3.13"]:
             try:
                 check = subprocess.run(
@@ -99,7 +122,7 @@ def check_python_environment():
                 if check.returncode == 0:
                     py_stable = subprocess.run(["py", ver, "-c", "import sys; print(sys.executable)"], capture_output=True, text=True).stdout.strip()
                     if py_stable:
-                        print(f"[Notice] Current Python {sys.version.split()[0]} is an experimental pre-release version.")
+                        print(f"[Notice] Current Python {sys.version.split()[0]} is experimental.")
                         print(f"[Auto-Switch] Found stable 64-bit Python: {py_stable}")
                         print(f"[Auto-Switch] Switching to stable Python to build...\n")
                         res = subprocess.run([py_stable, str(Path(__file__).resolve())] + sys.argv[1:], cwd=str(BASE_DIR))
@@ -110,19 +133,11 @@ def check_python_environment():
         print_banner("WARNING: EXPERIMENTAL PYTHON VERSION DETECTED")
         print(f"Current Python executable: {sys.executable}")
         print(f"Detected version: Python {sys.version.split()[0]} (cp{sys.version_info.major}{sys.version_info.minor})\n")
-        print("Reason for 'Failed building wheel for pydantic-core, orjson, pyyaml':")
-        print("  - Python 3.14+ / 3.15 is an experimental pre-release version.")
-        print("  - Third-party packages (pydantic-core, orjson, pyyaml, etc.) do NOT have")
-        print("    pre-compiled binary wheels (.whl) for Python 3.15 on PyPI yet.")
-        print("  - Therefore, pip tries to compile Rust & C++ code from source, failing")
-        print("    without Microsoft Visual C++ ('link.exe') and Rust build tools.\n")
-        print("RECOMMENDED SOLUTION (No C++ or Rust compilers needed):")
+        print("RECOMMENDED SOLUTION:")
         print("  1. Download official STABLE Python (Python 3.11 64-bit):")
-        print("     Direct link: https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe")
-        print("     (Or Python 3.12 64-bit: https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe)")
-        print("  2. During installation, make sure to check: [X] 'Add python.exe to PATH'")
-        print("  3. (Recommended) Uninstall Python 3.15 from Windows Settings to avoid version confusion.")
-        print("  4. Re-run 'build_windows.bat'. Everything will install in seconds!\n")
+        print("     https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe")
+        print("  2. Check: [X] 'Add python.exe to PATH'")
+        print("  3. Re-run 'build_windows.bat'!\n")
         print("=" * 68)
         sys.exit(1)
 
@@ -200,30 +215,49 @@ def ensure_iscc_compiler() -> str | None:
 
     return None
 
+def check_dependencies():
+    # 1. PyInstaller check
+    try:
+        import PyInstaller
+    except ImportError:
+        run_cmd([sys.executable, "-m", "pip", "install", "pyinstaller"], "Installing PyInstaller")
+
+    # 2. requirements.txt check
+    try:
+        import fastapi, uvicorn, websockets, mss, PIL, edge_tts, pydantic, sounddevice, pynput, numpy
+        print("--> [Build] Required Python packages already verified (fast cache hit).")
+    except ImportError:
+        run_cmd(
+            [sys.executable, "-m", "pip", "install", "--prefer-binary", "--disable-pip-version-check", "-r", "requirements.txt"],
+            "Installing requirements.txt (pre-built wheels)"
+        )
+
 def main():
+    disable_windows_quickedit()
     check_python_environment()
-    print_banner("LUGA ASSIST - WINDOWS STANDALONE PACKAGING & RELEASE")
+    print_banner("LUGA ASSIST - FAST STANDALONE WINDOWS PACKAGING & RELEASE")
     print(f"Working Directory: {BASE_DIR}")
     print(f"Python: {sys.executable}")
 
-    # 1. Ensure dependencies installed
-    run_cmd([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], "Upgrading pip")
-    run_cmd([sys.executable, "-m", "pip", "install", "pyinstaller"], "Installing PyInstaller")
-    run_cmd([sys.executable, "-m", "pip", "install", "--prefer-binary", "-r", "requirements.txt"], "Installing requirements.txt (preferring pre-built wheels)")
+    total_start_time = time.time()
+
+    # 1. Fast dependency check
+    check_dependencies()
 
     # 2. Ensure application icon
     ensure_app_icon()
 
-    # 3. Run PyInstaller
+    # 3. Run PyInstaller (incremental, UPX disabled for maximum speed)
     spec_path = BASE_DIR / "luga_assist_win.spec"
     if not spec_path.exists():
         print(f"[X] Spec file not found: {spec_path}")
         sys.exit(1)
 
-    run_cmd(
-        [sys.executable, "-m", "PyInstaller", "--clean", "-y", str(spec_path)],
-        "Building standalone executable with PyInstaller"
-    )
+    pyinstaller_cmd = [sys.executable, "-m", "PyInstaller", "-y", str(spec_path)]
+    if "--clean" in sys.argv:
+        pyinstaller_cmd.insert(4, "--clean")
+
+    run_cmd(pyinstaller_cmd, "Building standalone executable with PyInstaller (upx=False)")
 
     dist_app_dir = BASE_DIR / "dist" / "Luga Assist"
     if not dist_app_dir.exists():
@@ -252,12 +286,7 @@ def main():
     iscc_bin = ensure_iscc_compiler()
 
     if iscc_bin and iss_file.exists():
-        print(f"--> [Installer] Compiling Windows Setup Wizard via {iscc_bin}...")
-        res = subprocess.run([iscc_bin, str(iss_file)], cwd=str(BASE_DIR))
-        if res.returncode == 0:
-            print(f"--> [Installer] Setup Wizard (Luga-Assist-Setup.exe) created successfully!")
-        else:
-            print(f"--> [Installer] Warning: ISCC compilation returned exit code {res.returncode}")
+        run_cmd([iscc_bin, str(iss_file)], "Compiling Windows Setup Wizard (Luga-Assist-Setup.exe)")
     else:
         print_banner("WARNING: INNO SETUP NOT FOUND")
         print("To generate the Windows Setup Wizard (.exe installer):")
@@ -265,10 +294,7 @@ def main():
         print("  2. Install it, then run 'build_windows.bat' again.")
         print("=" * 68)
 
-    # 7. Create release ZIPs (Extension & Portable App)
-    win_zip = dist_dir / "Luga-Assist-Windows.zip"
-    zip_directory(dist_app_dir, win_zip)
-
+    # 7. Create Chrome Extension release ZIP (fast, < 0.1s)
     ext_zip = dist_dir / "Luga-Assist-Chrome-Extension.zip"
     if ext_src.exists():
         if ext_zip.exists():
@@ -281,9 +307,16 @@ def main():
                     zipf.write(file_path, arcname=str(archive_name))
         print(f"--> [Build] Created: {ext_zip.name}")
 
-    # 8. Print Complete Release Summary
+    # 8. Create Portable ZIP only if requested (--zip)
+    win_zip = None
+    if "--zip" in sys.argv:
+        win_zip = dist_dir / "Luga-Assist-Windows.zip"
+        zip_directory(dist_app_dir, win_zip)
+
+    # 9. Print Complete Release Summary
     installer_exe = dist_dir / "Luga-Assist-Setup.exe"
-    print_banner("BUILD COMPLETED SUCCESSFULLY!")
+    total_elapsed = time.time() - total_start_time
+    print_banner(f"BUILD COMPLETED IN {total_elapsed:.1f}s!")
     if installer_exe.exists():
         mb = installer_exe.stat().st_size / (1024 * 1024)
         print("  🎉 BO CAI DAT CHINH (STANDALONE SETUP WIZARD):")
@@ -299,9 +332,10 @@ def main():
         print(f"  * Luu y: Bo cai dat Setup.exe chua duoc tao do thieu Inno Setup.")
         print(f"  * Ban co the dung ban chay truc tiep: {dist_app_dir / 'Luga Assist.exe'}")
 
-    print("\n  Cac file ho tro khac trong dist/:")
-    print(f"    - Portable ZIP: {win_zip}")
-    print(f"    - Extension ZIP: {ext_zip}")
+    print("\n  Cac file bo tro:")
+    print(f"    - Extension ZIP : {ext_zip}")
+    if win_zip and win_zip.exists():
+        print(f"    - Portable ZIP  : {win_zip}")
     print("=" * 68 + "\n")
 
 if __name__ == "__main__":
