@@ -190,11 +190,13 @@ class AccessibilityManager:
                 "}\n"
                 "[PSCustomObject]@{ window=$title; items=$list } | ConvertTo-Json -Compress\n"
             )
+            flags = 0x08000000 if sys.platform.startswith("win") else 0
             res = subprocess.run(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
                 capture_output=True,
                 text=True,
-                timeout=1.5
+                timeout=1.5,
+                creationflags=flags
             )
             if res.returncode == 0 and res.stdout.strip():
                 data = json.loads(res.stdout.strip())

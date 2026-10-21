@@ -11,6 +11,8 @@ datas = [
 ]
 
 hiddenimports = [
+    "winsound",
+    "wave",
     "tkinter",
     "tkinter.font",
     "tkinter.ttk",

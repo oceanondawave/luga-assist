@@ -103,9 +103,11 @@ class FileAndTerminalManager:
                 f"Get-ChildItem -Path '{target_root}' -Recurse -Filter '*{query_clean}*' "
                 f"-ErrorAction SilentlyContinue | Select-Object -First {limit * 2} -ExpandProperty FullName"
             )
+            flags = 0x08000000 if sys.platform.startswith("win") else 0
             proc = subprocess.run(
                 ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
-                capture_output=True, text=True, timeout=10
+                capture_output=True, text=True, timeout=10,
+                creationflags=flags
             )
             for line in proc.stdout.strip().splitlines():
                 line = line.strip()
@@ -365,9 +367,11 @@ class FileAndTerminalManager:
                         f"[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('{str(p)}', "
                         f"'OnlyErrorDialogs', 'SendToRecycleBin')"
                     )
+                    flags = 0x08000000 if sys.platform.startswith("win") else 0
                     subprocess.run(
                         ["powershell.exe", "-NoProfile", "-Command", ps_cmd],
-                        capture_output=True, check=True
+                        capture_output=True, check=True,
+                        creationflags=flags
                     )
                 except Exception:
                     if p.is_dir():
@@ -437,15 +441,18 @@ class FileAndTerminalManager:
 
         # CASE 2: Background execution with stdout / stderr capture
         try:
+            flags = 0x08000000 if sys.platform.startswith("win") else 0
             if shell_type == "cmd":
                 proc = subprocess.run(
                     ["cmd.exe", "/c", cmd_clean],
-                    cwd=work_dir, capture_output=True, text=True, timeout=timeout
+                    cwd=work_dir, capture_output=True, text=True, timeout=timeout,
+                    creationflags=flags
                 )
             elif sys.platform.startswith("win"):
                 proc = subprocess.run(
                     ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", cmd_clean],
-                    cwd=work_dir, capture_output=True, text=True, timeout=timeout
+                    cwd=work_dir, capture_output=True, text=True, timeout=timeout,
+                    creationflags=flags
                 )
             else:
                 proc = subprocess.run(

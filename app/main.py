@@ -109,12 +109,14 @@ def launch_spotlight_hud() -> Optional[subprocess.Popen]:
         log_file.parent.mkdir(parents=True, exist_ok=True)
         fp = open(log_file, "a", encoding="utf-8")
         
+        flags = 0x08000000 if sys.platform.startswith("win") else 0
         proc = subprocess.Popen(
             cmd,
             cwd=str(BASE_DIR),
             env=env,
             stdout=fp,
-            stderr=fp
+            stderr=fp,
+            creationflags=flags
         )
         print(f"[Lifespan] 🚀 Đã khởi động Cửa sổ Chat Nổi Spotlight HUD (PID: {proc.pid})")
         return proc

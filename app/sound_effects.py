@@ -18,6 +18,11 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
+try:
+    import winsound
+except ImportError:
+    winsound = None
+
 from app.config import TEMP_DIR, ENABLE_PROCESSING_PULSE
 
 class SoundManager:
@@ -121,21 +126,49 @@ class SoundManager:
             wf.writeframes(data)
 
     def _play_file(self, file_path: str, volume: float = 0.5):
-        """Play sound file non-blocking in background on Windows."""
-        try:
+        """Play sound file non-blocking in background without flashing console windows."""
+        path_str = str(file_path)
+        if not os.path.exists(path_str):
+            return
+
+        # 1. Primary on Windows: Windows native WinMM PlaySoundW (Direct in-process, 0 latency, 0 windows)
+        if sys.platform.startswith("win"):
             try:
-                import winsound
-                winsound.PlaySound(file_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
-                return
+                import ctypes
+                # SND_FILENAME = 0x00020000, SND_ASYNC = 0x0001, SND_NODEFAULT = 0x0002
+                res = ctypes.windll.winmm.PlaySoundW(path_str, None, 0x00020000 | 0x0001 | 0x0002)
+                if res != 0:
+                    return
             except Exception:
                 pass
-            subprocess.Popen(
-                ["powershell.exe", "-c", f"(New-Object Media.SoundPlayer '{file_path}').Play()"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-        except Exception:
-            pass
+
+            # 2. Secondary: winsound built-in
+            if winsound is not None:
+                try:
+                    winsound.PlaySound(path_str, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+                    return
+                except Exception:
+                    pass
+
+            # 3. Tertiary: Silent background PowerShell (GUARANTEED CREATE_NO_WINDOW)
+            try:
+                flags = 0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+                subprocess.Popen(
+                    ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", f"(New-Object Media.SoundPlayer '{path_str}').PlaySync()"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=flags
+                )
+            except Exception:
+                pass
+        else:
+            try:
+                if sys.platform == "darwin":
+                    subprocess.Popen(["/usr/bin/afplay", path_str], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    subprocess.Popen(["paplay", path_str], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
 
     def play_start(self):
         """Chime when voice listening is activated (distinct, bright, immediate earcon)."""
