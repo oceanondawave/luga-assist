@@ -286,7 +286,8 @@ def main():
     iscc_bin = ensure_iscc_compiler()
 
     if iscc_bin and iss_file.exists():
-        run_cmd([iscc_bin, str(iss_file)], "Compiling Windows Setup Wizard (Luga-Assist-Setup.exe)")
+        iscc_cmd = [iscc_bin, f"/DAppRootDir={BASE_DIR}", str(iss_file)]
+        run_cmd(iscc_cmd, "Compiling Windows Setup Wizard (Luga-Assist-Setup.exe)")
     else:
         print_banner("WARNING: INNO SETUP NOT FOUND")
         print("To generate the Windows Setup Wizard (.exe installer):")

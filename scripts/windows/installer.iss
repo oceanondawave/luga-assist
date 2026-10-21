@@ -7,6 +7,10 @@
 #define MyAppURL "https://github.com/oceanondawave/luga-assist"
 #define MyAppExeName "Luga Assist.exe"
 
+#ifndef AppRootDir
+  #define AppRootDir "..\.."
+#endif
+
 [Setup]
 AppId={{8B1D4F37-5674-4C4A-9A4B-3D4F5A6B7C8D}
 AppName={#MyAppName}
@@ -18,10 +22,11 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-LicenseFile=LICENSE
-OutputDir=dist
+OutputDir={#AppRootDir}\dist
 OutputBaseFilename=Luga-Assist-Setup
-SetupIconFile=app.ico
+#if FileExists(AppRootDir + "\app.ico")
+SetupIconFile={#AppRootDir}\app.ico
+#endif
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/normal
 SolidCompression=yes
@@ -39,9 +44,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "autostart"; Description: "Khoi dong cung Windows (Run on startup)"; GroupDescription: "Cau hinh khoi dong:"; Flags: unchecked
 
 [Files]
-Source: "dist\Luga Assist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#AppRootDir}\dist\Luga Assist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#AppRootDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#AppRootDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

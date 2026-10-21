@@ -1,6 +1,6 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+pushd "%~dp0"
 
 echo ============================================================
 echo   LUGA ASSIST - BUILD STANDALONE SETUP INSTALLER (SETUP.EXE)
@@ -41,9 +41,11 @@ if "%PYTHON_CMD%"=="" (
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [ERROR] Build failed with exit code %ERRORLEVEL%.
+    popd
     pause
     exit /b %ERRORLEVEL%
 )
 
 echo.
+popd
 pause
