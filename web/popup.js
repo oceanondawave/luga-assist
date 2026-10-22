@@ -1,5 +1,6 @@
 /**
  * Luga Assist - Mini Floating Popup Logic
+ * Full accessibility & thinking level support
  */
 document.addEventListener("DOMContentLoaded", () => {
   const chatThread = document.getElementById("popupChatThread");
@@ -12,9 +13,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnPopupMode = document.getElementById("btnPopupMode");
   const popupModeLabel = document.getElementById("popupModeLabel");
   const popupStatusDot = document.getElementById("popupStatusDot");
+  const popupThinkingLevel = document.getElementById("popupThinkingLevel");
+  const btnPopupClear = document.getElementById("btnPopupClear");
 
   let ws = null;
   let currentMode = "control";
+  let currentThinkingLevel = "medium";
   let recognition = null;
   let isListening = false;
 
@@ -23,18 +27,93 @@ document.addEventListener("DOMContentLoaded", () => {
     chatInput.focus();
   }
 
-  // 1. WebSocket
+  // 1. Thinking Level Management
+  function setThinkingLevelUI(level) {
+    const lvl = (level || "medium").toLowerCase();
+    currentThinkingLevel = ["low", "medium", "high"].includes(lvl) ? lvl : "medium";
+    if (popupThinkingLevel) {
+      popupThinkingLevel.value = currentThinkingLevel;
+      const labelMap = {
+        low: "Mức độ suy nghĩ: Thấp (Nhanh)",
+        medium: "Mức độ suy nghĩ: Vừa (Mặc định)",
+        high: "Mức độ suy nghĩ: Sâu (Chi tiết)"
+      };
+      popupThinkingLevel.setAttribute("aria-label", labelMap[currentThinkingLevel] || "Mức độ suy nghĩ AI");
+    }
+    try {
+      localStorage.setItem("luga_thinking_level", currentThinkingLevel);
+    } catch (e) {}
+  }
+
+  async function fetchThinkingLevel() {
+    try {
+      const res = await fetch("/api/thinking_level");
+      const data = await res.json();
+      if (data && data.thinking_level) {
+        setThinkingLevelUI(data.thinking_level);
+        return;
+      }
+    } catch (e) {}
+    // Fallback to local storage or default 'medium'
+    const saved = localStorage.getItem("luga_thinking_level") || "medium";
+    setThinkingLevelUI(saved);
+  }
+
+  if (popupThinkingLevel) {
+    popupThinkingLevel.addEventListener("change", async (e) => {
+      const newLvl = e.target.value;
+      setThinkingLevelUI(newLvl);
+      try {
+        await fetch("/api/thinking_level", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ thinking_level: newLvl })
+        });
+      } catch (err) {
+        console.warn("[Popup] Could not sync thinking level:", err);
+      }
+    });
+  }
+
+  // 2. Clear Chat
+  if (btnPopupClear) {
+    btnPopupClear.addEventListener("click", async () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "CLEAR_CHAT" }));
+      }
+      try {
+        await fetch("/api/clear_chat", { method: "POST" });
+      } catch (e) {}
+      if (chatThread) {
+        chatThread.innerHTML = `
+          <div class="popup-bubble ai" role="article" aria-label="Phản hồi từ Luga Assist">
+            Đã xóa sạch lịch sử hội thoại. Bạn có thể nhập câu lệnh mới!
+          </div>
+        `;
+      }
+    });
+  }
+
+  // 3. WebSocket Connection
   function connectWebSocket() {
     const loc = window.location;
     const wsUrl = `ws://${loc.hostname || "127.0.0.1"}:${loc.port || "8000"}/ws/webui`;
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      popupStatusDot.style.background = "#10b981";
+      if (popupStatusDot) {
+        popupStatusDot.style.background = "#10b981";
+        popupStatusDot.setAttribute("title", "Máy chủ Luga đã kết nối");
+        popupStatusDot.setAttribute("aria-label", "Trạng thái: Đã kết nối với máy chủ Luga");
+      }
     };
 
     ws.onclose = () => {
-      popupStatusDot.style.background = "#ef4444";
+      if (popupStatusDot) {
+        popupStatusDot.style.background = "#ef4444";
+        popupStatusDot.setAttribute("title", "Mất kết nối máy chủ, đang thử lại...");
+        popupStatusDot.setAttribute("aria-label", "Trạng thái: Mất kết nối, đang tự động kết nối lại");
+      }
       setTimeout(connectWebSocket, 2000);
     };
 
@@ -51,6 +130,9 @@ document.addEventListener("DOMContentLoaded", () => {
       updateMode(msg.mode);
     } else if (msg.type === "STATUS_UPDATE") {
       if (msg.mode) updateMode(msg.mode);
+      if (msg.thinking_level) setThinkingLevelUI(msg.thinking_level);
+    } else if (msg.type === "THINKING_LEVEL_CHANGED") {
+      if (msg.thinking_level) setThinkingLevelUI(msg.thinking_level);
     } else if (msg.type === "ACTION_PROGRESS") {
       chatThinking.style.display = "flex";
       chatThinkingText.innerText = msg.message || "Đang phân tích màn hình...";
@@ -62,12 +144,23 @@ document.addEventListener("DOMContentLoaded", () => {
     } else if (msg.type === "ERROR") {
       chatThinking.style.display = "none";
       appendBubble("ai", `⚠️ Lỗi: ${msg.message}`);
+    } else if (msg.type === "CHAT_CLEARED") {
+      if (chatThread) {
+        chatThread.innerHTML = `
+          <div class="popup-bubble ai" role="article" aria-label="Phản hồi từ Luga Assist">
+            Đã xóa sạch lịch sử hội thoại.
+          </div>
+        `;
+      }
     }
   }
 
   function appendBubble(sender, text) {
     const bubble = document.createElement("div");
     bubble.className = `popup-bubble ${sender}`;
+    bubble.setAttribute("role", "article");
+    const label = sender === "user" ? `Tin nhắn của bạn: ${text}` : `Phản hồi từ Luga Assist: ${text}`;
+    bubble.setAttribute("aria-label", label);
     bubble.innerText = text;
     chatThread.appendChild(bubble);
     chatThread.scrollTop = chatThread.scrollHeight;
@@ -78,9 +171,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if (currentMode === "chat") {
       popupModeLabel.innerText = "💬 Trò chuyện AI";
       popupModeLabel.style.color = "#c084fc";
+      if (btnPopupMode) {
+        btnPopupMode.setAttribute("aria-label", "Chế độ hiện tại: Trò chuyện AI. Nhấn để chuyển sang Điều khiển PC");
+      }
     } else {
       popupModeLabel.innerText = "🎮 Điều khiển PC";
       popupModeLabel.style.color = "#38bdf8";
+      if (btnPopupMode) {
+        btnPopupMode.setAttribute("aria-label", "Chế độ hiện tại: Điều khiển PC. Nhấn để chuyển sang Trò chuyện AI");
+      }
     }
   }
 
@@ -97,7 +196,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {}
   }
 
-  // 2. Send Command
+  // 4. Send Command with Thinking Level
   async function sendCommand(text) {
     text = (text || "").trim();
     if (!text) return;
@@ -108,12 +207,17 @@ document.addEventListener("DOMContentLoaded", () => {
     chatThinkingText.innerText = "Luga đang xử lý câu lệnh...";
 
     const speak = chkTTS ? chkTTS.checked : true;
+    const thinkingLevel = (popupThinkingLevel ? popupThinkingLevel.value : currentThinkingLevel) || "medium";
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, speak: speak })
+        body: JSON.stringify({
+          message: text,
+          speak: speak,
+          thinking_level: thinkingLevel
+        })
       });
       const data = await res.json();
       chatThinking.style.display = "none";
@@ -125,7 +229,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // 3. Web Speech API for Mic
+  // 5. Web Speech API for Mic
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (SpeechRecognition) {
     recognition = new SpeechRecognition();
@@ -136,7 +240,9 @@ document.addEventListener("DOMContentLoaded", () => {
     recognition.onstart = () => {
       isListening = true;
       btnMic.classList.add("listening");
-      chatInput.placeholder = "Đang lắng nghe...";
+      btnMic.setAttribute("aria-pressed", "true");
+      btnMic.setAttribute("aria-label", "Đang ghi âm giọng nói... Nhấn để dừng");
+      chatInput.placeholder = "Đang lắng nghe câu lệnh...";
     };
 
     recognition.onresult = (e) => {
@@ -149,6 +255,8 @@ document.addEventListener("DOMContentLoaded", () => {
     recognition.onend = () => {
       isListening = false;
       btnMic.classList.remove("listening");
+      btnMic.setAttribute("aria-pressed", "false");
+      btnMic.setAttribute("aria-label", "Bật micro để ra lệnh bằng giọng nói (F8)");
       chatInput.placeholder = "Nhập lệnh hoặc câu hỏi (Enter để gửi)...";
     };
 
@@ -160,10 +268,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   } else {
-    if (btnMic) btnMic.style.display = "none";
+    if (btnMic) {
+      btnMic.style.display = "none";
+    }
   }
 
-  // 4. Form Submit
+  // 6. Form Submit & Key Controls
   chatForm.addEventListener("submit", (e) => {
     e.preventDefault();
     sendCommand(chatInput.value);
@@ -173,7 +283,7 @@ document.addEventListener("DOMContentLoaded", () => {
     btnPopupMode.addEventListener("click", toggleMode);
   }
 
-  // Esc key closes popup window if opened via window.open
+  // Esc key closes popup window if opened as secondary window
   window.addEventListener("keydown", (e) => {
     if (e.code === "Escape") {
       window.close();
@@ -181,5 +291,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Init
+  fetchThinkingLevel();
   connectWebSocket();
 });

@@ -49,6 +49,7 @@ from app.config import (
     PORT,
     WEB_DIR,
     DEFAULT_TTS_VOICE,
+    DEFAULT_THINKING_LEVEL,
     PID_FILE,
 )
 from app.logger import setup_logging, get_logger, read_recent_logs, clear_logs
@@ -178,7 +179,7 @@ async def lifespan(app: FastAPI):
     def handle_native_voice_command(cmd_text: str):
         print(f"\n[Global Handler] Đã nhận lệnh từ Micro: \"{cmd_text}\"")
         asyncio.run_coroutine_threadsafe(
-            process_user_command(cmd_text, DEFAULT_TTS_VOICE), loop
+            process_user_command(cmd_text, DEFAULT_TTS_VOICE, thinking_level=current_thinking_level), loop
         )
 
     def handle_native_mode_toggle():
@@ -289,6 +290,7 @@ class ConnectionHub:
             "extension_connected": ext_connected,
             "gemini_ready": gemini_service.is_ready or ext_connected,
             "mode": current_mode,
+            "thinking_level": current_thinking_level,
         }
         dead_clients = []
         for client in self.webui_clients:
@@ -397,10 +399,33 @@ async def api_set_mode(payload: SetModePayload):
     mode = await set_mode(payload.mode, announce=payload.announce if payload.announce is not None else True)
     return {"status": "ok", "mode": mode}
 
+current_thinking_level: str = DEFAULT_THINKING_LEVEL
+
+class ThinkingLevelPayload(BaseModel):
+    thinking_level: str
+
+@app.get("/api/thinking_level")
+async def api_get_thinking_level():
+    return {"status": "ok", "thinking_level": current_thinking_level}
+
+@app.post("/api/thinking_level")
+async def api_set_thinking_level(payload: ThinkingLevelPayload):
+    global current_thinking_level
+    lvl = (payload.thinking_level or "").strip().lower()
+    if lvl not in ("low", "medium", "high"):
+        lvl = "medium"
+    current_thinking_level = lvl
+    await hub.broadcast_webui({
+        "type": "THINKING_LEVEL_CHANGED",
+        "thinking_level": current_thinking_level
+    })
+    return {"status": "ok", "thinking_level": current_thinking_level}
+
 class CommandPayload(BaseModel):
     command: str
     voice: Optional[str] = DEFAULT_TTS_VOICE
     speak: Optional[bool] = True
+    thinking_level: Optional[str] = None
 
 @app.post("/api/command")
 async def api_command(payload: CommandPayload):
@@ -411,9 +436,16 @@ async def api_command(payload: CommandPayload):
     res = await process_user_command(
         cmd,
         voice=payload.voice or DEFAULT_TTS_VOICE,
-        speak=payload.speak if payload.speak is not None else True
+        speak=payload.speak if payload.speak is not None else True,
+        thinking_level=payload.thinking_level or current_thinking_level
     )
     return {"status": "ok", **res}
+
+class ChatPayload(BaseModel):
+    message: str
+    voice: Optional[str] = DEFAULT_TTS_VOICE
+    speak: Optional[bool] = True
+    thinking_level: Optional[str] = None
 
 @app.post("/api/chat")
 async def api_chat(payload: ChatPayload):
@@ -424,7 +456,8 @@ async def api_chat(payload: ChatPayload):
     res = await process_user_command(
         cmd,
         voice=payload.voice or DEFAULT_TTS_VOICE,
-        speak=payload.speak if payload.speak is not None else True
+        speak=payload.speak if payload.speak is not None else True,
+        thinking_level=payload.thinking_level or current_thinking_level
     )
     if not isinstance(res, dict):
         res = {"success": False, "speech": "Không nhận được phản hồi từ hệ thống."}
@@ -775,6 +808,7 @@ async def websocket_webui(ws: WebSocket):
                 command = (data.get("command") or data.get("message") or "").strip()
                 voice = data.get("voice", DEFAULT_TTS_VOICE)
                 speak = data.get("speak", True)
+                cmd_thinking_level = data.get("thinking_level") or current_thinking_level
                 if command:
                     # Echo command to all WebUI clients so it appears in the chat thread
                     await hub.broadcast_webui({
@@ -782,7 +816,21 @@ async def websocket_webui(ws: WebSocket):
                         "command": command,
                     })
                     # Run command processing asynchronously
-                    asyncio.create_task(process_user_command(command, voice=voice, speak=speak))
+                    asyncio.create_task(process_user_command(
+                        command,
+                        voice=voice,
+                        speak=speak,
+                        thinking_level=cmd_thinking_level
+                    ))
+
+            elif msg_type == "SET_THINKING_LEVEL":
+                lvl = (data.get("thinking_level") or "").strip().lower()
+                if lvl in ("low", "medium", "high"):
+                    current_thinking_level = lvl
+                    await hub.broadcast_webui({
+                        "type": "THINKING_LEVEL_CHANGED",
+                        "thinking_level": current_thinking_level
+                    })
 
             elif msg_type == "CLEAR_CHAT":
                 gemini_service.reset_conversation()
@@ -828,7 +876,12 @@ MAX_AUTONOMOUS_STEPS = 5
 # Concurrency Lock: ensures only one autonomous goal runs at any given time
 pipeline_lock = asyncio.Lock()
 
-async def process_user_command(user_command: str, voice: str = DEFAULT_TTS_VOICE, speak: bool = True) -> Dict[str, Any]:
+async def process_user_command(
+    user_command: str,
+    voice: str = DEFAULT_TTS_VOICE,
+    speak: bool = True,
+    thinking_level: Optional[str] = None
+) -> Dict[str, Any]:
     user_cmd_lower = user_command.lower().strip()
 
     # Direct fast-path: voice control for processing sound
@@ -975,10 +1028,21 @@ async def process_user_command(user_command: str, voice: str = DEFAULT_TTS_VOICE
         return {"success": False, "speech": msg, "action_result": {"success": False, "action": "busy"}}
 
     async with pipeline_lock:
-        return await _execute_pipeline(user_command, voice, speak=speak)
+        return await _execute_pipeline(user_command, voice, speak=speak, thinking_level=thinking_level)
 
-async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, speak: bool = True) -> Dict[str, Any]:
+async def _execute_pipeline(
+    user_command: str,
+    voice: str = DEFAULT_TTS_VOICE,
+    speak: bool = True,
+    thinking_level: Optional[str] = None
+) -> Dict[str, Any]:
     print(f"\n[Pipeline] 🎯 Nhận mục tiêu mới: '{user_command}'")
+    # Determine effective thinking level for this pipeline run
+    actual_thinking_level = (thinking_level or current_thinking_level or "medium").strip().lower()
+    if actual_thinking_level not in ("low", "medium", "high"):
+        actual_thinking_level = "medium"
+    print(f"[Pipeline] 🧠 Thinking Level: {actual_thinking_level.upper()}")
+
     # Reset abort event for fresh goal execution
     pipeline_abort_event.clear()
     # Start pulsing audio feedback for the user (only if enabled)
@@ -1032,14 +1096,19 @@ async def _execute_pipeline(user_command: str, voice: str = DEFAULT_TTS_VOICE, s
         ui_context = accessibility_manager.get_ui_grounding_context()
 
         if is_first_step:
-            prompt = build_gemini_prompt(user_command, ui_context=ui_context)
+            prompt = build_gemini_prompt(
+                user_command,
+                ui_context=ui_context,
+                thinking_level=actual_thinking_level
+            )
         else:
             # Verification Prompt: inspect screen after previous action
             prompt = build_verification_prompt(
                 user_command=user_command,
                 step=step,
                 previous_actions_desc=last_actions_summary,
-                ui_context=ui_context
+                ui_context=ui_context,
+                thinking_level=actual_thinking_level
             )
 
         raw_response = ""

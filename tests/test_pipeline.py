@@ -848,6 +848,55 @@ def test_cancellation_and_emergency_stop():
 
     print("test_cancellation_and_emergency_stop: PASSED")
 
+def test_thinking_level_configuration_and_prompts():
+    import app.main as main_mod
+    from app.config import DEFAULT_THINKING_LEVEL
+    from app.prompt_templates import (
+        get_thinking_prompt_directive,
+        build_gemini_prompt,
+        build_verification_prompt
+    )
+
+    # 1. Verify default thinking level is 'medium'
+    assert DEFAULT_THINKING_LEVEL == "medium"
+    assert main_mod.current_thinking_level in ("low", "medium", "high")
+
+    # 2. Verify prompt directives for each level
+    low_dir = get_thinking_prompt_directive("low")
+    assert "CHẾ ĐỘ SUY NGHĨ: THẤP / LOW" in low_dir
+    assert "tốc độ tối đa" in low_dir
+
+    med_dir = get_thinking_prompt_directive("medium")
+    assert "CHẾ ĐỘ SUY NGHĨ: VỪA / MEDIUM (MẶC ĐỊNH)" in med_dir
+    assert "Cân bằng tối ưu" in med_dir
+
+    high_dir = get_thinking_prompt_directive("high")
+    assert "CHẾ ĐỘ SUY NGHĨ: CAO / HIGH" in high_dir
+    assert "Suy nghĩ sâu sắc" in high_dir
+
+    # 3. Verify thinking directives are baked into Step 1 & verification prompts
+    p_high = build_gemini_prompt("Kiểm tra thị trường", thinking_level="high")
+    assert "CHẾ ĐỘ SUY NGHĨ: CAO / HIGH" in p_high
+
+    p_low = build_verification_prompt("Gửi email", step=2, previous_actions_desc="click", thinking_level="low")
+    assert "CHẾ ĐỘ SUY NGHĨ: THẤP / LOW" in p_low
+
+    # 4. Test REST endpoints for thinking level
+    set_res = asyncio.run(main_mod.api_set_thinking_level(main_mod.ThinkingLevelPayload(thinking_level="high")))
+    assert set_res["status"] == "ok"
+    assert set_res["thinking_level"] == "high"
+    assert main_mod.current_thinking_level == "high"
+
+    get_res = asyncio.run(main_mod.api_get_thinking_level())
+    assert get_res["status"] == "ok"
+    assert get_res["thinking_level"] == "high"
+
+    # Reset back to medium
+    asyncio.run(main_mod.api_set_thinking_level(main_mod.ThinkingLevelPayload(thinking_level="medium")))
+    assert main_mod.current_thinking_level == "medium"
+
+    print("test_thinking_level_configuration_and_prompts: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -877,6 +926,7 @@ if __name__ == "__main__":
     test_click_safety_and_coordinates()
     test_accessibility_permissions_and_hotkey_supervisor()
     test_cancellation_and_emergency_stop()
+    test_thinking_level_configuration_and_prompts()
     print("\n🎉 ALL TESTS (INCLUDING EMERGENCY STOP & CANCELLATION) PASSED SUCCESSFULLY!")
 
 

@@ -173,19 +173,30 @@ YÊU CẦU PHẢN HỒI:
 ```
 """
 
-def build_gemini_prompt(user_command: str, ui_context: str = "") -> str:
+def get_thinking_prompt_directive(thinking_level: str = "medium") -> str:
+    lvl = (thinking_level or "medium").strip().lower()
+    if lvl == "low":
+        return "\n[CHẾ ĐỘ SUY NGHĨ: THẤP / LOW]: Ưu tiên tốc độ tối đa, xử lý trực diện, phản hồi thật ngắn gọn.\n"
+    elif lvl == "high":
+        return "\n[CHẾ ĐỘ SUY NGHĨ: CAO / HIGH]: Suy nghĩ sâu sắc từng bước (deep reasoning), phân tích toàn diện bố cục và chi tiết các phần tử trên màn hình, rà soát cẩn thận trước khi ra quyết định.\n"
+    else:
+        return "\n[CHẾ ĐỘ SUY NGHĨ: VỪA / MEDIUM (MẶC ĐỊNH)]: Cân bằng tối ưu giữa tốc độ và độ chính xác, phân tích hợp lý và thực hiện đúng mục tiêu.\n"
+
+def build_gemini_prompt(user_command: str, ui_context: str = "", thinking_level: str = "medium") -> str:
     """Build initial planning prompt for Step 1"""
     context_block = f"\n{ui_context}\n" if ui_context else ""
-    return f"{SYSTEM_GROUNDING_PROMPT}{context_block}\nMục tiêu của người dùng:\n\"{user_command}\"\n"
+    thinking_block = get_thinking_prompt_directive(thinking_level)
+    return f"{SYSTEM_GROUNDING_PROMPT}{thinking_block}{context_block}\nMục tiêu của người dùng:\n\"{user_command}\"\n"
 
-def build_verification_prompt(user_command: str, step: int, previous_actions_desc: str, ui_context: str = "") -> str:
+def build_verification_prompt(user_command: str, step: int, previous_actions_desc: str, ui_context: str = "", thinking_level: str = "medium") -> str:
     """
     Build outcome verification prompt for Step > 1.
     Forces the agent to inspect the new screen, verify whether the previous action succeeded,
     and self-correct instead of hallucinating completion.
     """
     context_block = f"\n{ui_context}\n" if ui_context else ""
-    return f"""{SYSTEM_GROUNDING_PROMPT}{context_block}
+    thinking_block = get_thinking_prompt_directive(thinking_level)
+    return f"""{SYSTEM_GROUNDING_PROMPT}{thinking_block}{context_block}
 ======================================================================
 BƯỚC {step}: KIỂM TRA KẾT QUẢ THỰC TẾ & RA QUYẾT ĐỊNH (OUTCOME VERIFICATION)
 ======================================================================

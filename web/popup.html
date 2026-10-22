@@ -6,7 +6,19 @@
   <title>Luga Assist - Cửa sổ Chat Nổi</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    /* Compact Popup-specific styles */
+    /* Accessibility & Compact Popup-specific styles */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
     body {
       margin: 0;
       padding: 0;
@@ -27,6 +39,7 @@
       align-items: center;
       border-bottom: 1px solid #334155;
       flex-shrink: 0;
+      gap: 8px;
     }
 
     .popup-title {
@@ -36,12 +49,14 @@
       display: flex;
       align-items: center;
       gap: 6px;
+      margin: 0;
     }
 
     .popup-tools {
       display: flex;
       align-items: center;
       gap: 8px;
+      flex-wrap: wrap;
     }
 
     .popup-badge {
@@ -52,11 +67,43 @@
       border: 1px solid #334155;
       color: #94a3b8;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s ease;
     }
 
-    .popup-badge:hover {
+    .popup-badge:hover, .popup-badge:focus-visible {
       border-color: #38bdf8;
       color: #38bdf8;
+      outline: none;
+    }
+
+    .popup-select {
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #38bdf8;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 8px;
+      padding: 3px 6px;
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.2s ease;
+    }
+
+    .popup-select:focus-visible, .popup-select:hover {
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+    }
+
+    .popup-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      display: inline-block;
+      flex-shrink: 0;
     }
 
     .popup-chat-thread {
@@ -127,11 +174,12 @@
       border-radius: 8px;
       font-size: 13px;
       outline: none;
+      transition: all 0.2s ease;
     }
 
-    .popup-input:focus {
+    .popup-input:focus-visible {
       border-color: #38bdf8;
-      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.3);
     }
 
     .popup-btn-mic {
@@ -146,11 +194,18 @@
       align-items: center;
       justify-content: center;
       font-size: 16px;
+      transition: all 0.2s ease;
+    }
+
+    .popup-btn-mic:hover, .popup-btn-mic:focus-visible {
+      border-color: #38bdf8;
+      color: #38bdf8;
     }
 
     .popup-btn-mic.listening {
       background: #ef4444;
       border-color: #ef4444;
+      color: #ffffff;
       animation: pulse 1.2s infinite;
     }
 
@@ -163,10 +218,12 @@
       font-size: 13px;
       font-weight: 700;
       cursor: pointer;
+      transition: background 0.2s ease;
     }
 
-    .popup-btn-send:hover {
+    .popup-btn-send:hover, .popup-btn-send:focus-visible {
       background: #0369a1;
+      outline: 2px solid #38bdf8;
     }
 
     .popup-sub-row {
@@ -176,61 +233,178 @@
       margin-top: 8px;
       font-size: 11px;
       color: #64748b;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .popup-tts-label {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: #94a3b8;
+    }
+
+    .popup-tts-label:hover {
+      color: #f8fafc;
+    }
+
+    .popup-clear-btn {
+      background: transparent;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .popup-clear-btn:hover, .popup-clear-btn:focus-visible {
+      color: #f87171;
+      border-color: #f87171;
+    }
+
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 2px solid #38bdf8;
+      outline-offset: 1px;
     }
   </style>
 </head>
 <body>
-  <div class="popup-header">
-    <div class="popup-title">
-      <span>🎙️</span> Luga Assist Mini
-    </div>
-    <div class="popup-tools">
-      <button id="btnPopupMode" class="popup-badge" title="Chuyển chế độ hoạt động">
+  <!-- Header Landmark with full accessibility attributes -->
+  <header class="popup-header" role="banner" aria-label="Thanh công cụ Luga Assist Mini">
+    <h1 class="popup-title">
+      <span aria-hidden="true">🎙️</span> Luga Assist Mini
+    </h1>
+    <div class="popup-tools" role="toolbar" aria-label="Cài đặt nhanh">
+      <!-- Thinking Level Dropdown (Default Medium) -->
+      <div class="popup-thinking-level-wrapper">
+        <label for="popupThinkingLevel" class="sr-only">Mức độ suy nghĩ AI:</label>
+        <select
+          id="popupThinkingLevel"
+          class="popup-select"
+          aria-label="Mức độ suy nghĩ AI (Thinking Level)"
+          title="Chọn mức độ suy nghĩ AI: Thấp (Nhanh), Vừa (Mặc định), hoặc Sâu (Chi tiết)"
+        >
+          <option value="low">⚡ Thấp (Nhanh)</option>
+          <option value="medium" selected>🧠 Vừa (Mặc định)</option>
+          <option value="high">🔍 Sâu (Chi tiết)</option>
+        </select>
+      </div>
+
+      <!-- Mode Switch Badge Button -->
+      <button
+        id="btnPopupMode"
+        class="popup-badge"
+        role="button"
+        aria-label="Chuyển chế độ hoạt động (Hiện tại: Điều khiển PC)"
+        title="Nhấn để chuyển giữa Điều khiển PC và Trò chuyện AI"
+        tabindex="0"
+      >
         <span id="popupModeLabel">🎮 Điều khiển PC</span>
       </button>
-      <span id="popupStatusDot" style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block;" title="Đang kết nối"></span>
-    </div>
-  </div>
 
-  <div class="popup-chat-thread" id="popupChatThread" role="log" aria-live="polite">
-    <div class="popup-bubble ai">
+      <!-- Connection Status Indicator -->
+      <div
+        id="popupStatusDot"
+        class="popup-status-dot"
+        role="status"
+        aria-label="Trạng thái kết nối máy chủ: Đang kết nối"
+        title="Đang kết nối"
+      ></div>
+    </div>
+  </header>
+
+  <!-- Chat Log Landmark -->
+  <main
+    class="popup-chat-thread"
+    id="popupChatThread"
+    role="log"
+    aria-live="polite"
+    aria-label="Lịch sử tin nhắn và câu lệnh"
+  >
+    <div class="popup-bubble ai" role="article" aria-label="Phản hồi từ Luga Assist">
       Xin chào! Đây là <strong>Cửa sổ Chat Mini</strong>. Cửa sổ này có kích thước nhỏ gọn để <strong>không che màn hình máy tính của bạn</strong>.
       <br><br>
       👉 Bạn có thể kéo cửa sổ này sang góc màn hình, hoặc nhấn <strong>F7</strong> để bật/tắt Spotlight HUD bất cứ lúc nào!
     </div>
-  </div>
+  </main>
 
-  <div class="popup-thinking" id="popupThinking" style="display: none;">
-    <span>⏳</span>
+  <!-- Live Thinking Progress Indicator -->
+  <div
+    class="popup-thinking"
+    id="popupThinking"
+    role="status"
+    aria-live="polite"
+    aria-label="Trạng thái phân tích màn hình"
+    style="display: none;"
+  >
+    <span aria-hidden="true">⏳</span>
     <span id="popupThinkingText">Luga đang phân tích màn hình...</span>
   </div>
 
-  <div class="popup-composer">
-    <form id="popupChatForm" class="popup-input-row">
+  <!-- Message Composer -->
+  <footer class="popup-composer" role="contentinfo" aria-label="Khung gửi câu lệnh">
+    <form id="popupChatForm" class="popup-input-row" role="search" aria-label="Soạn và gửi câu lệnh">
+      <label for="popupChatInput" class="sr-only">Nhập lệnh điều khiển máy tính hoặc câu hỏi</label>
       <input
         type="text"
         id="popupChatInput"
         class="popup-input"
         placeholder="Nhập lệnh hoặc câu hỏi (Enter để gửi)..."
         autocomplete="off"
+        aria-label="Nhập câu lệnh hoặc câu hỏi điều khiển máy tính"
+        aria-required="true"
         autofocus
       >
-      <button type="button" id="btnPopupMic" class="popup-btn-mic" title="Nói qua Micro">
-        🎙️
+      <button
+        type="button"
+        id="btnPopupMic"
+        class="popup-btn-mic"
+        aria-label="Bật micro để ra lệnh bằng giọng nói (hoặc nhấn F8 từ bất cứ đâu)"
+        aria-pressed="false"
+        title="Nói qua Micro (F8)"
+      >
+        <span aria-hidden="true">🎙️</span>
       </button>
-      <button type="submit" class="popup-btn-send">
+      <button
+        type="submit"
+        id="btnPopupSend"
+        class="popup-btn-send"
+        aria-label="Gửi câu lệnh (Phím Enter)"
+        title="Gửi câu lệnh"
+      >
         Gửi
       </button>
     </form>
 
     <div class="popup-sub-row">
-      <label style="cursor: pointer; display: flex; align-items: center; gap: 4px;">
-        <input type="checkbox" id="chkPopupTTS" checked>
+      <label class="popup-tts-label" for="chkPopupTTS">
+        <input
+          type="checkbox"
+          id="chkPopupTTS"
+          aria-label="Tự động đọc to phản hồi bằng giọng nói TTS"
+          checked
+        >
         <span>🔊 Đọc giọng nói (TTS)</span>
       </label>
-      <span>Phím tắt toàn cục: <strong style="color: #38bdf8;">F7</strong></span>
+
+      <button
+        type="button"
+        id="btnPopupClear"
+        class="popup-clear-btn"
+        aria-label="Xóa toàn bộ lịch sử trò chuyện"
+        title="Xóa lịch sử chat"
+      >
+        🗑️ Xóa chat
+      </button>
+
+      <span class="popup-kbd-hint" aria-label="Phím tắt toàn cục F7 để bật hoặc tắt Spotlight HUD">
+        Phím tắt toàn cục: <strong style="color: #38bdf8;" aria-hidden="true">F7</strong>
+      </span>
     </div>
-  </div>
+  </footer>
 
   <script src="popup.js"></script>
 </body>

@@ -44,6 +44,9 @@ class SpotlightHUD:
         self.is_visible = False
         self.was_visible_before_capture = False
         self.current_mode = "control"
+        self.thinking_level = os.environ.get("LUGA_THINKING_LEVEL", "medium").lower()
+        if self.thinking_level not in ("low", "medium", "high"):
+            self.thinking_level = "medium"
         self._keys_held = set()
         self._hotkey_listener = None
         self._last_toggle_time = 0.0
@@ -156,6 +159,11 @@ class SpotlightHUD:
                                 elif act == "cancel":
                                     self.is_executing = False
                                     self.set_status("⏹️ Đã ngắt tác vụ đang xử lý.", fg="#fbbf24")
+                                elif act == "thinking_level" or data.get("type") == "THINKING_LEVEL_CHANGED":
+                                    lvl = data.get("thinking_level")
+                                    if lvl in ("low", "medium", "high") and self.root:
+                                        self.thinking_level = lvl
+                                        self.root.after(0, lambda: self.btn_thinking.config(text=self._get_thinking_label()) if hasattr(self, "btn_thinking") else None)
                                 elif act == "quit":
                                     self.quit_app()
                             except Exception as ex:
@@ -196,9 +204,28 @@ class SpotlightHUD:
             padx=6,
             pady=2,
             cursor="hand2",
+            takefocus=True,
             command=self.toggle_mode
         )
         self.btn_mode.pack(side="left", padx=(0, 6))
+
+        # Thinking Level selector button (Low / Medium / High)
+        self.btn_thinking = tk.Button(
+            header,
+            text=self._get_thinking_label(),
+            font=("Arial", 11, "bold"),
+            bg="#1e293b",
+            fg="#38bdf8",
+            activebackground="#334155",
+            activeforeground="#38bdf8",
+            relief="flat",
+            padx=6,
+            pady=2,
+            cursor="hand2",
+            takefocus=True,
+            command=self.show_thinking_menu
+        )
+        self.btn_thinking.pack(side="left", padx=(0, 6))
 
         # Microphone selector button
         self.btn_mic_select = tk.Button(
@@ -213,6 +240,7 @@ class SpotlightHUD:
             padx=6,
             pady=2,
             cursor="hand2",
+            takefocus=True,
             command=self.show_mic_menu
         )
         self.btn_mic_select.pack(side="left", padx=(0, 6))
@@ -230,6 +258,7 @@ class SpotlightHUD:
             padx=6,
             pady=2,
             cursor="hand2",
+            takefocus=True,
             command=self.hide
         )
         btn_close.pack(side="right")
@@ -247,6 +276,7 @@ class SpotlightHUD:
             padx=6,
             pady=2,
             cursor="hand2",
+            takefocus=True,
             command=self.quit_app
         )
         btn_stop.pack(side="right", padx=(6, 6))
@@ -264,6 +294,7 @@ class SpotlightHUD:
             padx=8,
             pady=2,
             cursor="hand2",
+            takefocus=True,
             command=self.open_web
         )
         btn_web.pack(side="right", padx=(0, 6))
@@ -287,6 +318,7 @@ class SpotlightHUD:
             padx=4,
             pady=2,
             cursor="hand2",
+            takefocus=True,
             command=self.trigger_voice
         )
         btn_mic.pack(side="left", padx=(0, 6))
@@ -315,6 +347,7 @@ class SpotlightHUD:
             padx=8,
             pady=4,
             cursor="hand2",
+            takefocus=True,
             command=self.cancel_active_task
         )
         btn_cancel.pack(side="right", padx=(6, 0))
@@ -331,6 +364,7 @@ class SpotlightHUD:
             padx=12,
             pady=4,
             cursor="hand2",
+            takefocus=True,
             command=self.submit_command
         )
         btn_send.pack(side="right")
@@ -502,6 +536,65 @@ class SpotlightHUD:
                 self.btn_mic_select.config(text=f"🎤 {short_name} ▾")
         except Exception:
             pass
+
+    def _get_thinking_label(self) -> str:
+        lvl = getattr(self, "thinking_level", "medium")
+        if lvl == "low":
+            return "⚡ Thấp ▾"
+        elif lvl == "high":
+            return "🔍 Sâu ▾"
+        return "🧠 Vừa ▾"
+
+    def show_thinking_menu(self):
+        """Open popup dropdown menu to choose AI thinking level."""
+        menu = tk.Menu(
+            self.root,
+            tearoff=0,
+            bg="#1e293b",
+            fg="#f8fafc",
+            activebackground="#0284c7",
+            activeforeground="#ffffff",
+            font=("Arial", 11)
+        )
+        cur = getattr(self, "thinking_level", "medium")
+        levels = [
+            ("low", "⚡ Thấp (Nhanh, phản hồi tức thì)"),
+            ("medium", "🧠 Vừa (Mặc định - Cân bằng tốc độ & độ chuẩn)"),
+            ("high", "🔍 Sâu (Chi tiết, phân tích đa bước)"),
+        ]
+        for key, text in levels:
+            mark = "✔ " if cur == key else "    "
+            def _make_cmd(k=key):
+                return lambda: self.set_thinking_level(k)
+            menu.add_command(label=f"{mark}{text}", command=_make_cmd())
+
+        try:
+            x = self.btn_thinking.winfo_rootx()
+            y = self.btn_thinking.winfo_rooty() + self.btn_thinking.winfo_height() + 2
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
+
+    def set_thinking_level(self, level: str):
+        lvl = (level or "medium").strip().lower()
+        if lvl not in ("low", "medium", "high"):
+            lvl = "medium"
+        self.thinking_level = lvl
+        if hasattr(self, "btn_thinking") and self.btn_thinking:
+            self.btn_thinking.config(text=self._get_thinking_label())
+
+        def _sync():
+            try:
+                url = f"http://{self.host}:{self.port}/api/thinking_level"
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps({"thinking_level": lvl}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"}
+                )
+                urllib.request.urlopen(req, timeout=2.0)
+            except Exception:
+                pass
+        threading.Thread(target=_sync, daemon=True).start()
 
     def show_mic_menu(self):
         """Open popup dropdown menu allowing user to select or test their microphone."""
@@ -753,7 +846,11 @@ class SpotlightHUD:
                 url = f"http://{self.host}:{self.port}/api/chat"
                 req = urllib.request.Request(
                     url,
-                    data=json.dumps({"message": cmd, "speak": True}).encode("utf-8"),
+                    data=json.dumps({
+                        "message": cmd,
+                        "speak": True,
+                        "thinking_level": getattr(self, "thinking_level", "medium")
+                    }).encode("utf-8"),
                     headers={"Content-Type": "application/json"}
                 )
                 with urllib.request.urlopen(req, timeout=30.0) as res:

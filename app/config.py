@@ -55,7 +55,13 @@ PID_FILE = TEMP_DIR / "luga_assist.pid"
 # - vi-VN-NamMinhNeural (Male, natural, newsreader style)
 DEFAULT_TTS_VOICE = os.getenv("LUGA_TTS_VOICE", "vi-VN-HoaiMyNeural")
 TTS_RATE = "+0%"
-TTS_VOLUME = "+0%"
+TTS_VOLUME = os.getenv("LUGA_TTS_VOLUME", "+25%")  # Boosted loud & clear volume
+
+# AI Thinking Level Settings:
+# - 'low': Ultra-fast execution, direct actions, concise explanation
+# - 'medium': Balanced reasoning and thorough step planning (Default / Khuyên dùng)
+# - 'high': Deep multi-step reasoning, exhaustive UI grounding, deep explanation
+DEFAULT_THINKING_LEVEL = os.getenv("LUGA_THINKING_LEVEL", "medium")
 
 # Visual Grid Settings for precise AI Grounding
 # Draws a reference grid overlay on screenshots so Gemini can pinpoint exact coordinates

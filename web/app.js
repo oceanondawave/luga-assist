@@ -20,6 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnChatClear = document.getElementById("btnChatClear");
   const chkTTS = document.getElementById("chkTTS");
   const selectVoice = document.getElementById("selectVoice");
+  const selectThinkingLevel = document.getElementById("selectThinkingLevel");
 
   // DOM Elements - Monitor Panel
   const activityLog = document.getElementById("activityLog");
@@ -223,8 +224,15 @@ document.addEventListener("DOMContentLoaded", () => {
       if (msg.mode) {
         updateModeUI(msg.mode);
       }
+      if (msg.thinking_level && selectThinkingLevel) {
+        selectThinkingLevel.value = msg.thinking_level;
+      }
     } else if (msg.type === "MODE_CHANGED") {
       updateModeUI(msg.mode);
+    } else if (msg.type === "THINKING_LEVEL_CHANGED") {
+      if (msg.thinking_level && selectThinkingLevel) {
+        selectThinkingLevel.value = msg.thinking_level;
+      }
     } else if (msg.type === "USER_CHAT_MESSAGE") {
       const text = msg.command || msg.text;
       if (text && text !== lastUserCommandRendered) {
@@ -314,6 +322,7 @@ document.addEventListener("DOMContentLoaded", () => {
         command: text,
         voice: selectVoice.value,
         speak: chkTTS.checked,
+        thinking_level: selectThinkingLevel ? selectThinkingLevel.value : "medium",
       })
     );
   }
@@ -698,7 +707,41 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target === shutdownModal) closeShutdownModal();
   });
 
+  // Thinking Level Initialization & Change Listener
+  async function fetchThinkingLevel() {
+    try {
+      const res = await fetch("/api/thinking_level");
+      const data = await res.json();
+      if (data && data.thinking_level && selectThinkingLevel) {
+        selectThinkingLevel.value = data.thinking_level;
+        return;
+      }
+    } catch (e) {}
+    const saved = localStorage.getItem("luga_thinking_level") || "medium";
+    if (selectThinkingLevel) selectThinkingLevel.value = saved;
+  }
+
+  if (selectThinkingLevel) {
+    selectThinkingLevel.addEventListener("change", async (e) => {
+      const lvl = e.target.value;
+      try {
+        localStorage.setItem("luga_thinking_level", lvl);
+      } catch (err) {}
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "SET_THINKING_LEVEL", thinking_level: lvl }));
+      }
+      try {
+        await fetch("/api/thinking_level", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ thinking_level: lvl }),
+        });
+      } catch (err) {}
+    });
+  }
+
   // Initialize
+  fetchThinkingLevel();
   fetchSystemStatus();
   connectWebSocket();
 });
