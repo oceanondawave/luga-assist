@@ -10,6 +10,7 @@ import asyncio
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -26,7 +27,27 @@ from app.logger import get_logger
 logger = get_logger("GoogleAuth")
 
 GOOGLE_PROFILE_DIR = TEMP_DIR / "luga_google_profile"
-CDP_PORT = 19222
+DEFAULT_CDP_PORT = 19222
+
+
+def get_available_cdp_port(preferred_port: int = DEFAULT_CDP_PORT) -> int:
+    """Find an available port for CDP remote debugging, checking up to 20 ports."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if s.connect_ex(("127.0.0.1", preferred_port)) != 0:
+            return preferred_port
+    # Port preferred is taken, check if it's already an active CDP endpoint
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{preferred_port}/json/version")
+        with urllib.request.urlopen(req, timeout=0.6):
+            return preferred_port
+    except Exception:
+        pass
+    # Find next free port
+    for p in range(preferred_port + 1, preferred_port + 20):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(("127.0.0.1", p)) != 0:
+                return p
+    return preferred_port
 
 
 def find_chromium_browser() -> Optional[str]:
@@ -101,6 +122,7 @@ class GoogleWebAuthManager:
         self._login_process: Optional[subprocess.Popen] = None
         self._monitor_task: Optional[asyncio.Task] = None
         self._on_success_callback: Optional[Callable] = None
+        self._active_cdp_port: int = DEFAULT_CDP_PORT
 
     def set_on_success_callback(self, cb: Callable):
         self._on_success_callback = cb
@@ -115,11 +137,19 @@ class GoogleWebAuthManager:
         Open a clean browser window to Google Gemini with remote debugging enabled.
         The user logs in with their Google account just like browsing any website.
         """
-        if self.is_logging_in and self._login_process and self._login_process.poll() is None:
-            return {
-                "status": "already_running",
-                "message": "Cửa sổ đăng nhập Google đang mở. Vui lòng hoàn tất đăng nhập trên trình duyệt."
-            }
+        # If a monitor task is currently running, check if it's genuinely alive
+        if self.is_logging_in and self._monitor_task and not self._monitor_task.done():
+            try:
+                req = urllib.request.Request(f"http://127.0.0.1:{self._active_cdp_port}/json/version")
+                with urllib.request.urlopen(req, timeout=0.8):
+                    return {
+                        "status": "already_running",
+                        "message": "Cửa sổ đăng nhập Google đang mở. Vui lòng hoàn tất đăng nhập trên trình duyệt."
+                    }
+            except Exception:
+                # CDP is no longer responding; clean up stale state
+                self._monitor_task.cancel()
+                self.is_logging_in = False
 
         browser_path = find_chromium_browser()
         GOOGLE_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
@@ -140,19 +170,20 @@ class GoogleWebAuthManager:
                 "message": "Đã mở trang đăng nhập Google Gemini trên trình duyệt mặc định của bạn."
             }
 
+        self._active_cdp_port = get_available_cdp_port(DEFAULT_CDP_PORT)
         profile_path = str(GOOGLE_PROFILE_DIR.resolve())
         cmd = [
             browser_path,
-            f"--remote-debugging-port={CDP_PORT}",
+            f"--remote-debugging-port={self._active_cdp_port}",
             f"--user-data-dir={profile_path}",
             "--new-window",
             "--no-first-run",
             "--no-default-browser-check",
-            "--window-size=860,720",
+            "--window-size=880,740",
             target_url
         ]
 
-        logger.info(f"🚀 Mở cửa sổ đăng nhập Google ({target_url}, CDP port {CDP_PORT}): {browser_path}")
+        logger.info(f"🚀 Mở cửa sổ đăng nhập Google ({target_url}, CDP port {self._active_cdp_port}): {browser_path}")
 
         try:
             self._login_process = subprocess.Popen(cmd)
@@ -171,6 +202,78 @@ class GoogleWebAuthManager:
             "status": "ok",
             "message": "Đã mở cửa sổ đăng nhập Google. Hãy đăng nhập tài khoản của bạn trên trình duyệt."
         }
+
+    async def _close_login_browser(self, ws=None):
+        """Close login browser window cleanly across all platforms."""
+        # 1. Close via CDP commands
+        if ws is not None:
+            try:
+                # First close all open page targets
+                await ws.send(json.dumps({"id": 8991, "method": "Target.getTargets"}))
+                resp = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                data = json.loads(resp)
+                targets = data.get("result", {}).get("targetInfos", [])
+                for t in targets:
+                    if t.get("type") == "page":
+                        await ws.send(json.dumps({
+                            "id": 8992,
+                            "method": "Target.closeTarget",
+                            "params": {"targetId": t["targetId"]}
+                        }))
+                        try:
+                            await asyncio.wait_for(ws.recv(), timeout=1.0)
+                        except Exception:
+                            pass
+            except Exception as e:
+                logger.debug(f"Error closing targets via CDP: {e}")
+
+            try:
+                # Then tell the browser instance to exit cleanly
+                await ws.send(json.dumps({"id": 8999, "method": "Browser.close"}))
+                try:
+                    await asyncio.wait_for(ws.recv(), timeout=2.0)
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.debug(f"Error closing browser via CDP: {e}")
+
+        # 2. Terminate the subprocess if still alive
+        if self._login_process and self._login_process.poll() is None:
+            try:
+                self._login_process.terminate()
+                try:
+                    self._login_process.wait(timeout=2.0)
+                except Exception:
+                    self._login_process.kill()
+            except Exception:
+                pass
+
+        # 3. Windows-specific fallback: close any lingering Google Login / Gemini windows
+        if sys.platform.startswith("win"):
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                WM_CLOSE = 0x0010
+
+                def enum_cb(hwnd, extra):
+                    if not user32.IsWindowVisible(hwnd):
+                        return True
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        buff = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(hwnd, buff, length + 1)
+                        title = buff.value.lower()
+                        # Avoid touching Spotlight window
+                        if "spotlight" in title:
+                            return True
+                        if ("gemini" in title or "google" in title) and ("edge" in title or "chrome" in title or "đăng nhập" in title or "sign in" in title):
+                            user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+                    return True
+
+                WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
+                user32.EnumWindows(WNDENUMPROC(enum_cb), 0)
+            except Exception as e:
+                logger.debug(f"Win32 window close fallback notice: {e}")
 
     async def logout(self, clear_browser_profile: bool = False) -> Dict[str, Any]:
         """Log out from current Google session, clear saved cookies and in-memory client."""
@@ -215,18 +318,17 @@ class GoogleWebAuthManager:
 
     async def _monitor_cdp_cookies(self, hub_broadcast_func: Optional[Callable] = None):
         """Poll the CDP WebSocket to detect when the user logs in and set the session."""
-        logger.info("⏳ Đang lắng nghe session Google Gemini qua CDP...")
+        logger.info(f"⏳ Đang lắng nghe session Google Gemini qua CDP (port {self._active_cdp_port})...")
         ws_url = None
 
-        # 1. Wait for CDP endpoint to become ready (up to 15 seconds)
-        for _ in range(30):
-            if not self.is_logging_in or (self._login_process and self._login_process.poll() is not None):
-                logger.info("Cửa sổ đăng nhập đã bị người dùng đóng trước khi kết nối CDP.")
-                self.is_logging_in = False
+        # 1. Wait for CDP endpoint to become ready (up to 25 seconds)
+        for _ in range(50):
+            if not self.is_logging_in:
+                logger.info("Tiến trình đăng nhập đã bị hủy.")
                 return
 
             try:
-                req = urllib.request.Request(f"http://127.0.0.1:{CDP_PORT}/json/version")
+                req = urllib.request.Request(f"http://127.0.0.1:{self._active_cdp_port}/json/version")
                 with urllib.request.urlopen(req, timeout=1.0) as resp:
                     data = json.loads(resp.read())
                     ws_url = data.get("webSocketDebuggerUrl")
@@ -236,74 +338,93 @@ class GoogleWebAuthManager:
                 await asyncio.sleep(0.5)
 
         if not ws_url:
-            logger.warning("Không thể kết nối tới Chrome DevTools Protocol sau 15 giây.")
+            logger.warning(f"Không thể kết nối tới Chrome DevTools Protocol (port {self._active_cdp_port}) sau 25 giây.")
             self.is_logging_in = False
             return
 
         logger.info(f"✅ Đã kết nối CDP WebSocket: {ws_url}. Đang đợi người dùng đăng nhập...")
 
-        # 2. Connect to CDP WebSocket and poll for __Secure-1PSID (up to 3 minutes)
-        max_duration = 180  # 3 minutes
+        # 2. Connect to CDP WebSocket and poll for Google Gemini cookies (up to 5 minutes)
+        max_duration = 300  # 5 minutes for user to enter credentials and complete 2FA
         start_time = time.time()
         msg_id = 100
+        psid_wait_count = 0
 
         try:
             async with websockets.connect(ws_url, ping_interval=None) as ws:
                 while time.time() - start_time < max_duration:
-                    if not self.is_logging_in or (self._login_process and self._login_process.poll() is not None):
-                        logger.info("Người dùng đã đóng cửa sổ trình duyệt đăng nhập.")
+                    if not self.is_logging_in:
+                        logger.info("Tiến trình đăng nhập đã bị hủy.")
                         break
 
                     msg_id += 1
                     req_payload = {"id": msg_id, "method": "Storage.getCookies"}
                     await ws.send(json.dumps(req_payload))
 
-                    raw_resp = await asyncio.wait_for(ws.recv(), timeout=5.0)
-                    resp_data = json.loads(raw_resp)
+                    # Drain messages until response with matching msg_id is received
+                    resp_data = None
+                    for _ in range(10):
+                        raw_resp = await asyncio.wait_for(ws.recv(), timeout=5.0)
+                        msg_obj = json.loads(raw_resp)
+                        if msg_obj.get("id") == msg_id:
+                            resp_data = msg_obj
+                            break
 
-                    if resp_data.get("id") == msg_id:
-                        cookies = resp_data.get("result", {}).get("cookies", [])
+                    if resp_data and "result" in resp_data:
+                        cookies = resp_data["result"].get("cookies", [])
                         psid = None
                         psidts = None
 
                         for c in cookies:
                             c_name = c.get("name")
                             c_domain = c.get("domain", "")
-                            if c_name == "__Secure-1PSID" and "google.com" in c_domain:
-                                psid = c.get("value")
-                            elif c_name == "__Secure-1PSIDTS" and "google.com" in c_domain:
-                                psidts = c.get("value")
+                            if "google.com" in c_domain:
+                                if c_name == "__Secure-1PSID":
+                                    psid = c.get("value")
+                                elif c_name == "__Secure-1PSIDTS":
+                                    psidts = c.get("value")
 
+                        # If __Secure-1PSID is detected:
                         if psid:
+                            # If __Secure-1PSIDTS is not yet present, wait up to 4 iterations (~6s)
+                            # for Google to finish redirecting to gemini.google.com and set PSIDTS
+                            if not psidts and psid_wait_count < 4:
+                                psid_wait_count += 1
+                                logger.info(f"Đã bắt được __Secure-1PSID, đang chờ __Secure-1PSIDTS ({psid_wait_count}/4)...")
+                                await asyncio.sleep(1.5)
+                                continue
+
                             logger.info("🎉 ĐÃ BẮT ĐƯỢC COOKIES GOOGLE GEMINI TỪ TRÌNH DUYỆT!")
-                            # Initialize background Gemini session
+
+                            # 1. Close login browser cleanly immediately
+                            await self._close_login_browser(ws)
+
+                            # 2. Initialize Gemini service session
                             from app.gemini_service import gemini_service
                             from app.sound_effects import sound_manager
 
                             ok = await gemini_service.init_session(psid, psidts)
 
-                            # Close the login browser cleanly
-                            try:
-                                await ws.send(json.dumps({"id": msg_id + 1, "method": "Browser.close"}))
-                            except Exception:
-                                pass
-
-                            if self._login_process and self._login_process.poll() is None:
-                                try:
-                                    self._login_process.terminate()
-                                except Exception:
-                                    pass
-
                             self.is_logging_in = False
                             sound_manager.play_done()
 
-                            # Notify web clients
-                            if hub_broadcast_func:
-                                await hub_broadcast_func({
+                            # 3. Bring Spotlight window to front
+                            from app.spotlight_launcher import bring_spotlight_to_front_windows, broadcast_spotlight_message
+                            if sys.platform.startswith("win"):
+                                bring_spotlight_to_front_windows()
+                            broadcast_spotlight_message({"type": "SPOTLIGHT_FOCUS"})
+
+                            # 4. Notify all web clients and update server status
+                            try:
+                                from app.main import hub
+                                await hub.broadcast_status()
+                                await hub.broadcast_webui({
                                     "type": "GOOGLE_AUTH_SUCCESS",
                                     "gemini_ready": ok,
-                                    "message": "Đã đăng nhập Google thành công! Gemini đã sẵn sàng."
+                                    "message": "Đã đăng nhập Google thành công! Gemini đã sẵn sàng." if ok else "Đã nhận cookie Google nhưng chưa thể kết nối Gemini."
                                 })
+                            except Exception as e:
+                                logger.warning(f"Error broadcasting auth success: {e}")
 
                             if self._on_success_callback:
                                 try:
@@ -318,10 +439,13 @@ class GoogleWebAuthManager:
 
                     await asyncio.sleep(1.5)
 
+        except websockets.ConnectionClosed:
+            logger.info("Cửa sổ trình duyệt đăng nhập đã được đóng bởi người dùng.")
         except Exception as e:
             logger.warning(f"Lỗi trong quá trình lắng nghe CDP: {e}")
         finally:
             self.is_logging_in = False
+            # Ensure browser process is cleaned up if finished without cookies
             if self._login_process and self._login_process.poll() is None:
                 try:
                     self._login_process.terminate()

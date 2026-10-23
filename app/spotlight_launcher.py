@@ -90,6 +90,24 @@ def is_spotlight_window_open() -> bool:
     return False
 
 
+def bring_spotlight_to_front_windows() -> bool:
+    """Bring Spotlight window to foreground on Windows."""
+    if not sys.platform.startswith("win"):
+        return False
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        hwnd = find_spotlight_hwnd_windows()
+        if hwnd:
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            user32.SetForegroundWindow(hwnd)
+            return True
+        return False
+    except Exception as e:
+        logger.debug(f"Could not bring Spotlight to front: {e}")
+        return False
+
+
 def toggle_spotlight_window_windows() -> bool:
     """
     On Windows: if Spotlight window is in foreground, minimize it.

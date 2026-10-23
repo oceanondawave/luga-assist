@@ -30,6 +30,29 @@ document.addEventListener("DOMContentLoaded", () => {
   let geminiReady = false;
   let recognition = null;
   let isListening = false;
+  let authPollInterval = null;
+
+  function stopAuthPolling() {
+    if (authPollInterval) {
+      clearInterval(authPollInterval);
+      authPollInterval = null;
+    }
+  }
+
+  function startAuthPolling() {
+    stopAuthPolling();
+    authPollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(getApiUrl("/api/status"));
+        const data = await res.json();
+        if (data && data.gemini_ready) {
+          stopAuthPolling();
+          updateGoogleAuthUI(true);
+          appendBubble("ai", "🎉 Đăng nhập Google thành công! Kết nối Gemini đã sẵn sàng. Bạn có thể điều khiển máy tính ngay bây giờ!");
+        }
+      } catch (e) {}
+    }, 2000);
+  }
 
   function getApiUrl(endpoint) {
     const loc = window.location;
@@ -47,6 +70,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // 1. Google Web Login & Account Management (Login, Switch, Logout)
   function updateGoogleAuthUI(isReady) {
     geminiReady = isReady;
+    if (isReady) stopAuthPolling();
     if (googleAccountMenu) googleAccountMenu.style.display = "none";
     if (btnGoogleAuth) {
       if (isReady) {
@@ -97,12 +121,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const res = await fetch(getApiUrl("/api/auth/google/start"), { method: "POST" });
         const data = await res.json();
         if (data.status === "ok" || data.status === "already_running") {
+          startAuthPolling();
           appendBubble("ai", "🌐 Đã mở cửa sổ đăng nhập Google. Hãy đăng nhập tài khoản của bạn trên trình duyệt vừa xuất hiện. Luga sẽ tự động kết nối ngay khi bạn đăng nhập xong!");
         } else {
+          stopAuthPolling();
           appendBubble("ai", `⚠️ ${data.message || "Không thể khởi chạy cửa sổ đăng nhập."}`);
           updateGoogleAuthUI(false);
         }
       } catch (err) {
+        stopAuthPolling();
         appendBubble("ai", `⚠️ Lỗi kết nối máy chủ: ${err.message}`);
         updateGoogleAuthUI(false);
       }
@@ -118,10 +145,14 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         const res = await fetch(getApiUrl("/api/auth/google/switch"), { method: "POST" });
         const data = await res.json();
-        if (data.status !== "ok" && data.status !== "already_running") {
+        if (data.status === "ok" || data.status === "already_running") {
+          startAuthPolling();
+        } else {
+          stopAuthPolling();
           appendBubble("ai", `⚠️ Lỗi đổi tài khoản: ${data.message || ""}`);
         }
       } catch (err) {
+        stopAuthPolling();
         appendBubble("ai", `⚠️ Lỗi kết nối máy chủ: ${err.message}`);
       }
     });
