@@ -200,6 +200,52 @@
       color: #38bdf8;
     }
 
+    /* Hide Window Button */
+    .spotlight-btn-hide {
+      background: #334155;
+      border: 1px solid #475569;
+      color: #cbd5e1;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 9px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .spotlight-btn-hide:hover {
+      background: #475569;
+      color: #ffffff;
+      border-color: #94a3b8;
+    }
+
+    /* Quit Entire Luga Assist Button */
+    .spotlight-btn-quit {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid #ef4444;
+      color: #f87171;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 9px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .spotlight-btn-quit:hover {
+      background: #ef4444;
+      color: #ffffff;
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+    }
+
     .spotlight-close-btn {
       background: transparent;
       border: 1px solid transparent;
@@ -442,15 +488,26 @@
         <span id="spotlightModeLabel">🎮 Điều khiển PC</span>
       </button>
 
-      <!-- Close / Hide Button -->
+      <!-- Hide Window Button (Esc) -->
       <button
-        id="btnSpotlightClose"
-        class="spotlight-close-btn"
+        id="btnSpotlightHide"
+        class="spotlight-btn-hide"
         role="button"
-        aria-label="Đóng hoặc ẩn cửa sổ Spotlight (Phím tắt Esc)"
-        title="Đóng (Esc)"
+        aria-label="Ẩn cửa sổ Spotlight (Phím tắt Esc)"
+        title="Ẩn cửa sổ (Esc)"
       >
-        ✕
+        <span aria-hidden="true">✕</span> <span>Ẩn (Esc)</span>
+      </button>
+
+      <!-- Exit / Shutdown Luga Assist Button (Ctrl+Q) -->
+      <button
+        id="btnSpotlightQuit"
+        class="spotlight-btn-quit"
+        role="button"
+        aria-label="Tắt và thoát hoàn toàn ứng dụng Luga Assist (Phím tắt Ctrl+Q)"
+        title="Tắt Luga Assist hoàn toàn (Ctrl+Q)"
+      >
+        <span aria-hidden="true">🛑</span> <span>Thoát</span>
       </button>
     </div>
   </header>
@@ -539,8 +596,8 @@
         🗑️ Xóa chat
       </button>
 
-      <span class="spotlight-kbd-hint" aria-label="Phím tắt: F7 mở hoặc đóng, F8 nói qua micro, Esc ẩn">
-        Phím tắt: <strong style="color: #38bdf8;">F7</strong> Spotlight • <strong style="color: #38bdf8;">F8</strong> Micro • <strong style="color: #38bdf8;">Esc</strong> Ẩn
+      <span class="spotlight-kbd-hint" aria-label="Phím tắt: F7 mở hoặc đóng, F8 nói qua micro, Esc ẩn, Ctrl+Q thoát">
+        Phím tắt: <strong style="color: #38bdf8;">F7</strong> Spotlight • <strong style="color: #38bdf8;">F8</strong> Micro • <strong style="color: #38bdf8;">Esc</strong> Ẩn • <strong style="color: #f87171;">Ctrl+Q</strong> Thoát
       </span>
     </div>
   </footer>

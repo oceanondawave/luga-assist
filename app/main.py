@@ -246,6 +246,7 @@ app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 class ConnectionHub:
     def __init__(self):
         self.webui_clients = set()
+        self.spotlight_clients = set()
         self.extension_client: Optional[WebSocket] = None
         self.pending_tasks: Dict[str, asyncio.Future] = {}
         self.chat_turns_count = 0
@@ -258,6 +259,16 @@ class ConnectionHub:
 
     def unregister_webui(self, ws: WebSocket):
         self.webui_clients.discard(ws)
+        self.spotlight_clients.discard(ws)
+
+    def register_spotlight(self, ws: WebSocket):
+        self.spotlight_clients.add(ws)
+
+    def unregister_spotlight(self, ws: WebSocket):
+        self.spotlight_clients.discard(ws)
+
+    def is_spotlight_open(self) -> bool:
+        return len(self.spotlight_clients) > 0
 
     async def register_extension(self, ws: WebSocket):
         await ws.accept()
@@ -280,23 +291,25 @@ class ConnectionHub:
             "thinking_level": current_thinking_level,
         }
         dead_clients = []
-        for client in self.webui_clients:
+        for client in list(self.webui_clients):
             try:
                 await client.send_json(payload)
             except Exception:
                 dead_clients.append(client)
         for dc in dead_clients:
             self.webui_clients.discard(dc)
+            self.spotlight_clients.discard(dc)
 
     async def broadcast_webui(self, payload: Dict[str, Any]):
         dead_clients = []
-        for client in self.webui_clients:
+        for client in list(self.webui_clients):
             try:
                 await client.send_json(payload)
             except Exception:
                 dead_clients.append(client)
         for dc in dead_clients:
             self.webui_clients.discard(dc)
+            self.spotlight_clients.discard(dc)
 
 # Operating Mode: "control" (Computer Control) or "chat" (AI Conversational Mode)
 current_mode: str = "control"
@@ -373,12 +386,6 @@ async def serve_spotlight():
 @app.get("/spotlight.js")
 async def serve_spotlight_js():
     return FileResponse(str(WEB_DIR / "spotlight.js"))
-
-@app.post("/api/spotlight/toggle")
-async def api_spotlight_toggle():
-    from app.spotlight_launcher import launch_or_toggle_web_spotlight
-    launch_or_toggle_web_spotlight()
-    return {"status": "ok"}
 
 @app.post("/api/auth/google/start")
 async def api_auth_google_start():
@@ -694,12 +701,8 @@ async def api_spotlight_show():
     hud = get_spotlight_hud()
     if hud:
         hud.show()
-    global spotlight_process
-    with spotlight_clients_lock:
-        has_clients = len(spotlight_clients) > 0
-    if not has_clients and hud is None:
-        if spotlight_process is None or spotlight_process.poll() is not None:
-            spotlight_process = launch_spotlight_hud()
+    from app.spotlight_launcher import launch_or_toggle_web_spotlight
+    launch_or_toggle_web_spotlight()
     await broadcast_to_spotlight({"action": "show"})
     return {"status": "ok", "visible": True}
 
@@ -710,6 +713,7 @@ async def api_spotlight_hide():
     hud = get_spotlight_hud()
     if hud:
         hud.hide()
+    await hub.broadcast_webui({"type": "SPOTLIGHT_HIDE"})
     await broadcast_to_spotlight({"action": "hide"})
     return {"status": "ok", "visible": False}
 
@@ -720,23 +724,16 @@ async def api_spotlight_toggle():
     hud = get_spotlight_hud()
     if hud:
         hud.toggle()
-    global spotlight_process
-    with spotlight_clients_lock:
-        has_clients = len(spotlight_clients) > 0
-    if not has_clients and hud is None:
-        if spotlight_process is None or spotlight_process.poll() is not None:
-            spotlight_process = launch_spotlight_hud()
+    from app.spotlight_launcher import launch_or_toggle_web_spotlight
+    launch_or_toggle_web_spotlight()
     await broadcast_to_spotlight({"action": "toggle"})
     return {"status": "ok"}
 
 @app.get("/api/spotlight/quit")
 @app.post("/api/spotlight/quit")
 async def api_spotlight_quit():
-    from app.spotlight_ui import get_spotlight_hud
-    hud = get_spotlight_hud()
-    if hud:
-        hud.quit_app()
     await broadcast_to_spotlight({"action": "quit"})
+    await trigger_graceful_shutdown(delay=0.5, speak=True)
     return {"status": "ok"}
 
 
@@ -838,7 +835,10 @@ def extract_json_payload(text: str) -> Optional[Dict[str, Any]]:
 # WebUI WebSocket Endpoint
 @app.websocket("/ws/webui")
 async def websocket_webui(ws: WebSocket):
+    is_spotlight = ws.query_params.get("client") == "spotlight"
     await hub.register_webui(ws)
+    if is_spotlight:
+        hub.register_spotlight(ws)
     try:
         while True:
             msg_str = await ws.receive_text()
@@ -881,10 +881,13 @@ async def websocket_webui(ws: WebSocket):
                 tts_service.stop_speaking()
 
     except WebSocketDisconnect:
-        hub.unregister_webui(ws)
+        pass
     except Exception as e:
         print(f"[WebUI WS] Error: {e}")
+    finally:
         hub.unregister_webui(ws)
+        if is_spotlight:
+            hub.unregister_spotlight(ws)
 
 
 # Chrome Extension WebSocket Endpoint

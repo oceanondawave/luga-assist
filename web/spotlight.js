@@ -18,6 +18,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const spotlightModeLabel = document.getElementById("spotlightModeLabel");
   const btnSpotlightClear = document.getElementById("btnSpotlightClear");
   const btnSpotlightClose = document.getElementById("btnSpotlightClose");
+  const btnSpotlightHide = document.getElementById("btnSpotlightHide") || btnSpotlightClose;
+  const btnSpotlightQuit = document.getElementById("btnSpotlightQuit");
   const googleAccountMenu = document.getElementById("googleAccountMenu");
   const btnSwitchAccount = document.getElementById("btnSwitchAccount");
   const btnLogoutAccount = document.getElementById("btnLogoutAccount");
@@ -217,7 +219,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const loc = window.location;
     const wsHost = (loc.hostname && loc.hostname !== "") ? loc.hostname : "127.0.0.1";
     const wsPort = (loc.port && loc.port !== "") ? loc.port : "8765";
-    const wsUrl = `ws://${wsHost}:${wsPort}/ws/webui`;
+    const wsUrl = `ws://${wsHost}:${wsPort}/ws/webui?client=spotlight`;
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
@@ -278,8 +280,19 @@ document.addEventListener("DOMContentLoaded", () => {
         window.close();
       } else {
         window.focus();
-        if (spotlightInput) spotlightInput.focus();
+        if (spotlightInput) {
+          spotlightInput.focus();
+          spotlightInput.select();
+        }
       }
+    } else if (msg.type === "SPOTLIGHT_FOCUS") {
+      window.focus();
+      if (spotlightInput) {
+        spotlightInput.focus();
+        spotlightInput.select();
+      }
+    } else if (msg.type === "SPOTLIGHT_HIDE") {
+      window.close();
     }
   }
 
@@ -413,16 +426,42 @@ document.addEventListener("DOMContentLoaded", () => {
     btnSpotlightMode.addEventListener("click", toggleMode);
   }
 
-  if (btnSpotlightClose) {
-    btnSpotlightClose.addEventListener("click", () => {
+  if (btnSpotlightHide) {
+    btnSpotlightHide.addEventListener("click", () => {
       window.close();
     });
   }
 
-  // Escape key closes/hides the Spotlight window
+  if (btnSpotlightQuit) {
+    btnSpotlightQuit.addEventListener("click", async () => {
+      const ok = confirm("Bạn có muốn tắt và thoát hoàn toàn ứng dụng Luga Assist không?");
+      if (!ok) return;
+
+      appendBubble("ai", "🛑 Đang tắt hoàn toàn Luga Assist. Hẹn gặp lại bạn!");
+      try {
+        await fetch(getApiUrl("/api/system/shutdown"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ speak: true, delay: 0.5 })
+        });
+      } catch (err) {}
+      setTimeout(() => {
+        window.close();
+      }, 600);
+    });
+  }
+
+  // Keyboard shortcuts: Esc to hide, Ctrl+Q to quit
   window.addEventListener("keydown", (e) => {
     if (e.code === "Escape") {
+      e.preventDefault();
       window.close();
+    }
+    if ((e.ctrlKey || e.metaKey) && (e.key === "q" || e.key === "Q")) {
+      e.preventDefault();
+      if (btnSpotlightQuit) {
+        btnSpotlightQuit.click();
+      }
     }
   });
 
