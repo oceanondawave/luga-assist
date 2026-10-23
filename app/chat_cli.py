@@ -15,6 +15,9 @@ import urllib.error
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
+from app.config import HOST, PORT
+BASE_API_URL = f"http://{HOST}:{PORT}"
+
 # Setup readline for bash-like history & completion
 try:
     import readline
@@ -61,7 +64,7 @@ if readline:
 
 def check_server_status() -> Dict[str, Any]:
     try:
-        req = urllib.request.Request("http://127.0.0.1:8000/api/status", headers={"User-Agent": "LugaCLI"})
+        req = urllib.request.Request(f"{BASE_API_URL}/api/status", headers={"User-Agent": "LugaCLI"})
         with urllib.request.urlopen(req, timeout=1.5) as resp:
             data = json.loads(resp.read().decode())
             return data
@@ -72,7 +75,7 @@ def send_command(command: str, speak: bool = False) -> Optional[Dict[str, Any]]:
     try:
         payload = json.dumps({"command": command, "speak": speak}).encode("utf-8")
         req = urllib.request.Request(
-            "http://127.0.0.1:8000/api/command",
+            f"{BASE_API_URL}/api/command",
             data=payload,
             headers={"Content-Type": "application/json", "User-Agent": "LugaCLI"}
         )
@@ -84,7 +87,7 @@ def send_command(command: str, speak: bool = False) -> Optional[Dict[str, Any]]:
 def clear_server_chat():
     try:
         req = urllib.request.Request(
-            "http://127.0.0.1:8000/api/chat/clear",
+            f"{BASE_API_URL}/api/chat/clear",
             data=b"{}",
             headers={"Content-Type": "application/json", "User-Agent": "LugaCLI"}
         )
@@ -96,7 +99,7 @@ def clear_server_chat():
 def fetch_recent_logs(lines: int = 15) -> List[str]:
     try:
         req = urllib.request.Request(
-            f"http://127.0.0.1:8000/api/logs?lines={lines}",
+            f"{BASE_API_URL}/api/logs?lines={lines}",
             headers={"User-Agent": "LugaCLI"}
         )
         with urllib.request.urlopen(req, timeout=3.0) as resp:
@@ -132,7 +135,7 @@ def display_welcome_banner(status_data: Dict[str, Any], speak_enabled: bool):
     status_table.add_column("Key2", style="dim")
     status_table.add_column("Value2")
 
-    server_val = "[bold green]● Đang chạy (Port 8000)[/bold green]" if is_online else "[bold red]● Đang dừng (Offline)[/bold red]"
+    server_val = f"[bold green]● Đang chạy (Port {PORT})[/bold green]" if is_online else "[bold red]● Đang dừng (Offline)[/bold red]"
     gemini_val = "[bold green]● Sẵn sàng[/bold green]" if gemini_ready else "[bold yellow]● Chờ kết nối[/bold yellow]"
     tts_val = "[bold green]🔊 BẬT[/bold green]" if speak_enabled else "[bold dim]🔇 TẮT[/bold dim]"
     screen_val = f"[cyan]{screen_size[0]}x{screen_size[1]}[/cyan]" if screen_size[0] > 0 else "[dim]Tự động[/dim]"

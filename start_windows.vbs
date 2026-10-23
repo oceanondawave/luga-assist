@@ -6,16 +6,16 @@ strPath = fso.GetParentFolderName(WScript.ScriptFullName)
 Set WshShell = CreateObject("WScript.Shell")
 WshShell.CurrentDirectory = strPath
 
-' 1. Check if Luga Assist is already running on port 8000
+' 1. Check if Luga Assist is already running on port 8765
 On Error Resume Next
 Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
 http.setTimeouts 500, 500, 500, 500
-http.Open "GET", "http://127.0.0.1:8000/api/status", False
+http.Open "GET", "http://127.0.0.1:8765/api/status", False
 http.Send
 
 If Err.Number = 0 And http.Status = 200 Then
     ' Trigger Spotlight window to appear
-    http.Open "POST", "http://127.0.0.1:8000/api/spotlight/show", False
+    http.Open "POST", "http://127.0.0.1:8765/api/spotlight/show", False
     http.Send
 Else
     ' 2. Launch standalone executable if present, else fallback to pythonw

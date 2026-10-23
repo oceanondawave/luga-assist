@@ -60,7 +60,7 @@ def get_running_pid() -> Optional[int]:
 
 
 def wait_for_server_healthy(timeout: float = 6.0) -> bool:
-    """Check if HTTP server on port 8000 responds with 200 OK."""
+    """Check if HTTP server on configured port responds with 200 OK."""
     import urllib.request
     url = f"http://{HOST}:{PORT}/api/status"
     start_time = time.time()
@@ -137,7 +137,7 @@ def start_daemon():
         print("----------------------------------------------------------")
         return True
     else:
-        print("⚠️ Tiến trình đã khởi động nhưng chưa phản hồi port 8000.")
+        print(f"⚠️ Tiến trình đã khởi động nhưng chưa phản hồi port {PORT}.")
         print(f"👉 Vui lòng kiểm tra log: {LOG_FILE}")
         return False
 

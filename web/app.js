@@ -187,13 +187,14 @@ document.addEventListener("DOMContentLoaded", () => {
   // 2. WebSocket Connection
   function connectWebSocket() {
     const loc = window.location;
-    const wsUrl = `ws://${loc.hostname || "127.0.0.1"}:${loc.port || "8000"}/ws/webui`;
+    const wsPort = loc.port || "8765";
+    const wsUrl = `ws://${loc.hostname || "127.0.0.1"}:${wsPort}/ws/webui`;
 
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
       agentDot.classList.add("online");
-      agentStatusText.innerText = "Local Agent: Đã kết nối (Cổng 8000)";
+      agentStatusText.innerText = `Local Agent: Đã kết nối (Cổng ${wsPort})`;
       console.log("[Luga Assist] WebUI WebSocket connected.");
     };
 
@@ -542,7 +543,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const res = await fetch("/api/system/status");
       const data = await res.json();
-      if (modalServerStatus) modalServerStatus.innerText = "🟢 Đang chạy (Port 8000)";
+      if (modalServerStatus) modalServerStatus.innerText = `🟢 Đang chạy (Port ${window.location.port || "8765"})`;
       if (modalScreenRes) modalScreenRes.innerText = `🖥️ ${data.screen_resolution || "1920x1080"}`;
       if (modalPid) modalPid.innerText = `PID: ${data.pid || "-"}`;
       if (data.gemini_ready) {

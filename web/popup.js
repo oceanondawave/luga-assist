@@ -133,7 +133,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // 3. WebSocket Connection
   function connectWebSocket() {
     const loc = window.location;
-    const wsUrl = `ws://${loc.hostname || "127.0.0.1"}:${loc.port || "8000"}/ws/webui`;
+    const wsUrl = `ws://${loc.hostname || "127.0.0.1"}:${loc.port || "8765"}/ws/webui`;
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {

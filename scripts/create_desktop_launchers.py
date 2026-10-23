@@ -60,11 +60,11 @@ WshShell.CurrentDirectory = "{BASE_DIR}"
 On Error Resume Next
 Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
 http.setTimeouts 500, 500, 500, 500
-http.Open "GET", "http://127.0.0.1:8000/api/status", False
+http.Open "GET", "http://127.0.0.1:8765/api/status", False
 http.Send
 
 If Err.Number = 0 And http.Status = 200 Then
-    http.Open "POST", "http://127.0.0.1:8000/api/spotlight/show", False
+    http.Open "POST", "http://127.0.0.1:8765/api/spotlight/show", False
     http.Send
 Else
     WshShell.Run {python_cmd} & " -m app.main", 0, False
