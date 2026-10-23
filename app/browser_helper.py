@@ -1,7 +1,6 @@
 """
 Browser Helper module for Luga Assist.
-Allows launching Google Chrome 100% in the background (ZERO windows, ZERO tabs)
-on both macOS and Windows, enabling the Chrome Extension to run silently.
+Allows launching Chromium browsers in the background on both macOS and Windows.
 """
 import sys
 import os

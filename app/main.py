@@ -1,6 +1,6 @@
 """
 Luga Assist - Master FastAPI Server & WebSocket Hub.
-Coordinates Voice UI, Screen Capture, Gemini Web Extension, OS Controller, and TTS.
+Coordinates Voice UI, Screen Capture, Gemini Vision Reasoning, OS Controller, and TTS.
 """
 import re
 import os
@@ -1248,8 +1248,8 @@ async def _execute_pipeline(
             else:
                 sound_manager.play_error()
                 err_text = (
-                    "Session Google đã hết hạn và Chrome Extension chưa kết nối. "
-                    "Vui lòng đảm bảo Chrome đã mở và bạn đã đăng nhập tài khoản Google."
+                    "Session Google đã hết hạn. "
+                    "Vui lòng nhấn nút 'Đăng nhập Google' trên cửa sổ Spotlight (F7) để kết nối lại."
                 )
                 await hub.broadcast_webui({"type": "ERROR", "message": err_text, "user_command": user_command})
                 await tts_service.speak(err_text)

@@ -10,14 +10,13 @@
 
 ## 🇻🇳 TIẾNG VIỆT
 
-> [!IMPORTANT]
-> ### ⚠️ ĐIỀU KIỆN BẮT BUỘC: CÀI ĐẶT EXTENSION TRÌNH DUYỆT TRÊN WINDOWS
-> **Luga Assist BẮT BUỘC PHẢI CÓ Tiện ích mở rộng (Browser Extension) trên Google Chrome / Microsoft Edge / Brave / Cốc Cốc để hoạt động!**
-> 
-> ❓ **Tại sao Extension là bắt buộc?**
-> - Extension đóng vai trò là cầu nối bảo mật (Bridge), tự động đồng bộ phiên đăng nhập Google Gemini (`__Secure-1PSID`) từ trình duyệt của bạn vào trợ lý Luga Assist chạy ngầm trên Windows.
-> - **Lợi ích vượt trội**: Giúp bạn sử dụng mô hình trí tuệ nhân tạo Gemini Vision hoàn toàn **miễn phí**, **không tốn tiền mua API key**, **không cần cấu hình phức tạp**, và **hoàn toàn chạy ngầm (không cần mở bất kỳ tab hay cửa sổ trình duyệt nào)**.
-> - Nếu không cài Extension, Luga Assist sẽ không thể kết nối tới bộ não Gemini để quan sát màn hình và điều khiển máy tính.
+> [!TIP]
+> ### 🚀 ĐĂNG NHẬP GOOGLE WEB TRỰC TIẾP — ZERO EXTENSION, ZERO API KEY
+> **Luga Assist hỗ trợ đăng nhập tài khoản Google Web trực tiếp 1-click ngay trên cửa sổ Spotlight (F7)!**
+> - **Không cần cài Extension trình duyệt** (Không cần thao tác nạp unpacked hay Developer mode).
+> - **Không cần trả phí mua Gemini API Key**.
+> - **Không cần copy/paste cookie thủ công**.
+> - Bạn chỉ cần bấm phím **F7**, chọn **"Đăng nhập Google"** trên giao diện Spotlight và đăng nhập tài khoản Google của mình như duyệt web thông thường. Luga Assist sẽ tự động nhận diện và kết nối ngầm ngay lập tức!
 
 ### 🌟 Tổng quan dự án
 
@@ -50,18 +49,17 @@ Bạn có thể bấm các phím tắt này từ **BẤT KỲ ĐÂU** trên Wind
 ```mermaid
 graph TD
     User["🗣️ Người dùng (Giọng nói / Bàn phím)"] -->|F8 / Mic| NativeVoice["🎙️ Native Voice Listener (STT Google tiếng Việt & Anh)"]
-    User -->|F7 / Nhập liệu| Spotlight["💬 Spotlight Floating Chat HUD (Tkinter Native)"]
+    User -->|F7 / Nhập liệu| Spotlight["💬 Spotlight Web HUD (100% NVDA Accessible)"]
     User -->|F10 / Ctrl+Esc| EmergencyStop["⏹️ Emergency Interrupt & Abort Event"]
 
-    NativeVoice --> Hub["⚙️ Luga Core Server (FastAPI Port 8000)"]
+    NativeVoice --> Hub["⚙️ Luga Core Server (FastAPI Port 8765)"]
     Spotlight --> Hub
     EmergencyStop -->|Dừng tức thì| Hub
 
     Hub --> ScreenCap["📸 Windows Screen Capturer (MSS 2K/4K + Lưới tọa độ + UI Automation)"]
     ScreenCap --> GeminiEngine{"🧠 Gemini Vision Engine"}
 
-    GeminiEngine -->|Ưu tiên 1| BgSession["Google Gemini Background Client"]
-    GeminiEngine -->|Bắt buộc đồng bộ ngầm| ExtBridge["Chrome Extension Bridge (Gemini Session)"]
+    GeminiEngine -->|Đăng nhập Google Web trực tiếp| BgSession["Google Gemini Background Client"]
 
     GeminiEngine --> OSControl["🖱️ OS Controller (Win32 Native Click & Keyboard)"]
     Hub --> TTS["🔊 Neural TTS (Microsoft Edge Neural vi-VN / WMPlayer COM)"]
@@ -72,34 +70,16 @@ graph TD
 
 ### 🚀 Hướng dẫn Cài đặt & Khởi động trên Windows
 
-#### 🔴 BƯỚC 1 (BẮT BUỘC): Cài đặt Tiện ích Extension vào trình duyệt
-> *(Chỉ cần thực hiện 1 lần duy nhất)*
-
-1. **Chuẩn bị thư mục Extension**:
-   - **Tải từ Release**: Tải file `Luga-Assist-Chrome-Extension.zip` từ trang Releases rồi giải nén ra thư mục `extension`.
-   - **Hoặc từ Source code**: Thư mục `extension/` đã có sẵn trong thư mục dự án sau khi clone.
-2. **Nạp Extension vào trình duyệt**:
-   - Mở **Google Chrome** hoặc **Microsoft Edge** trên Windows.
-   - Truy cập: `chrome://extensions/` *(trên Edge: `edge://extensions/`)*.
-   - Bật công tắc **"Chế độ cho nhà phát triển" (Developer mode)** ở góc trên bên phải.
-   - Nhấn nút **"Tải tiện ích đã giải nén" (Load unpacked)** và chọn thư mục `extension`.
-3. **Đăng nhập Google**:
-   - Đảm bảo bạn đã đăng nhập tài khoản Google trên trình duyệt đó.
-   - Tiện ích sẽ tự động đồng bộ phiên Google Gemini ngầm cho Luga Assist mà không cần bạn phải mở bất kỳ tab nào!
-
----
-
-#### 🟢 BƯỚC 2: Khởi chạy Luga Assist trên Windows
-
-##### Cách 1: Dùng Bộ cài đặt Windows Installer (Khuyên dùng - Không cần cài Python)
+#### Cách 1: Dùng Bộ cài đặt Windows Installer (Khuyên dùng - Không cần cài Python)
 1. Tải bản release mới nhất từ trang [Releases](https://github.com/oceanondawave/luga-assist/releases):
-   - `Luga-Assist-Windows-Installer.exe` (Trình cài đặt tự động).
+   - `Luga-Assist-Setup.exe` (Trình cài đặt tự động).
    - Hoặc `Luga-Assist-Windows.zip` (Bản Portable giải nén chạy ngay).
-2. Chạy `Luga-Assist-Windows-Installer.exe` và làm theo hướng dẫn trên màn hình.
+2. Chạy `Luga-Assist-Setup.exe` và làm theo hướng dẫn trên màn hình.
 3. Sau khi cài đặt, biểu tượng **Luga Assist** sẽ xuất hiện trên màn hình Desktop và Start Menu.
-4. Click mở ứng dụng: Luga Assist sẽ chạy ngầm êm ái, sẵn sàng lắng nghe các phím `F7`, `F8`, `F9`, `F10`.
+4. Mở ứng dụng: Luga Assist sẽ chạy ngầm êm ái, sẵn sàng lắng nghe các phím `F7`, `F8`, `F9`, `F10`.
+5. Nhấn **`F7`**, chọn **"Đăng nhập Google"** để liên kết tài khoản Gemini (chỉ cần làm 1 lần duy nhất).
 
-##### Cách 2: Chạy từ mã nguồn trên Windows (Dành cho Lập trình viên)
+#### Cách 2: Chạy từ mã nguồn trên Windows (Dành cho Lập trình viên)
 1. Mở **Command Prompt (CMD)** hoặc **PowerShell**:
    ```bat
    git clone https://github.com/oceanondawave/luga-assist.git
@@ -118,9 +98,8 @@ graph TD
 
 | Tên file phát hành | Định dạng | Hệ điều hành | Mô tả chi tiết |
 | :--- | :--- | :--- | :--- |
-| **`Luga-Assist-Windows-Installer.exe`** | `.exe` | Windows 10 / 11 | **Trình cài đặt trọn gói** (Inno Setup), tự tạo Shortcut Desktop & Start Menu |
-| **`Luga-Assist-Windows.zip`** | `.zip` | Windows 10 / 11 | Bản Portable độc lập chạy ngay kèm Extension và Silent Launcher |
-| **`Luga-Assist-Chrome-Extension.zip`** | `.zip` | Chrome / Edge | Tiện ích mở rộng kết nối ngầm Google Gemini |
+| **`Luga-Assist-Setup.exe`** | `.exe` | Windows 10 / 11 | **Trình cài đặt trọn gói** (Inno Setup), tự tạo Shortcut Desktop & Start Menu |
+| **`Luga-Assist-Windows.zip`** | `.zip` | Windows 10 / 11 | Bản Portable độc lập chạy ngay kèm Silent Launcher |
 
 ---
 
@@ -156,14 +135,13 @@ Kết quả được tạo ra trong thư mục `dist/`:
 
 ## 🇬🇧 ENGLISH
 
-> [!IMPORTANT]
-> ### ⚠️ MANDATORY PREREQUISITE: BROWSER EXTENSION REQUIRED ON WINDOWS
-> **The Luga Assist Chrome/Edge Extension is strictly REQUIRED for the assistant to operate!**
-> 
-> ❓ **Why is the Extension Mandatory?**
-> - The extension serves as the secure background authentication bridge that syncs your active Google Gemini web session (`__Secure-1PSID`) from Chrome/Edge to the local Luga Assist daemon on Windows.
-> - **Major Advantage**: Grants **100% free, background Gemini Vision AI without requiring paid API keys**, complicated billing setups, or open browser tabs.
-> - Without this extension installed, Luga Assist cannot authenticate with the Gemini Vision reasoning engine.
+> [!TIP]
+> ### 🚀 DIRECT GOOGLE WEB LOGIN — ZERO EXTENSIONS, ZERO API KEYS
+> **Luga Assist connects to Google Gemini via 1-click web login directly in the Spotlight window (F7)!**
+> - **No browser extensions required** (No unpacked extension loading or developer mode).
+> - **No paid Gemini API keys required**.
+> - **No manual cookie copying**.
+> - Simply press **F7**, click **"Sign in to Google"**, and authenticate as you normally do on the web. Luga Assist automatically hooks the background session and closes the browser window!
 
 ### 🌟 Project Overview
 
@@ -173,7 +151,7 @@ Kết quả được tạo ra trong thư mục `dist/`:
 - 🖥️ **Zero-Browser Floating Spotlight HUD (F7)**: No bulky browser tabs blocking your view. An elegant floating search bar appears with a single keystroke and hides before taking screenshots.
 - 🎯 **Dual-Tier High-Resolution Grid**: Native screen capturing coupled with an adaptive visual coordinate overlay and Windows UI Automation for pixel-perfect clicking.
 - ⏹️ **Global Emergency Stop (F10 / Ctrl + Esc)**: Instantly halts all mouse/keyboard actions, speech playback, and microphone recordings on demand.
-- 📦 **Windows Native Packaging**: Full standalone executable (`Luga Assist.exe`) and Inno Setup installer (`Luga-Assist-Windows-Installer.exe`).
+- 📦 **Windows Native Packaging**: Full standalone executable (`Luga Assist.exe`) and Inno Setup installer (`Luga-Assist-Setup.exe`).
 
 ---
 
@@ -191,20 +169,10 @@ Kết quả được tạo ra trong thư mục `dist/`:
 
 ### 🚀 Quick Start on Windows
 
-#### 🔴 STEP 1 (MANDATORY): Install the Browser Extension
-1. Download `Luga-Assist-Chrome-Extension.zip` from [Releases](https://github.com/oceanondawave/luga-assist/releases) and extract it.
-2. Open **Google Chrome** or **Microsoft Edge**.
-3. Navigate to `chrome://extensions/` *(or `edge://extensions/`)*.
-4. Turn on **Developer mode** in the top right corner.
-5. Click **Load unpacked** and select the `extension` folder.
-6. Make sure you are signed in to Google in that browser.
-
----
-
-#### 🟢 STEP 2: Launch Luga Assist
-1. Download and run `Luga-Assist-Windows-Installer.exe` from [Releases](https://github.com/oceanondawave/luga-assist/releases).
+1. Download and run `Luga-Assist-Setup.exe` from [Releases](https://github.com/oceanondawave/luga-assist/releases).
 2. Launch **Luga Assist** from your Desktop or Start Menu.
-3. Press **`F7`** for Chat or **`F8`** to speak!
+3. Press **`F7`**, click **"Sign in to Google"** (only once!).
+4. Press **`F8`** to give voice commands or type in Spotlight!
 
 ---
 

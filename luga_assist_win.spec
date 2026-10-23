@@ -7,7 +7,7 @@ base_dir = Path.cwd()
 datas = [
     (str(base_dir / "web"), "web"),
     (str(base_dir / "temp"), "temp"),
-    (str(base_dir / "extension"), "extension"),
+    (str(base_dir / "assets"), "assets"),
 ]
 
 hiddenimports = [

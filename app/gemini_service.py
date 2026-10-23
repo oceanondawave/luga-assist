@@ -123,7 +123,7 @@ class GeminiSessionService:
         if not self.is_ready or not self.client:
             raise RuntimeError(
                 "Chưa kết nối được với session Google Gemini. "
-                "Vui lòng đảm bảo Extension đã bật và đã đăng nhập Google trên Chrome."
+                "Vui lòng nhấn nút 'Đăng nhập Google' trên cửa sổ Spotlight (F7) để kết nối."
             )
 
         if self.chat_session is None:
@@ -167,7 +167,7 @@ class GeminiSessionService:
         if not self.is_ready or not self.client:
             raise RuntimeError(
                 "Chưa kết nối được với session Google Gemini. "
-                "Vui lòng đảm bảo Extension đã bật và bạn đã đăng nhập tài khoản Google trên Chrome."
+                "Vui lòng nhấn nút 'Đăng nhập Google' trên cửa sổ Spotlight (F7) để kết nối."
             )
 
         if self.conversation_session is None:

@@ -50,7 +50,6 @@ Source: "{#AppRootDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion skipif
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\Thu muc Chrome Extension (Cai vao Chrome)"; Filename: "{app}\extension"
 Name: "{group}\Go cai dat {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: autostart
