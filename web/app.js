@@ -219,6 +219,14 @@ document.addEventListener("DOMContentLoaded", () => {
       extStatusText.innerText = "Google Gemini: Đã sẵn sàng";
       if (btnMainGoogleLogin) btnMainGoogleLogin.style.display = "none";
       appendChatBubble("ai", "🎉 Đăng nhập Google thành công! Gemini đã sẵn sàng kết nối.");
+    } else if (msg.type === "GOOGLE_AUTH_LOGGED_OUT") {
+      extDot.classList.remove("online");
+      extStatusText.innerText = "Google Gemini: Chưa đăng nhập";
+      if (btnMainGoogleLogin) {
+        btnMainGoogleLogin.style.display = "inline-flex";
+        btnMainGoogleLogin.innerText = "🔐 Đăng nhập Google";
+      }
+      appendChatBubble("ai", "🚪 Đã đăng xuất khỏi tài khoản Google.");
     } else if (msg.type === "STATUS_UPDATE") {
       if (msg.gemini_ready) {
         extDot.classList.add("online");

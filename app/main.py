@@ -401,6 +401,25 @@ async def api_auth_google_cancel():
     google_auth_manager.cancel_login()
     return {"status": "ok", "message": "Đã hủy tiến trình đăng nhập Google"}
 
+@app.post("/api/auth/google/logout")
+async def api_auth_google_logout():
+    from app.google_auth import google_auth_manager
+    res = await google_auth_manager.logout(clear_browser_profile=False)
+    await hub.broadcast_status()
+    await hub.broadcast_webui({
+        "type": "GOOGLE_AUTH_LOGGED_OUT",
+        "gemini_ready": False,
+        "message": "Đã đăng xuất tài khoản Google."
+    })
+    return res
+
+@app.post("/api/auth/google/switch")
+async def api_auth_google_switch():
+    from app.google_auth import google_auth_manager
+    res = await google_auth_manager.switch_account(hub.broadcast_webui)
+    await hub.broadcast_status()
+    return res
+
 @app.get("/api/status")
 async def get_status():
     return {
@@ -1042,6 +1061,45 @@ async def process_user_command(
                 "action": "restart",
                 "details": "Đang khởi động lại hệ thống"
             }
+        }
+
+    # Direct fast-path: Voice intents for Google Logout / Switch Account
+    google_logout_intents = (
+        "đăng xuất google", "đăng xuất tài khoản google", "thoát tài khoản google",
+        "đăng xuất gemini", "thoát google", "hủy kết nối google"
+    )
+    if any(intent in user_cmd_lower for intent in google_logout_intents):
+        from app.google_auth import google_auth_manager
+        await google_auth_manager.logout()
+        await hub.broadcast_status()
+        await hub.broadcast_webui({
+            "type": "GOOGLE_AUTH_LOGGED_OUT",
+            "gemini_ready": False,
+            "message": "Đã đăng xuất tài khoản Google."
+        })
+        speech = "Đã đăng xuất tài khoản Google cho bạn."
+        if speak:
+            await tts_service.speak(speech)
+        return {
+            "success": True,
+            "speech": speech,
+            "action_result": {"success": True, "action": "google_logout"}
+        }
+
+    google_switch_intents = (
+        "đổi tài khoản google", "chuyển tài khoản google", "đổi tài khoản gemini",
+        "chuyển tài khoản gemini", "đổi nick google", "đăng nhập tài khoản google khác"
+    )
+    if any(intent in user_cmd_lower for intent in google_switch_intents):
+        from app.google_auth import google_auth_manager
+        await google_auth_manager.switch_account(hub.broadcast_webui)
+        speech = "Đang mở trình duyệt để bạn chọn hoặc đăng nhập tài khoản Google khác."
+        if speak:
+            await tts_service.speak(speech)
+        return {
+            "success": True,
+            "speech": speech,
+            "action_result": {"success": True, "action": "google_switch"}
         }
 
     if pipeline_lock.locked():

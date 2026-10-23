@@ -18,6 +18,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const spotlightModeLabel = document.getElementById("spotlightModeLabel");
   const btnSpotlightClear = document.getElementById("btnSpotlightClear");
   const btnSpotlightClose = document.getElementById("btnSpotlightClose");
+  const googleAccountMenu = document.getElementById("googleAccountMenu");
+  const btnSwitchAccount = document.getElementById("btnSwitchAccount");
+  const btnLogoutAccount = document.getElementById("btnLogoutAccount");
 
   let ws = null;
   let currentMode = "control";
@@ -31,20 +34,23 @@ document.addEventListener("DOMContentLoaded", () => {
     spotlightInput.focus();
   }
 
-  // 1. Google Web Login Management (No Extension, No API Key, Pure Web Sign-in)
+  // 1. Google Web Login & Account Management (Login, Switch, Logout)
   function updateGoogleAuthUI(isReady) {
     geminiReady = isReady;
+    if (googleAccountMenu) googleAccountMenu.style.display = "none";
     if (btnGoogleAuth) {
       if (isReady) {
         btnGoogleAuth.className = "spotlight-auth-btn online";
         btnGoogleAuth.classList.remove("pulse");
-        btnGoogleAuth.setAttribute("aria-label", "Google Gemini: Đã kết nối thành công. Nhấn để đăng nhập lại nếu muốn");
-        btnGoogleAuth.setAttribute("title", "Google Gemini đã sẵn sàng");
-        btnGoogleAuth.innerHTML = '<span aria-hidden="true">🟢</span> <span>Google: Đã kết nối</span>';
+        btnGoogleAuth.setAttribute("aria-label", "Google Gemini: Đã kết nối. Nhấn phím Enter để mở tùy chọn đổi tài khoản hoặc đăng xuất");
+        btnGoogleAuth.setAttribute("title", "Tùy chọn tài khoản Google (Đổi tài khoản / Đăng xuất)");
+        btnGoogleAuth.setAttribute("aria-expanded", "false");
+        btnGoogleAuth.innerHTML = '<span aria-hidden="true">🟢</span> <span>Google: Đã kết nối ▾</span>';
       } else {
         btnGoogleAuth.className = "spotlight-auth-btn offline pulse";
-        btnGoogleAuth.setAttribute("aria-label", "Google Gemini: Chưa đăng nhập. Nhấn để đăng nhập tài khoản Google trên web");
+        btnGoogleAuth.setAttribute("aria-label", "Google Gemini: Chưa đăng nhập. Nhấn phím Enter hoặc Space để đăng nhập trên web");
         btnGoogleAuth.setAttribute("title", "Nhấn để đăng nhập tài khoản Google");
+        btnGoogleAuth.setAttribute("aria-expanded", "false");
         btnGoogleAuth.innerHTML = '<span aria-hidden="true">🔐</span> <span>Đăng nhập Google</span>';
       }
     }
@@ -61,7 +67,19 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (btnGoogleAuth) {
-    btnGoogleAuth.addEventListener("click", async () => {
+    btnGoogleAuth.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      // If already connected, toggle the dropdown options (Switch / Logout)
+      if (geminiReady) {
+        if (googleAccountMenu) {
+          const isOpen = googleAccountMenu.style.display === "flex";
+          googleAccountMenu.style.display = isOpen ? "none" : "flex";
+          btnGoogleAuth.setAttribute("aria-expanded", String(!isOpen));
+        }
+        return;
+      }
+
+      // Not connected: start web login flow
       btnGoogleAuth.innerHTML = '<span aria-hidden="true">⏳</span> <span>Đang mở trình duyệt...</span>';
       btnGoogleAuth.setAttribute("aria-label", "Đang mở cửa sổ đăng nhập Google trên trình duyệt. Vui lòng đăng nhập tài khoản của bạn.");
 
@@ -78,6 +96,49 @@ document.addEventListener("DOMContentLoaded", () => {
         appendBubble("ai", `⚠️ Lỗi kết nối máy chủ: ${err.message}`);
         updateGoogleAuthUI(false);
       }
+    });
+  }
+
+  // Switch Account Handler
+  if (btnSwitchAccount) {
+    btnSwitchAccount.addEventListener("click", async () => {
+      if (googleAccountMenu) googleAccountMenu.style.display = "none";
+      btnGoogleAuth.innerHTML = '<span aria-hidden="true">⏳</span> <span>Đang mở đổi tài khoản...</span>';
+      appendBubble("ai", "🌐 Đang mở trình duyệt để bạn chọn hoặc đăng nhập tài khoản Google khác...");
+      try {
+        const res = await fetch("/api/auth/google/switch", { method: "POST" });
+        const data = await res.json();
+        if (data.status !== "ok" && data.status !== "already_running") {
+          appendBubble("ai", `⚠️ Lỗi đổi tài khoản: ${data.message || ""}`);
+        }
+      } catch (err) {
+        appendBubble("ai", `⚠️ Lỗi kết nối máy chủ: ${err.message}`);
+      }
+    });
+  }
+
+  // Logout Account Handler
+  if (btnLogoutAccount) {
+    btnLogoutAccount.addEventListener("click", async () => {
+      if (googleAccountMenu) googleAccountMenu.style.display = "none";
+      try {
+        const res = await fetch("/api/auth/google/logout", { method: "POST" });
+        const data = await res.json();
+        updateGoogleAuthUI(false);
+        appendBubble("ai", "🚪 Đã đăng xuất tài khoản Google thành công. Bạn có thể nhấn 'Đăng nhập Google' bất cứ lúc nào để kết nối lại.");
+      } catch (err) {
+        appendBubble("ai", `⚠️ Lỗi khi đăng xuất: ${err.message}`);
+      }
+    });
+  }
+
+  // Close dropdown menu when clicking anywhere else
+  window.addEventListener("click", () => {
+    if (googleAccountMenu) {
+      googleAccountMenu.style.display = "none";
+      if (btnGoogleAuth) btnGoogleAuth.setAttribute("aria-expanded", "false");
+    }
+  });
     });
   }
 
@@ -171,6 +232,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (msg.type === "GOOGLE_AUTH_SUCCESS") {
       updateGoogleAuthUI(true);
       appendBubble("ai", "🎉 Đăng nhập Google thành công! Kết nối Gemini đã sẵn sàng. Bạn có thể điều khiển máy tính ngay bây giờ!");
+    } else if (msg.type === "GOOGLE_AUTH_LOGGED_OUT") {
+      updateGoogleAuthUI(false);
+      appendBubble("ai", "🚪 Đã đăng xuất khỏi tài khoản Google.");
     } else if (msg.type === "STATUS_UPDATE") {
       if (msg.gemini_ready !== undefined) {
         updateGoogleAuthUI(msg.gemini_ready);

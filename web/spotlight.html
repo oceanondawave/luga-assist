@@ -111,6 +111,57 @@
       50% { border-color: #f87171; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.2); }
     }
 
+    /* Google Account Dropdown Menu */
+    .spotlight-auth-container {
+      position: relative;
+    }
+
+    .spotlight-account-menu {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: 6px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.6);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      min-width: 160px;
+      overflow: hidden;
+    }
+
+    .spotlight-menu-item {
+      background: transparent;
+      border: none;
+      color: #f8fafc;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s ease;
+    }
+
+    .spotlight-menu-item:hover, .spotlight-menu-item:focus-visible {
+      background: #334155;
+      color: #38bdf8;
+    }
+
+    .spotlight-menu-item.danger {
+      color: #f87171;
+      border-top: 1px solid #334155;
+    }
+
+    .spotlight-menu-item.danger:hover, .spotlight-menu-item.danger:focus-visible {
+      background: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+    }
+
     /* Thinking Level Dropdown */
     .spotlight-select {
       background: #0f172a;
@@ -343,16 +394,29 @@
     </h1>
 
     <div class="spotlight-tools" role="toolbar" aria-label="Cài đặt và trạng thái">
-      <!-- Direct Google Login (No Extension, No API Key, Web login via CDP) -->
-      <button
-        id="btnGoogleAuth"
-        class="spotlight-auth-btn offline pulse"
-        role="button"
-        aria-label="Google Gemini: Chưa đăng nhập. Nhấn phím Enter hoặc Space để đăng nhập trên web"
-        title="Nhấn để đăng nhập tài khoản Google trên web"
-      >
-        <span aria-hidden="true">🔐</span> <span id="googleAuthText">Đăng nhập Google</span>
-      </button>
+      <!-- Direct Google Login & Account Options (Switch / Logout) -->
+      <div class="spotlight-auth-container">
+        <button
+          id="btnGoogleAuth"
+          class="spotlight-auth-btn offline pulse"
+          role="button"
+          aria-haspopup="true"
+          aria-expanded="false"
+          aria-label="Google Gemini: Chưa đăng nhập. Nhấn phím Enter hoặc Space để đăng nhập trên web"
+          title="Nhấn để đăng nhập tài khoản Google trên web"
+        >
+          <span aria-hidden="true">🔐</span> <span id="googleAuthText">Đăng nhập Google</span>
+        </button>
+
+        <div id="googleAccountMenu" class="spotlight-account-menu" role="menu" aria-label="Tùy chọn tài khoản Google" style="display: none;">
+          <button id="btnSwitchAccount" class="spotlight-menu-item" role="menuitem" aria-label="Đổi sang tài khoản Google khác">
+            <span aria-hidden="true">🔄</span> <span>Đổi tài khoản</span>
+          </button>
+          <button id="btnLogoutAccount" class="spotlight-menu-item danger" role="menuitem" aria-label="Đăng xuất khỏi tài khoản Google hiện tại">
+            <span aria-hidden="true">🚪</span> <span>Đăng xuất</span>
+          </button>
+        </div>
+      </div>
 
       <!-- Thinking Level Dropdown (Default Medium) -->
       <label for="spotlightThinkingLevel" class="sr-only">Mức độ suy nghĩ AI:</label>

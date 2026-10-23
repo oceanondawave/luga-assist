@@ -917,6 +917,10 @@ def test_google_auth_and_web_spotlight_endpoints():
     assert cancel_res["status"] == "ok"
     assert google_auth_manager.is_logging_in is False
 
+    logout_res = asyncio.run(main_mod.api_auth_google_logout())
+    assert logout_res["status"] == "ok"
+    assert "Đã đăng xuất" in logout_res["message"]
+
     # 3. Test Web Spotlight endpoints
     spotlight_resp = asyncio.run(main_mod.serve_spotlight())
     assert "spotlight.html" in str(spotlight_resp.path)

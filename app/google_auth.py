@@ -88,9 +88,14 @@ class GoogleWebAuthManager:
     def set_on_success_callback(self, cb: Callable):
         self._on_success_callback = cb
 
-    async def start_web_login(self, hub_broadcast_func: Optional[Callable] = None) -> Dict[str, Any]:
+    async def start_web_login(
+        self,
+        hub_broadcast_func: Optional[Callable] = None,
+        login_url: Optional[str] = None,
+        force_account_picker: bool = False
+    ) -> Dict[str, Any]:
         """
-        Open a clean browser window to https://gemini.google.com with remote debugging enabled.
+        Open a clean browser window to Google Gemini with remote debugging enabled.
         The user logs in with their Google account just like browsing any website.
         """
         if self.is_logging_in and self._login_process and self._login_process.poll() is None:
@@ -107,6 +112,13 @@ class GoogleWebAuthManager:
 
         GOOGLE_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
 
+        target_url = login_url
+        if not target_url:
+            if force_account_picker:
+                target_url = "https://accounts.google.com/AccountChooser?continue=https://gemini.google.com"
+            else:
+                target_url = "https://gemini.google.com"
+
         cmd = [
             browser_path,
             f"--remote-debugging-port={CDP_PORT}",
@@ -114,10 +126,10 @@ class GoogleWebAuthManager:
             "--no-first-run",
             "--no-default-browser-check",
             "--window-size=860,720",
-            "https://gemini.google.com"
+            target_url
         ]
 
-        logger.info(f"🚀 Mở cửa sổ đăng nhập Google (CDP port {CDP_PORT}): {browser_path}")
+        logger.info(f"🚀 Mở cửa sổ đăng nhập Google ({target_url}, CDP port {CDP_PORT}): {browser_path}")
 
         try:
             self._login_process = subprocess.Popen(cmd)
@@ -136,6 +148,47 @@ class GoogleWebAuthManager:
             "status": "ok",
             "message": "Đã mở cửa sổ đăng nhập Google. Hãy đăng nhập tài khoản của bạn trên trình duyệt."
         }
+
+    async def logout(self, clear_browser_profile: bool = False) -> Dict[str, Any]:
+        """Log out from current Google session, clear saved cookies and in-memory client."""
+        self.cancel_login()
+        from app.gemini_service import gemini_service, SESSION_FILE
+        from app.sound_effects import sound_manager
+
+        # 1. Reset in-memory Gemini service
+        gemini_service.is_ready = False
+        gemini_service.client = None
+        gemini_service.chat_session = None
+        gemini_service.conversation_session = None
+        gemini_service._current_psid = ""
+        gemini_service._current_psidts = ""
+
+        # 2. Delete saved session file
+        try:
+            if SESSION_FILE.exists():
+                SESSION_FILE.unlink(missing_ok=True)
+        except Exception as e:
+            logger.warning(f"Error removing session file: {e}")
+
+        # 3. If full reset requested, clear profile directory
+        if clear_browser_profile:
+            try:
+                if GOOGLE_PROFILE_DIR.exists():
+                    shutil.rmtree(GOOGLE_PROFILE_DIR, ignore_errors=True)
+            except Exception as e:
+                logger.warning(f"Error removing google profile dir: {e}")
+
+        sound_manager.play_done()
+        logger.info("🚪 Đã đăng xuất tài khoản Google Gemini thành công.")
+        return {"status": "ok", "message": "Đã đăng xuất tài khoản Google thành công."}
+
+    async def switch_account(self, hub_broadcast_func: Optional[Callable] = None) -> Dict[str, Any]:
+        """Log out current account and immediately launch browser to choose/add another account."""
+        await self.logout(clear_browser_profile=False)
+        return await self.start_web_login(
+            hub_broadcast_func=hub_broadcast_func,
+            login_url="https://accounts.google.com/AccountChooser?continue=https://gemini.google.com"
+        )
 
     async def _monitor_cdp_cookies(self, hub_broadcast_func: Optional[Callable] = None):
         """Poll the CDP WebSocket to detect when the user logs in and set the session."""
