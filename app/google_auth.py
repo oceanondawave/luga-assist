@@ -35,6 +35,22 @@ def find_chromium_browser() -> Optional[str]:
     across Windows, macOS, and Linux.
     """
     if sys.platform.startswith("win"):
+        # 1. Check Windows Registry App Paths (most reliable)
+        try:
+            import winreg
+            for exe_name in ("chrome.exe", "msedge.exe", "brave.exe"):
+                for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                    try:
+                        k = winreg.OpenKey(root, rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe_name}")
+                        val, _ = winreg.QueryValueEx(k, "")
+                        if val and os.path.exists(val):
+                            return val
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # 2. Check standard directory paths
         candidates = [
             # Chrome
             Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "Google" / "Chrome" / "Application" / "chrome.exe",
@@ -43,6 +59,7 @@ def find_chromium_browser() -> Optional[str]:
             # Microsoft Edge (Guaranteed on 100% of Windows 10/11 machines)
             Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
             Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
             # Brave
             Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "BraveSoftware" / "Brave-Browser" / "Application" / "brave.exe",
             Path(os.environ.get("LOCALAPPDATA", "")) / "BraveSoftware" / "Brave-Browser" / "Application" / "brave.exe",
@@ -105,11 +122,6 @@ class GoogleWebAuthManager:
             }
 
         browser_path = find_chromium_browser()
-        if not browser_path:
-            err = "Không tìm thấy trình duyệt Google Chrome hoặc Microsoft Edge trên máy tính để đăng nhập."
-            logger.error(err)
-            return {"status": "error", "message": err}
-
         GOOGLE_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
 
         target_url = login_url
@@ -119,10 +131,21 @@ class GoogleWebAuthManager:
             else:
                 target_url = "https://gemini.google.com"
 
+        if not browser_path:
+            import webbrowser
+            logger.info(f"Mở Google Gemini qua trình duyệt mặc định: {target_url}")
+            webbrowser.open(target_url)
+            return {
+                "status": "ok",
+                "message": "Đã mở trang đăng nhập Google Gemini trên trình duyệt mặc định của bạn."
+            }
+
+        profile_path = str(GOOGLE_PROFILE_DIR.resolve())
         cmd = [
             browser_path,
             f"--remote-debugging-port={CDP_PORT}",
-            f"--user-data-dir={GOOGLE_PROFILE_DIR}",
+            f"--user-data-dir={profile_path}",
+            "--new-window",
             "--no-first-run",
             "--no-default-browser-check",
             "--window-size=860,720",

@@ -29,6 +29,14 @@ document.addEventListener("DOMContentLoaded", () => {
   let recognition = null;
   let isListening = false;
 
+  function getApiUrl(endpoint) {
+    const loc = window.location;
+    if (loc.protocol === "file:" || !loc.port) {
+      return `http://127.0.0.1:8765${endpoint}`;
+    }
+    return endpoint;
+  }
+
   // Auto-focus input on open
   if (spotlightInput) {
     spotlightInput.focus();
@@ -58,7 +66,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function checkGoogleStatus() {
     try {
-      const res = await fetch("/api/status");
+      const res = await fetch(getApiUrl("/api/status"));
       const data = await res.json();
       updateGoogleAuthUI(Boolean(data.gemini_ready));
     } catch (e) {
@@ -84,7 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
       btnGoogleAuth.setAttribute("aria-label", "Đang mở cửa sổ đăng nhập Google trên trình duyệt. Vui lòng đăng nhập tài khoản của bạn.");
 
       try {
-        const res = await fetch("/api/auth/google/start", { method: "POST" });
+        const res = await fetch(getApiUrl("/api/auth/google/start"), { method: "POST" });
         const data = await res.json();
         if (data.status === "ok" || data.status === "already_running") {
           appendBubble("ai", "🌐 Đã mở cửa sổ đăng nhập Google. Hãy đăng nhập tài khoản của bạn trên trình duyệt vừa xuất hiện. Luga sẽ tự động kết nối ngay khi bạn đăng nhập xong!");
@@ -106,7 +114,7 @@ document.addEventListener("DOMContentLoaded", () => {
       btnGoogleAuth.innerHTML = '<span aria-hidden="true">⏳</span> <span>Đang mở đổi tài khoản...</span>';
       appendBubble("ai", "🌐 Đang mở trình duyệt để bạn chọn hoặc đăng nhập tài khoản Google khác...");
       try {
-        const res = await fetch("/api/auth/google/switch", { method: "POST" });
+        const res = await fetch(getApiUrl("/api/auth/google/switch"), { method: "POST" });
         const data = await res.json();
         if (data.status !== "ok" && data.status !== "already_running") {
           appendBubble("ai", `⚠️ Lỗi đổi tài khoản: ${data.message || ""}`);
@@ -122,7 +130,7 @@ document.addEventListener("DOMContentLoaded", () => {
     btnLogoutAccount.addEventListener("click", async () => {
       if (googleAccountMenu) googleAccountMenu.style.display = "none";
       try {
-        const res = await fetch("/api/auth/google/logout", { method: "POST" });
+        const res = await fetch(getApiUrl("/api/auth/google/logout"), { method: "POST" });
         const data = await res.json();
         updateGoogleAuthUI(false);
         appendBubble("ai", "🚪 Đã đăng xuất tài khoản Google thành công. Bạn có thể nhấn 'Đăng nhập Google' bất cứ lúc nào để kết nối lại.");
@@ -139,8 +147,6 @@ document.addEventListener("DOMContentLoaded", () => {
       if (btnGoogleAuth) btnGoogleAuth.setAttribute("aria-expanded", "false");
     }
   });
-    });
-  }
 
   // 2. Thinking Level Management
   function setThinkingLevelUI(level) {
@@ -162,7 +168,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function fetchThinkingLevel() {
     try {
-      const res = await fetch("/api/thinking_level");
+      const res = await fetch(getApiUrl("/api/thinking_level"));
       const data = await res.json();
       if (data && data.thinking_level) {
         setThinkingLevelUI(data.thinking_level);
@@ -178,7 +184,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const newLvl = e.target.value;
       setThinkingLevelUI(newLvl);
       try {
-        await fetch("/api/thinking_level", {
+        await fetch(getApiUrl("/api/thinking_level"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ thinking_level: newLvl })
@@ -194,7 +200,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ws.send(JSON.stringify({ type: "CLEAR_CHAT" }));
       }
       try {
-        await fetch("/api/clear_chat", { method: "POST" });
+        await fetch(getApiUrl("/api/clear_chat"), { method: "POST" });
       } catch (e) {}
       if (spotlightThread) {
         spotlightThread.innerHTML = `
@@ -209,7 +215,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // 4. WebSocket Connection
   function connectWebSocket() {
     const loc = window.location;
-    const wsUrl = `ws://${loc.hostname || "127.0.0.1"}:${loc.port || "8765"}/ws/webui`;
+    const wsHost = (loc.hostname && loc.hostname !== "") ? loc.hostname : "127.0.0.1";
+    const wsPort = (loc.port && loc.port !== "") ? loc.port : "8765";
+    const wsUrl = `ws://${wsHost}:${wsPort}/ws/webui`;
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
@@ -306,7 +314,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function toggleMode() {
     const target = currentMode === "control" ? "chat" : "control";
     try {
-      const res = await fetch("/api/set_mode", {
+      const res = await fetch(getApiUrl("/api/set_mode"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode: target, announce: true })
@@ -330,7 +338,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const thinkingLevel = (spotlightThinkingLevel ? spotlightThinkingLevel.value : currentThinkingLevel) || "medium";
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch(getApiUrl("/api/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

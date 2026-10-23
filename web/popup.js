@@ -23,6 +23,14 @@ document.addEventListener("DOMContentLoaded", () => {
   let recognition = null;
   let isListening = false;
 
+  function getApiUrl(endpoint) {
+    const loc = window.location;
+    if (loc.protocol === "file:" || !loc.port) {
+      return `http://127.0.0.1:8765${endpoint}`;
+    }
+    return endpoint;
+  }
+
   // Google Web Auth Button
   function updateGoogleStatus(ready) {
     if (btnPopupGoogleAuth) {
@@ -39,7 +47,7 @@ document.addEventListener("DOMContentLoaded", () => {
     btnPopupGoogleAuth.addEventListener("click", async () => {
       btnPopupGoogleAuth.innerText = "⏳ Đang mở trình duyệt...";
       try {
-        const res = await fetch("/api/auth/google/start", { method: "POST" });
+        const res = await fetch(getApiUrl("/api/auth/google/start"), { method: "POST" });
         const data = await res.json();
         if (data.status === "ok" || data.status === "already_running") {
           appendBubble("ai", "🌐 Đã mở cửa sổ đăng nhập Google. Hãy đăng nhập tài khoản của bạn trên trình duyệt vừa xuất hiện!");
