@@ -32,6 +32,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnSystemStatus = document.getElementById("btnSystemStatus");
   const btnToggleMode = document.getElementById("btnToggleMode");
   const btnHeaderShutdown = document.getElementById("btnHeaderShutdown");
+  const btnMainGoogleLogin = document.getElementById("btnMainGoogleLogin");
   const modeIcon = document.getElementById("modeIcon");
   const modeLabel = document.getElementById("modeLabel");
 
@@ -213,13 +214,23 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function handleServerMessage(msg) {
-    if (msg.type === "STATUS_UPDATE") {
-      if (msg.gemini_ready || msg.extension_connected) {
+    if (msg.type === "GOOGLE_AUTH_SUCCESS") {
+      extDot.classList.add("online");
+      extStatusText.innerText = "Google Gemini: Đã sẵn sàng";
+      if (btnMainGoogleLogin) btnMainGoogleLogin.style.display = "none";
+      appendChatBubble("ai", "🎉 Đăng nhập Google thành công! Gemini đã sẵn sàng kết nối.");
+    } else if (msg.type === "STATUS_UPDATE") {
+      if (msg.gemini_ready) {
         extDot.classList.add("online");
-        extStatusText.innerText = "Google Gemini: Đã sẵn sàng (Chạy ngầm)";
+        extStatusText.innerText = "Google Gemini: Đã sẵn sàng";
+        if (btnMainGoogleLogin) btnMainGoogleLogin.style.display = "none";
       } else {
         extDot.classList.remove("online");
-        extStatusText.innerText = "Google Gemini: Đang chờ kết nối";
+        extStatusText.innerText = "Google Gemini: Chưa đăng nhập";
+        if (btnMainGoogleLogin) {
+          btnMainGoogleLogin.style.display = "inline-flex";
+          btnMainGoogleLogin.innerText = "🔐 Đăng nhập Google";
+        }
       }
       if (msg.mode) {
         updateModeUI(msg.mode);
@@ -697,7 +708,24 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnOpenPopup = document.getElementById("btnOpenPopup");
   if (btnOpenPopup) {
     btnOpenPopup.addEventListener("click", () => {
-      window.open('/popup', 'LugaMiniPopup', 'width=460,height=600,top=100,left=100,resizable=yes');
+      window.open('/spotlight', 'LugaSpotlight', 'width=680,height=360,top=100,left=100,resizable=yes');
+    });
+  }
+
+  if (btnMainGoogleLogin) {
+    btnMainGoogleLogin.addEventListener("click", async () => {
+      btnMainGoogleLogin.innerText = "⏳ Đang mở trình duyệt...";
+      try {
+        const res = await fetch("/api/auth/google/start", { method: "POST" });
+        const data = await res.json();
+        if (data.status === "ok" || data.status === "already_running") {
+          appendChatBubble("ai", "🌐 Đã mở cửa sổ đăng nhập Google. Hãy đăng nhập tài khoản Google của bạn trên trình duyệt vừa xuất hiện. Luga sẽ tự động kết nối ngay khi bạn đăng nhập xong!");
+        } else {
+          btnMainGoogleLogin.innerText = "🔐 Đăng nhập Google";
+        }
+      } catch (e) {
+        btnMainGoogleLogin.innerText = "🔐 Đăng nhập Google";
+      }
     });
   }
 

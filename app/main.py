@@ -187,18 +187,9 @@ async def lifespan(app: FastAPI):
         asyncio.run_coroutine_threadsafe(toggle_mode(), loop)
 
     def handle_native_spotlight_toggle():
-        print("\n[Global Handler] Đã nhận tín hiệu F7 / Ctrl+Alt+Space -> Bật/Tắt Cửa sổ Chat Nổi (Spotlight)!")
-        from app.spotlight_ui import get_spotlight_hud
-        hud = get_spotlight_hud()
-        if hud:
-            hud.toggle()
-        global spotlight_process
-        with spotlight_clients_lock:
-            has_clients = len(spotlight_clients) > 0
-        if not has_clients and hud is None:
-            if spotlight_process is None or spotlight_process.poll() is not None:
-                spotlight_process = launch_spotlight_hud()
-        send_spotlight_action_sync("toggle")
+        print("\n[Global Handler] Đã nhận tín hiệu F7 / Ctrl+Alt+Space -> Bật/Tắt Cửa sổ Web Spotlight!")
+        from app.spotlight_launcher import launch_or_toggle_web_spotlight
+        launch_or_toggle_web_spotlight()
 
     native_voice_instance = NativeVoiceListener(
         on_command_callback=handle_native_voice_command,
@@ -209,18 +200,14 @@ async def lifespan(app: FastAPI):
     )
     native_voice_instance.start_global_hotkeys()
 
-    # 2. Start Native Desktop Spotlight Floating Chat HUD (F7 Hotkey) if not already active
-    global spotlight_process
-    from app.spotlight_ui import get_spotlight_hud
-    if get_spotlight_hud() is None and not os.environ.get("LUGA_MAIN_GUI_ACTIVE"):
-        spotlight_process = launch_spotlight_hud()
-
-    # 3. Initialize background Gemini session asynchronously (never block server startup)
+    # 2. Initialize background Gemini session asynchronously (never block server startup)
     async def _init_gemini_bg():
         try:
             await gemini_service.auto_init_from_disk()
-            if not gemini_service.is_ready and hub.extension_client is None:
-                ensure_background_browser()
+            if gemini_service.is_ready:
+                print("[Lifespan] ✅ Session Google Gemini đã sẵn sàng từ phiên lưu trước.")
+            else:
+                print("[Lifespan] ℹ️ Chưa có session Google Gemini. Nhấn 'Đăng nhập Google' trên Spotlight để kết nối.")
         except Exception as e:
             print(f"[Lifespan] Background session init: {e}")
 
@@ -378,6 +365,41 @@ async def serve_popup():
 @app.get("/popup.js")
 async def serve_popup_js():
     return FileResponse(str(WEB_DIR / "popup.js"))
+
+@app.get("/spotlight")
+async def serve_spotlight():
+    return FileResponse(str(WEB_DIR / "spotlight.html"))
+
+@app.get("/spotlight.js")
+async def serve_spotlight_js():
+    return FileResponse(str(WEB_DIR / "spotlight.js"))
+
+@app.post("/api/spotlight/toggle")
+async def api_spotlight_toggle():
+    from app.spotlight_launcher import launch_or_toggle_web_spotlight
+    launch_or_toggle_web_spotlight()
+    return {"status": "ok"}
+
+@app.post("/api/auth/google/start")
+async def api_auth_google_start():
+    from app.google_auth import google_auth_manager
+    res = await google_auth_manager.start_web_login(hub.broadcast_webui)
+    return res
+
+@app.get("/api/auth/google/status")
+async def api_auth_google_status():
+    from app.google_auth import google_auth_manager
+    return {
+        "status": "ok",
+        "gemini_ready": gemini_service.is_ready,
+        "is_logging_in": google_auth_manager.is_logging_in,
+    }
+
+@app.post("/api/auth/google/cancel")
+async def api_auth_google_cancel():
+    from app.google_auth import google_auth_manager
+    google_auth_manager.cancel_login()
+    return {"status": "ok", "message": "Đã hủy tiến trình đăng nhập Google"}
 
 @app.get("/api/status")
 async def get_status():
@@ -1048,15 +1070,13 @@ async def _execute_pipeline(
     # Start pulsing audio feedback for the user (only if enabled)
     sound_manager.start_pulsing()
 
-    # Step 1: Check Connection (Gemini Background Service or Extension)
+    # Step 1: Check Connection (Gemini Background Service)
     is_gemini_ready = gemini_service.is_ready or (hub.extension_client is not None)
     if not is_gemini_ready:
-        # Wake background Chrome quietly without opening any tab
-        ensure_background_browser()
         sound_manager.play_error()
         error_msg = (
-            "Chưa nhận được session Google Gemini! "
-            "Đang tự động khởi động kết nối ngầm qua Chrome Extension..."
+            "Chưa kết nối tài khoản Google Gemini! "
+            "Vui lòng nhấn nút 'Đăng nhập Google' trên cửa sổ Spotlight (F7) để kết nối."
         )
         await hub.broadcast_webui({
             "type": "ERROR",

@@ -897,6 +897,38 @@ def test_thinking_level_configuration_and_prompts():
 
     print("test_thinking_level_configuration_and_prompts: PASSED")
 
+def test_google_auth_and_web_spotlight_endpoints():
+    import app.main as main_mod
+    from app.google_auth import google_auth_manager, find_chromium_browser
+    from app.spotlight_launcher import is_spotlight_window_open
+
+    # 1. Test browser detection for Chromium (Chrome/Edge/Brave)
+    browser_path = find_chromium_browser()
+    assert browser_path is None or isinstance(browser_path, str)
+
+    # 2. Test Google Auth Manager status and cancel
+    assert isinstance(google_auth_manager.is_logging_in, bool)
+    status_res = asyncio.run(main_mod.api_auth_google_status())
+    assert status_res["status"] == "ok"
+    assert "gemini_ready" in status_res
+    assert "is_logging_in" in status_res
+
+    cancel_res = asyncio.run(main_mod.api_auth_google_cancel())
+    assert cancel_res["status"] == "ok"
+    assert google_auth_manager.is_logging_in is False
+
+    # 3. Test Web Spotlight endpoints
+    spotlight_resp = asyncio.run(main_mod.serve_spotlight())
+    assert "spotlight.html" in str(spotlight_resp.path)
+
+    spotlight_js_resp = asyncio.run(main_mod.serve_spotlight_js())
+    assert "spotlight.js" in str(spotlight_js_resp.path)
+
+    # 4. Test is_spotlight_window_open
+    assert isinstance(is_spotlight_window_open(), bool)
+
+    print("test_google_auth_and_web_spotlight_endpoints: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -927,6 +959,7 @@ if __name__ == "__main__":
     test_accessibility_permissions_and_hotkey_supervisor()
     test_cancellation_and_emergency_stop()
     test_thinking_level_configuration_and_prompts()
+    test_google_auth_and_web_spotlight_endpoints()
     print("\n🎉 ALL TESTS (INCLUDING EMERGENCY STOP & CANCELLATION) PASSED SUCCESSFULLY!")
 
 

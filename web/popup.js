@@ -15,12 +15,40 @@ document.addEventListener("DOMContentLoaded", () => {
   const popupStatusDot = document.getElementById("popupStatusDot");
   const popupThinkingLevel = document.getElementById("popupThinkingLevel");
   const btnPopupClear = document.getElementById("btnPopupClear");
+  const btnPopupGoogleAuth = document.getElementById("btnPopupGoogleAuth");
 
   let ws = null;
   let currentMode = "control";
   let currentThinkingLevel = "medium";
   let recognition = null;
   let isListening = false;
+
+  // Google Web Auth Button
+  function updateGoogleStatus(ready) {
+    if (btnPopupGoogleAuth) {
+      if (ready) {
+        btnPopupGoogleAuth.style.display = "none";
+      } else {
+        btnPopupGoogleAuth.style.display = "inline-flex";
+        btnPopupGoogleAuth.innerText = "🔐 Đăng nhập Google";
+      }
+    }
+  }
+
+  if (btnPopupGoogleAuth) {
+    btnPopupGoogleAuth.addEventListener("click", async () => {
+      btnPopupGoogleAuth.innerText = "⏳ Đang mở trình duyệt...";
+      try {
+        const res = await fetch("/api/auth/google/start", { method: "POST" });
+        const data = await res.json();
+        if (data.status === "ok" || data.status === "already_running") {
+          appendBubble("ai", "🌐 Đã mở cửa sổ đăng nhập Google. Hãy đăng nhập tài khoản của bạn trên trình duyệt vừa xuất hiện!");
+        }
+      } catch (e) {
+        btnPopupGoogleAuth.innerText = "🔐 Đăng nhập Google";
+      }
+    });
+  }
 
   // Auto-focus input
   if (chatInput) {
@@ -126,9 +154,13 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function handleMessage(msg) {
-    if (msg.type === "MODE_CHANGED") {
+    if (msg.type === "GOOGLE_AUTH_SUCCESS") {
+      updateGoogleStatus(true);
+      appendBubble("ai", "🎉 Đăng nhập Google thành công! Gemini đã sẵn sàng.");
+    } else if (msg.type === "MODE_CHANGED") {
       updateMode(msg.mode);
     } else if (msg.type === "STATUS_UPDATE") {
+      if (msg.gemini_ready !== undefined) updateGoogleStatus(msg.gemini_ready);
       if (msg.mode) updateMode(msg.mode);
       if (msg.thinking_level) setThinkingLevelUI(msg.thinking_level);
     } else if (msg.type === "THINKING_LEVEL_CHANGED") {

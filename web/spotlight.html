@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Luga Assist - Spotlight (F7)</title>
+  <style>
+    /* CSS Reset & NVDA Accessibility High-Contrast Theme */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    body {
+      background: #0f172a;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* Screen Reader & Keyboard Focus Highlights */
+    button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
+      outline: 3px solid #38bdf8 !important;
+      outline-offset: 2px !important;
+      box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.4) !important;
+    }
+
+    /* Header Bar */
+    .spotlight-header {
+      background: #1e293b;
+      padding: 8px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #334155;
+      flex-shrink: 0;
+      gap: 8px;
+    }
+
+    .spotlight-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .spotlight-tools {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    /* Google Auth Button */
+    .spotlight-auth-btn {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+    }
+
+    .spotlight-auth-btn.online {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: #10b981;
+      color: #34d399;
+    }
+
+    .spotlight-auth-btn.offline {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: #ef4444;
+      color: #f87171;
+    }
+
+    .spotlight-auth-btn.offline:hover {
+      background: #ef4444;
+      color: #ffffff;
+    }
+
+    .spotlight-auth-btn.pulse {
+      animation: auth-pulse 1.8s infinite;
+    }
+
+    @keyframes auth-pulse {
+      0%, 100% { border-color: #ef4444; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+      50% { border-color: #f87171; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.2); }
+    }
+
+    /* Thinking Level Dropdown */
+    .spotlight-select {
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #38bdf8;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 8px;
+      padding: 4px 8px;
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.2s ease;
+    }
+
+    .spotlight-select:hover {
+      border-color: #38bdf8;
+    }
+
+    /* Mode Badge */
+    .spotlight-badge {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 8px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s ease;
+    }
+
+    .spotlight-badge:hover {
+      border-color: #38bdf8;
+      color: #38bdf8;
+    }
+
+    .spotlight-close-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #94a3b8;
+      font-size: 14px;
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .spotlight-close-btn:hover {
+      background: #334155;
+      color: #f8fafc;
+    }
+
+    /* Thread Messages Area */
+    .spotlight-thread {
+      flex: 1;
+      padding: 12px 14px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #0b1120;
+    }
+
+    .spotlight-bubble {
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.5;
+      max-width: 92%;
+      word-break: break-word;
+      user-select: text;
+    }
+
+    .spotlight-bubble.user {
+      align-self: flex-end;
+      background: #0284c7;
+      color: #ffffff;
+      border-bottom-right-radius: 2px;
+    }
+
+    .spotlight-bubble.ai {
+      align-self: flex-start;
+      background: #1e293b;
+      color: #f1f5f9;
+      border-bottom-left-radius: 2px;
+      border: 1px solid #334155;
+    }
+
+    .spotlight-thinking {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #38bdf8;
+      padding: 6px 12px;
+      background: rgba(56, 189, 248, 0.1);
+      border-radius: 8px;
+      margin: 4px 14px;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+
+    /* Composer Form */
+    .spotlight-composer {
+      background: #1e293b;
+      padding: 10px 14px;
+      border-top: 1px solid #334155;
+      flex-shrink: 0;
+    }
+
+    .spotlight-input-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .spotlight-input {
+      flex: 1;
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #ffffff;
+      padding: 9px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+      transition: all 0.2s ease;
+      user-select: text;
+    }
+
+    .spotlight-input:focus-visible {
+      border-color: #38bdf8;
+    }
+
+    .spotlight-btn-mic {
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #f8fafc;
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      transition: all 0.2s ease;
+    }
+
+    .spotlight-btn-mic:hover {
+      border-color: #38bdf8;
+      color: #38bdf8;
+    }
+
+    .spotlight-btn-mic.listening {
+      background: #ef4444;
+      border-color: #ef4444;
+      color: #ffffff;
+      animation: pulse 1.2s infinite;
+    }
+
+    .spotlight-btn-send {
+      background: #0284c7;
+      border: none;
+      color: #ffffff;
+      padding: 9px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .spotlight-btn-send:hover {
+      background: #0369a1;
+    }
+
+    .spotlight-sub-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+      font-size: 11px;
+      color: #64748b;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .spotlight-tts-label {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: #94a3b8;
+    }
+
+    .spotlight-tts-label:hover {
+      color: #f8fafc;
+    }
+
+    .spotlight-clear-btn {
+      background: transparent;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      border-radius: 6px;
+      padding: 2px 8px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .spotlight-clear-btn:hover {
+      color: #f87171;
+      border-color: #f87171;
+    }
+
+    .spotlight-kbd-hint {
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header Landmark with full accessibility for NVDA -->
+  <header class="spotlight-header" role="banner" aria-label="Thanh công cụ Luga Spotlight">
+    <h1 class="spotlight-title">
+      <span aria-hidden="true">🎙️</span> Luga Spotlight
+    </h1>
+
+    <div class="spotlight-tools" role="toolbar" aria-label="Cài đặt và trạng thái">
+      <!-- Direct Google Login (No Extension, No API Key, Web login via CDP) -->
+      <button
+        id="btnGoogleAuth"
+        class="spotlight-auth-btn offline pulse"
+        role="button"
+        aria-label="Google Gemini: Chưa đăng nhập. Nhấn phím Enter hoặc Space để đăng nhập trên web"
+        title="Nhấn để đăng nhập tài khoản Google trên web"
+      >
+        <span aria-hidden="true">🔐</span> <span id="googleAuthText">Đăng nhập Google</span>
+      </button>
+
+      <!-- Thinking Level Dropdown (Default Medium) -->
+      <label for="spotlightThinkingLevel" class="sr-only">Mức độ suy nghĩ AI:</label>
+      <select
+        id="spotlightThinkingLevel"
+        class="spotlight-select"
+        aria-label="Mức độ suy nghĩ AI: Thấp (Nhanh), Vừa (Mặc định), hoặc Sâu (Chi tiết)"
+        title="Mức độ suy nghĩ AI (Thinking Level)"
+      >
+        <option value="low">⚡ Thấp (Nhanh)</option>
+        <option value="medium" selected>🧠 Vừa (Mặc định)</option>
+        <option value="high">🔍 Sâu (Chi tiết)</option>
+      </select>
+
+      <!-- Mode Toggle Badge Button -->
+      <button
+        id="btnSpotlightMode"
+        class="spotlight-badge"
+        role="button"
+        aria-label="Chế độ hiện tại: Điều khiển PC. Nhấn để chuyển sang Trò chuyện AI"
+        title="Nhấn để chuyển giữa Điều khiển PC và Trò chuyện AI"
+      >
+        <span id="spotlightModeLabel">🎮 Điều khiển PC</span>
+      </button>
+
+      <!-- Close / Hide Button -->
+      <button
+        id="btnSpotlightClose"
+        class="spotlight-close-btn"
+        role="button"
+        aria-label="Đóng hoặc ẩn cửa sổ Spotlight (Phím tắt Esc)"
+        title="Đóng (Esc)"
+      >
+        ✕
+      </button>
+    </div>
+  </header>
+
+  <!-- Live Chat Log (NVDA automatically reads new messages here via aria-live) -->
+  <main
+    class="spotlight-thread"
+    id="spotlightThread"
+    role="log"
+    aria-live="polite"
+    aria-label="Lịch sử tin nhắn và phản hồi"
+  >
+    <div class="spotlight-bubble ai" role="article" aria-label="Phản hồi từ Luga Spotlight">
+      Xin chào! Đây là <strong>Web Spotlight</strong>. Cửa sổ này hỗ trợ <strong>100% trình đọc màn hình NVDA</strong>.
+      <br><br>
+      👉 Nhập câu lệnh bên dưới rồi nhấn <strong>Enter</strong> để điều khiển máy tính, hoặc ấn <strong>F8</strong> để nói qua Micro!
+    </div>
+  </main>
+
+  <!-- Live Thinking Progress Indicator -->
+  <div
+    class="spotlight-thinking"
+    id="spotlightThinking"
+    role="status"
+    aria-live="polite"
+    aria-label="Trạng thái phân tích"
+    style="display: none;"
+  >
+    <span aria-hidden="true">⏳</span>
+    <span id="spotlightThinkingText">Luga đang phân tích màn hình...</span>
+  </div>
+
+  <!-- Command Composer -->
+  <footer class="spotlight-composer" role="contentinfo" aria-label="Khung gửi câu lệnh">
+    <form id="spotlightForm" class="spotlight-input-row" role="search" aria-label="Soạn và gửi câu lệnh">
+      <label for="spotlightInput" class="sr-only">Nhập lệnh điều khiển máy tính hoặc câu hỏi</label>
+      <input
+        type="text"
+        id="spotlightInput"
+        class="spotlight-input"
+        placeholder="Nhập lệnh hoặc câu hỏi (Enter gửi, Esc ẩn)..."
+        autocomplete="off"
+        aria-label="Nhập câu lệnh điều khiển máy tính hoặc câu hỏi"
+        aria-required="true"
+        autofocus
+      >
+      <button
+        type="button"
+        id="btnSpotlightMic"
+        class="spotlight-btn-mic"
+        aria-label="Nói qua Micro (F8)"
+        aria-pressed="false"
+        title="Nói qua Micro (F8)"
+      >
+        <span aria-hidden="true">🎙️</span>
+      </button>
+      <button
+        type="submit"
+        id="btnSpotlightSend"
+        class="spotlight-btn-send"
+        aria-label="Gửi câu lệnh (Enter)"
+        title="Gửi câu lệnh"
+      >
+        Gửi ➔
+      </button>
+    </form>
+
+    <div class="spotlight-sub-row">
+      <label class="spotlight-tts-label" for="chkSpotlightTTS">
+        <input
+          type="checkbox"
+          id="chkSpotlightTTS"
+          aria-label="Tự động đọc to câu trả lời bằng giọng nói TTS"
+          checked
+        >
+        <span>🔊 Đọc giọng nói (TTS)</span>
+      </label>
+
+      <button
+        type="button"
+        id="btnSpotlightClear"
+        class="spotlight-clear-btn"
+        aria-label="Xóa nội dung cuộc trò chuyện"
+        title="Xóa chat"
+      >
+        🗑️ Xóa chat
+      </button>
+
+      <span class="spotlight-kbd-hint" aria-label="Phím tắt: F7 mở hoặc đóng, F8 nói qua micro, Esc ẩn">
+        Phím tắt: <strong style="color: #38bdf8;">F7</strong> Spotlight • <strong style="color: #38bdf8;">F8</strong> Micro • <strong style="color: #38bdf8;">Esc</strong> Ẩn
+      </span>
+    </div>
+  </footer>
+
+  <script src="spotlight.js"></script>
+</body>
+</html>

@@ -15,16 +15,9 @@ from app.logger import get_logger
 logger = get_logger("BrowserHelper")
 
 def find_chrome_executable() -> Optional[str]:
-    """Find Google Chrome binary path on Windows."""
-    candidates = [
-        Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "Google" / "Chrome" / "Application" / "chrome.exe",
-        Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "Google" / "Chrome" / "Application" / "chrome.exe",
-        Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "Application" / "chrome.exe",
-    ]
-    for p in candidates:
-        if p.exists():
-            return str(p)
-    return shutil.which("chrome.exe") or shutil.which("chrome")
+    """Find Chromium-based browser path (Google Chrome, Microsoft Edge, Brave) across platforms."""
+    from app.google_auth import find_chromium_browser
+    return find_chromium_browser()
 
 
 def is_chrome_running() -> bool:

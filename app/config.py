@@ -8,9 +8,9 @@ import sys
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Server configuration
+# Server configuration (Port 8765: dedicated non-conflicting port for Luga Assist)
 HOST = os.getenv("LUGA_HOST", "127.0.0.1")
-PORT = int(os.getenv("LUGA_PORT", "8000"))
+PORT = int(os.getenv("LUGA_PORT", "8765"))
 
 # Static and Web assets
 if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
