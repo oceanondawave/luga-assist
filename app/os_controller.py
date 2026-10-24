@@ -12,8 +12,11 @@ from app.config import (
     MOUSE_MOVE_DURATION,
     ACTION_SAFETY_PAUSE,
 )
-from app.accessibility import accessibility_manager
+from app.accessibility import accessibility_manager, enable_windows_dpi_awareness
 from app.file_and_terminal import file_and_terminal
+
+# Ensure Windows treats process as DPI aware so pyautogui and screen coordinates match 1:1
+enable_windows_dpi_awareness()
 
 # Enable failsafe: moving mouse cursor to any corner will raise pyautogui.FailSafeException
 pyautogui.FAILSAFE = True
@@ -92,13 +95,17 @@ class OSController:
                 elif any(k in target_str for k in ("close window", "đóng cửa sổ", "red button", "nút đỏ")):
                     w_res = self.window_control("close")
                     result["details"] = w_res["details"] or "Clicked Close window button"
-                elif target and accessibility_manager.focus_element_by_name(target):
-                    result["details"] = f"Selected '{target}' via 100% Accessibility Grounding"
                 elif "x_percent" in action_data and "y_percent" in action_data:
                     x, y = self.to_pixel_coords(action_data["x_percent"], action_data["y_percent"])
+                    snapped = accessibility_manager.snap_coordinates(x, y, target=target_str)
+                    if snapped:
+                        x, y = snapped
+                        print(f"[OSController] 🎯 Khóa chính xác tâm phần tử UI: ({x}, {y})")
                     self._native_click(x, y, button="left", click_count=1)
                     target_info = f" '{target}'" if target else ""
                     result["details"] = f"Clicked{target_info} at ({x}, {y})"
+                elif target and accessibility_manager.focus_element_by_name(target):
+                    result["details"] = f"Selected '{target}' via 100% Accessibility Grounding"
                 else:
                     # Target not found in AX and no visual coordinates provided
                     result["success"] = False

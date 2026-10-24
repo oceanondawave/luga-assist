@@ -933,6 +933,52 @@ def test_google_auth_and_web_spotlight_endpoints():
 
     print("test_google_auth_and_web_spotlight_endpoints: PASSED")
 
+def test_browser_default_and_coordinate_snapping():
+    from app.google_auth import is_chromium_browser, get_windows_default_browser
+    from app.accessibility import accessibility_manager
+    from app.gemini_service import gemini_service
+
+    # 1. Test is_chromium_browser detection
+    assert is_chromium_browser("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe") is True
+    assert is_chromium_browser("C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe") is True
+    assert is_chromium_browser("C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe") is True
+    assert is_chromium_browser("C:\\Users\\User\\AppData\\Local\\CocCoc\\Browser\\Application\\browser.exe") is True
+    assert is_chromium_browser("C:\\Program Files\\Mozilla Firefox\\firefox.exe") is False
+
+    # 2. Test snap_coordinates logic
+    # Set dummy cached element
+    accessibility_manager.cached_elements = [{
+        "role": "Button",
+        "name": "Search Button",
+        "pixel_x": 500,
+        "pixel_y": 300,
+        "width": 100,
+        "height": 40,
+        "x_percent": 0.26,
+        "y_percent": 0.28
+    }]
+    # Click inside bounding box (left=450, right=550, top=280, bottom=320)
+    snapped = accessibility_manager.snap_coordinates(490, 305)
+    assert snapped == (500, 300), f"Expected (500, 300), got {snapped}"
+
+    # Click within 30px distance
+    snapped_near = accessibility_manager.snap_coordinates(515, 325)
+    assert snapped_near == (500, 300), f"Expected (500, 300), got {snapped_near}"
+
+    # Click far away returns None
+    snapped_far = accessibility_manager.snap_coordinates(100, 100)
+    assert snapped_far is None
+
+    # 3. Test gemini_service thinking level state
+    gemini_service.set_thinking_level("high")
+    assert gemini_service.current_thinking_level == "high"
+    gemini_service.set_thinking_level("low")
+    assert gemini_service.current_thinking_level == "low"
+    gemini_service.set_thinking_level("medium")
+    assert gemini_service.current_thinking_level == "medium"
+
+    print("test_browser_default_and_coordinate_snapping: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -964,6 +1010,7 @@ if __name__ == "__main__":
     test_cancellation_and_emergency_stop()
     test_thinking_level_configuration_and_prompts()
     test_google_auth_and_web_spotlight_endpoints()
+    test_browser_default_and_coordinate_snapping()
     print("\n🎉 ALL TESTS (INCLUDING EMERGENCY STOP & CANCELLATION) PASSED SUCCESSFULLY!")
 
 

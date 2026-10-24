@@ -12,6 +12,26 @@ import pyautogui
 IS_WINDOWS = True
 
 
+def enable_windows_dpi_awareness():
+    """Ensure Windows treats process as per-monitor DPI aware so mouse & screen pixels match 1:1."""
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            # Per-monitor DPI aware V2
+            ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+        except Exception:
+            try:
+                ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+            except Exception:
+                try:
+                    ctypes.windll.user32.SetProcessDPIAware()
+                except Exception:
+                    pass
+
+
+enable_windows_dpi_awareness()
+
+
 def ensure_accessibility_permissions(prompt: bool = False) -> bool:
     """
     On Windows, application processes do not require macOS-style TCC permissions.
@@ -296,6 +316,56 @@ class AccessibilityManager:
             return True
 
         return False
+
+    def snap_coordinates(self, pixel_x: int, pixel_y: int, target: str = "") -> Optional[Tuple[int, int]]:
+        """
+        Check if (pixel_x, pixel_y) falls within or near any UI element in the active window.
+        If matched, snaps to the exact center (cx, cy) of that element for 100% precision.
+        """
+        if not self.cached_elements:
+            self.get_frontmost_app_elements()
+
+        if not self.cached_elements:
+            return None
+
+        target_clean = str(target or "").strip().lower()
+
+        # 1. First priority: Element whose bounding box directly contains (pixel_x, pixel_y)
+        for elem in self.cached_elements:
+            cx, cy = elem.get("pixel_x", 0), elem.get("pixel_y", 0)
+            w, h = elem.get("width", 0), elem.get("height", 0)
+            if w > 0 and h > 0:
+                left = cx - w / 2.0
+                right = cx + w / 2.0
+                top = cy - h / 2.0
+                bottom = cy + h / 2.0
+                if left <= pixel_x <= right and top <= pixel_y <= bottom:
+                    return cx, cy
+
+        # 2. Second priority: If target name matches an element within 50px
+        if target_clean:
+            for elem in self.cached_elements:
+                elem_name = elem.get("name", "").lower()
+                if target_clean in elem_name or elem_name in target_clean:
+                    cx, cy = elem.get("pixel_x", 0), elem.get("pixel_y", 0)
+                    dist = ((pixel_x - cx) ** 2 + (pixel_y - cy) ** 2) ** 0.5
+                    if dist <= 50:
+                        return cx, cy
+
+        # 3. Third priority: Closest element within 30px
+        closest_elem = None
+        min_dist = 30.0
+        for elem in self.cached_elements:
+            cx, cy = elem.get("pixel_x", 0), elem.get("pixel_y", 0)
+            dist = ((pixel_x - cx) ** 2 + (pixel_y - cy) ** 2) ** 0.5
+            if dist < min_dist:
+                min_dist = dist
+                closest_elem = elem
+
+        if closest_elem:
+            return closest_elem["pixel_x"], closest_elem["pixel_y"]
+
+        return None
 
     def select_element_by_name(self, target_name: str) -> bool:
         """Alias for focus_element_by_name to select web or app elements directly."""

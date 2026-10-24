@@ -271,8 +271,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function handleMessage(msg) {
     if (msg.type === "GOOGLE_AUTH_SUCCESS") {
-      updateGoogleAuthUI(true);
-      appendBubble("ai", "🎉 Đăng nhập Google thành công! Kết nối Gemini đã sẵn sàng. Bạn có thể điều khiển máy tính ngay bây giờ!");
+      const isReady = msg.gemini_ready !== false;
+      updateGoogleAuthUI(isReady);
+      if (isReady) {
+        appendBubble("ai", "🎉 Đăng nhập Google thành công! Kết nối Gemini đã sẵn sàng. Bạn có thể điều khiển máy tính ngay bây giờ!");
+      } else {
+        appendBubble("ai", `⚠️ ${msg.message || "Đã nhận cookie nhưng chưa thể kết nối Gemini. Vui lòng thử lại."}`);
+      }
     } else if (msg.type === "GOOGLE_AUTH_LOGGED_OUT") {
       updateGoogleAuthUI(false);
       appendBubble("ai", "🚪 Đã đăng xuất khỏi tài khoản Google.");

@@ -163,8 +163,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function handleMessage(msg) {
     if (msg.type === "GOOGLE_AUTH_SUCCESS") {
-      updateGoogleStatus(true);
-      appendBubble("ai", "🎉 Đăng nhập Google thành công! Gemini đã sẵn sàng.");
+      const isReady = msg.gemini_ready !== false;
+      updateGoogleStatus(isReady);
+      if (isReady) {
+        appendBubble("ai", "🎉 Đăng nhập Google thành công! Gemini đã sẵn sàng.");
+      } else {
+        appendBubble("ai", `⚠️ ${msg.message || "Đã nhận cookie nhưng chưa thể kết nối Gemini."}`);
+      }
     } else if (msg.type === "MODE_CHANGED") {
       updateMode(msg.mode);
     } else if (msg.type === "STATUS_UPDATE") {

@@ -1,48 +1,37 @@
-# 🚀 Luga Assist v1.2.0 — Release Notes
+# 🚀 Luga Assist v1.2.1 — Release Notes
 
-> **Bản phát hành chính thức Luga Assist v1.2.0: Cửa sổ Web Spotlight độc lập, tương thích 100% trình đọc màn hình NVDA, đăng nhập Google Web trực tiếp 1-click không cần Extension.**
+> **Bản cập nhật Luga Assist v1.2.1: Hỗ trợ Trình duyệt mặc định hệ thống (Chrome, Brave, Cốc Cốc, Edge), khắc phục triệt để lỗi Session Google, tối ưu độ chính xác nhấp chuột 100% với DPI Awareness & Snapping, và kết nối trực tiếp Mức độ suy nghĩ (Thinking Level) vào Gemini.**
 
 ---
 
-## 🌟 Điểm nổi bật trong bản phát hành v1.2.0 (Key Highlights)
+## 🌟 Điểm nổi bật trong bản phát hành v1.2.1 (Key Highlights)
 
-### 1. 🚀 Đăng nhập Google Web Trực tiếp (Zero Extension, Zero API Key)
-* **Không cần tiện ích mở rộng (No Extension)**: Đã loại bỏ hoàn toàn yêu cầu cài đặt Chrome Extension, không cần bật Developer Mode hay nạp Unpacked Extension.
-* **Không tốn phí API Key**: Sử dụng trực tiếp bộ não Google Gemini Vision miễn phí qua giao diện Web.
-* **Tự động hóa hoàn toàn**: Nhấn nút **"Đăng nhập Google"** trên Spotlight (F7), đăng nhập tài khoản Google trên cửa sổ trình duyệt xuất hiện. Hệ thống sẽ tự động bắt cặp cookies `__Secure-1PSID` & `__Secure-1PSIDTS`, tự đóng trình duyệt ngay khi đăng nhập xong và khôi phục Spotlight.
-* Hỗ trợ đầy đủ menu **Đổi tài khoản** và **Đăng xuất**.
+### 1. 🌐 Tự động Nhận diện & Tôn trọng Trình duyệt Mặc định (Default Browser Support)
+* **Không còn ép buộc Microsoft Edge**: Tự động truy vấn cấu hình Windows Registry (`UrlAssociations\https\UserChoice`) để xác định chính xác trình duyệt mặc định mà người dùng đang sử dụng (Google Chrome, Brave Browser, Cốc Cốc, Microsoft Edge, v.v.).
+* Nếu trình duyệt mặc định là Chromium-based, Luga Assist sẽ mở chính trình duyệt đó để đăng nhập.
+* Nếu trình duyệt mặc định không phải Chromium (ví dụ Firefox) hoặc không xác định được, hệ thống ưu tiên tìm theo thứ tự người dùng cài đặt: **Chrome $\rightarrow$ Brave $\rightarrow$ Cốc Cốc $\rightarrow$ Edge**.
 
-### 2. ♿ Giao diện Web Spotlight (F7) — 100% Tương thích NVDA
-* **Thiết kế chuyên biệt cho Người khiếm thị**:
-  * Tương phản cao, bố cục siêu gọn nhẹ, responsive, tương thích 100% với trình đọc màn hình NVDA và JAWS.
-  * Đầy đủ thuộc tính trợ năng: `role="banner"`, `role="log"`, `role="contentinfo"`, nhãn `aria-label` chi tiết trên từng nút bấm.
-  * Vùng cập nhật trực tiếp `aria-live="polite"` giúp NVDA tự động đọc to tin nhắn mới và trạng thái phân tích màn hình mà không cần rà soát lại.
-* **Điều hướng bàn phím mượt mà**: Focus tự động vào ô soạn thảo khi mở, hỗ trợ phím Tab tuần tự qua tất cả các chức năng.
+### 2. 🛡️ Khắc phục Triệt để Lỗi "Session Google đã hết hạn"
+* **Bắt đủ cặp Tokens xác thực**: Modern Google Gemini bắt buộc phải có cặp cookie `__Secure-1PSID` và `__Secure-1PSIDTS` (kèm `__Secure-1PSIDCC`). Phiên bản mới lắng nghe liên tục cho đến khi đủ toàn bộ token cần thiết thay vì đóng sớm sau vài giây.
+* **Tự động điều hướng kích hoạt token**: Nếu người dùng hoàn tất đăng nhập trên `accounts.google.com` mà chưa được chuyển tiếp, hệ thống gửi lệnh qua Chrome DevTools Protocol (CDP) mở thẳng `gemini.google.com` để hoàn tất lưu cookie.
+* **Xác thực trước khi đóng trình duyệt**: Chỉ đóng cửa sổ đăng nhập và thông báo thành công sau khi `GeminiClient` đã kết nối thành công 100%. Nếu kết nối chưa hoàn tất, trình duyệt vẫn mở để người dùng thao tác tiếp.
+* **Phân biệt lỗi chính xác**: Không còn tự động gán nhãn "Session hết hạn" cho các lỗi mạng gián đoạn tạm thời hay timeout.
 
-### 3. ⚡ Cơ chế Bật / Tắt 1 Cửa sổ Duy nhất (Single-Instance Toggle)
-* Khắc phục triệt để hiện tượng mỗi lần bấm F7 lại tạo thêm một tiến trình Edge mới.
-* Sử dụng Chromium App Window độc lập (`--user-data-dir` riêng biệt) kết hợp Win32 API (`EnumWindows`, `GetForegroundWindow`).
-* **Hành vi thông minh**:
-  * Nếu Spotlight đang hiển thị trên cùng $\rightarrow$ thu nhỏ / ẩn cửa sổ (SW_MINIMIZE).
-  * Nếu Spotlight đang ở dưới hoặc thu nhỏ $\rightarrow$ khôi phục (SW_RESTORE), đưa lên trên cùng và tự động focus ô nhập liệu.
+### 3. 🎯 Độ Chính Xác Nhấp Chuột 100% (100% Click Precision)
+* **Kích hoạt Windows Per-Monitor DPI Awareness (V2)**: Đồng bộ hóa hoàn hảo 1:1 giữa độ phân giải vật lý của màn hình, tọa độ chụp ảnh của thư viện MSS, hệ thống lưới thị giác Visual Grid và tọa độ chuột `pyautogui`. Khắc phục triệt để hiện tượng click lệch trên màn hình có tỷ lệ phóng to (125%, 150%, 175%, 200%).
+* **Công nghệ Hít Tọa độ Thông minh (UI Automation Coordinate Snapping)**: Khi AI trả về tọa độ nhấp chuột, hệ thống tự động đối chiếu với Bounding Rectangle của các phần tử giao diện thực tế (nút bấm, ô tìm kiếm, liên kết) và tự động "hít" con trỏ chuột vào đúng tâm của nút bấm.
+* **Ảnh chụp màn hình Siêu nét (High-Resolution Capture)**: Giữ nguyên độ phân giải gốc lên đến 2K/QHD (2560px), chất lượng JPEG 92 với tính năng chống nhòe `subsampling=0` và thuật toán thu nhỏ `LANCZOS` cho màn hình 4K. Chữ và biểu tượng hiển thị sắc nét tuyệt đối cho Gemini Vision.
 
-### 4. 🛑 Nút Ẩn và Nút Thoát Ứng Dụng Rõ Ràng
-* **`✕ Ẩn (Esc)`**: Ẩn tạm thời cửa sổ Spotlight để làm việc khác; Luga Assist vẫn chạy ngầm lắng nghe các phím tắt F7, F8.
-* **`🛑 Thoát (Ctrl + Q)`**: Hộp thoại xác nhận tắt hoàn toàn Luga Assist, phát giọng nói tạm biệt và dừng toàn bộ dịch vụ ngầm.
+### 4. 🧠 Kết Nối Thực Tế Mức Độ Suy Nghĩ (Thinking Level) vào Động Cơ Gemini
+* Menu chọn mức độ suy nghĩ (Thấp / Vừa / Sâu) trên Spotlight và phím tắt giờ đây được liên kết trực tiếp vào hàm gọi API của Gemini:
+  * **⚡ Thấp (Low)**: Chạy mô hình phản hồi nhanh nhất, tắt extended thinking, tối ưu tốc độ ra lệnh.
+  * **🧠 Vừa (Medium - Mặc định)**: Cân bằng lý tưởng giữa tốc độ và độ chuẩn xác.
+  * **🔍 Sâu (High)**: Truyền tham số `extended_thinking=True` trực tiếp vào phiên Gemini Web để AI phân tích đa bước và suy luận kỹ lưỡng trước khi thao tác màn hình phức tạp.
 
-### 5. 🧠 Tùy chọn Mức độ Suy nghĩ AI (Thinking Level)
-* Tích hợp menu chọn mức độ suy nghĩ ngay trên thanh công cụ Spotlight:
-  * **⚡ Thấp (Low)**: Phản hồi nhanh tức thì.
-  * **🧠 Vừa (Medium - Mặc định)**: Cân bằng tốc độ và độ chuẩn xác.
-  * **🔍 Sâu (High)**: Phân tích kỹ lưỡng các tác vụ phức tạp đa bước.
-
-### 6. 🔊 Âm thanh Earcon & Giọng đọc Thông minh
-* Hệ thống âm thanh phản hồi trực quan:
-  * 🔔 **Chime**: Phát khi bắt đầu lắng nghe lệnh giọng nói.
-  * ⏳ **Pulse**: Nhịp tim âm thanh phát ngầm trong lúc AI chụp ảnh và phân tích màn hình.
-  * 🔔 **Glass**: Phát khi tác vụ đã hoàn thành xuất sắc.
-  * ⚠️ **Basso**: Phát khi có lỗi hoặc khi người dùng kích hoạt ngắt khẩn cấp.
-* Giọng đọc Edge Neural Tiếng Việt (`vi-VN-HoaiMyNeural` / `vi-VN-NamMinhNeural`) và Tiếng Anh (`en-US-AriaNeural`), tự động chuyển tiếp an toàn sang gTTS khi đường truyền mạng có sự cố.
+### 5. ♿ Tương Thích Hoàn Hảo NVDA & Giao Diện Web Spotlight
+* Cửa sổ Spotlight (F7) mượt mà, nhỏ gọn, phản hồi tức thì với phím Tab.
+* Cơ chế Single-Instance Toggle: Mỗi lần bấm F7 chỉ kích hoạt hoặc ẩn một cửa sổ duy nhất, không tạo tiến trình thừa.
+* Đầy đủ nút **✕ Ẩn (Esc)** và **🛑 Thoát (Ctrl + Q)**.
 
 ---
 
@@ -70,14 +59,14 @@
 
 ## 🚀 Hướng Dẫn Cài Đặt Nhanh
 
-1. Tải file **`Luga-Assist-Setup.exe`** bên dưới.
+1. Tải file **`Luga-Assist-Setup.exe`** từ mục Assets.
 2. Mở file và bấm **Next** để cài đặt vào máy tính.
-3. Sau khi cài, mở icon **Luga Assist** trên màn hình Desktop.
-4. Bấm **`F7`**, chọn **"Đăng nhập Google"** để liên kết tài khoản Gemini (chỉ cần làm 1 lần duy nhất).
+3. Mở icon **Luga Assist** trên màn hình Desktop.
+4. Bấm **`F7`**, chọn **"Đăng nhập Google"** để liên kết tài khoản Gemini trên trình duyệt mặc định của bạn (chỉ cần làm 1 lần).
 5. Bấm **`F8`** để bắt đầu ra lệnh bằng giọng nói!
 
 ---
 
 ## 🧪 Kết Quả Kiểm Thử (Verification)
-* **24/24 tests passed**: Vượt qua 100% các bài kiểm tra toàn diện pipeline, xử lý sự kiện ngắt khẩn cấp, kiểm tra phím tắt, âm thanh, điều khiển màn hình và xác thực Google Web.
+* **25/25 tests passed**: Vượt qua 100% các bài kiểm tra toàn diện: nhận diện trình duyệt mặc định, hít tọa độ thông minh, kiểm soát DPI, mức độ suy nghĩ AI, xử lý sự kiện ngắt khẩn cấp, âm thanh và xác thực Google Web.
 * **100% NVDA Screen Reader Compatible**: Đã kiểm tra thực tế với NVDA trên Windows 10 và Windows 11.

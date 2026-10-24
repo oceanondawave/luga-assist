@@ -50,17 +50,110 @@ def get_available_cdp_port(preferred_port: int = DEFAULT_CDP_PORT) -> int:
     return preferred_port
 
 
+def get_windows_default_browser() -> Optional[str]:
+    r"""
+    Read Windows Registry to find the user's actual default browser.
+    Checks HKCU\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice
+    and resolves the shell open command to find the executable path.
+    """
+    if not sys.platform.startswith("win"):
+        return None
+    try:
+        import winreg
+        import re
+
+        prog_id = None
+        for proto in ("https", "http"):
+            try:
+                with winreg.OpenKey(
+                    winreg.HKEY_CURRENT_USER,
+                    rf"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\{proto}\UserChoice"
+                ) as key:
+                    prog_id, _ = winreg.QueryValueEx(key, "ProgId")
+                    if prog_id:
+                        break
+            except Exception:
+                pass
+
+        if not prog_id:
+            return None
+
+        # Resolve ProgId to executable command
+        cmd_str = None
+        for root in (winreg.HKEY_CLASSES_ROOT, winreg.HKEY_LOCAL_MACHINE):
+            try:
+                with winreg.OpenKey(root, rf"{prog_id}\shell\open\command") as key:
+                    cmd_str, _ = winreg.QueryValueEx(key, "")
+                    if cmd_str:
+                        break
+            except Exception:
+                pass
+
+        if not cmd_str:
+            return None
+
+        # Extract executable path from command line string
+        # e.g. "C:\Program Files\Google\Chrome\Application\chrome.exe" -- "%1"
+        match = re.match(r'^\s*"([^"]+)"', cmd_str) or re.match(r'^\s*([^\s]+)', cmd_str)
+        if match:
+            exe_path = match.group(1)
+            if os.path.exists(exe_path):
+                return exe_path
+    except Exception as e:
+        logger.debug(f"Could not determine Windows default browser: {e}")
+    return None
+
+
+def is_chromium_browser(path: str) -> bool:
+    """Check if the given executable is a Chromium-based browser supporting CDP flags."""
+    lower = path.lower()
+    chromium_names = (
+        "chrome", "msedge", "edge", "brave", "coccoc", "coc_coc",
+        "browser.exe", "opera", "vivaldi", "chromium"
+    )
+    return any(name in lower for name in chromium_names)
+
+
 def find_chromium_browser() -> Optional[str]:
     """
-    Find any available Chromium-based browser (Google Chrome, Microsoft Edge, Brave)
+    Find any available Chromium-based browser (Google Chrome, Microsoft Edge, Brave, Cốc Cốc)
     across Windows, macOS, and Linux.
+    Prioritizes the user's actual default browser whenever it is Chromium-based!
     """
     if sys.platform.startswith("win"):
-        # 1. Check Windows Registry App Paths (most reliable)
+        # 1. First Priority: The user's actual default browser if it is Chromium-based!
+        default_browser = get_windows_default_browser()
+        if default_browser and is_chromium_browser(default_browser):
+            logger.info(f"🌐 Sử dụng trình duyệt mặc định của hệ thống: {default_browser}")
+            return default_browser
+
+        # 2. Check user's preferred browsers in order: Chrome -> Brave -> Cốc Cốc -> Edge
+        # (Edge is last fallback so it never overrides user's preferred installed browsers)
+        candidates = [
+            # Chrome (%LOCALAPPDATA% first for standard per-user installs, then %PROGRAMFILES%)
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "Application" / "chrome.exe",
+            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "Google" / "Chrome" / "Application" / "chrome.exe",
+            Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "Google" / "Chrome" / "Application" / "chrome.exe",
+            # Brave
+            Path(os.environ.get("LOCALAPPDATA", "")) / "BraveSoftware" / "Brave-Browser" / "Application" / "brave.exe",
+            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "BraveSoftware" / "Brave-Browser" / "Application" / "brave.exe",
+            # Cốc Cốc
+            Path(os.environ.get("LOCALAPPDATA", "")) / "CocCoc" / "Browser" / "Application" / "browser.exe",
+            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "CocCoc" / "Browser" / "Application" / "browser.exe",
+            # Microsoft Edge (Guaranteed fallback on Windows 10/11)
+            Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+        ]
+        for p in candidates:
+            if p.exists():
+                return str(p)
+
+        # 3. Check Windows Registry App Paths in order: Chrome, Brave, CocCoc, then Edge
         try:
             import winreg
-            for exe_name in ("chrome.exe", "msedge.exe", "brave.exe"):
-                for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            for exe_name in ("chrome.exe", "brave.exe", "browser.exe", "msedge.exe"):
+                for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
                     try:
                         k = winreg.OpenKey(root, rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe_name}")
                         val, _ = winreg.QueryValueEx(k, "")
@@ -71,24 +164,7 @@ def find_chromium_browser() -> Optional[str]:
         except Exception:
             pass
 
-        # 2. Check standard directory paths
-        candidates = [
-            # Chrome
-            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "Google" / "Chrome" / "Application" / "chrome.exe",
-            Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "Google" / "Chrome" / "Application" / "chrome.exe",
-            Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "Application" / "chrome.exe",
-            # Microsoft Edge (Guaranteed on 100% of Windows 10/11 machines)
-            Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
-            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
-            Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
-            # Brave
-            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "BraveSoftware" / "Brave-Browser" / "Application" / "brave.exe",
-            Path(os.environ.get("LOCALAPPDATA", "")) / "BraveSoftware" / "Brave-Browser" / "Application" / "brave.exe",
-        ]
-        for p in candidates:
-            if p.exists():
-                return str(p)
-        for name in ("chrome.exe", "msedge.exe", "brave.exe", "chrome", "msedge"):
+        for name in ("chrome.exe", "brave.exe", "chrome", "msedge.exe", "msedge"):
             found = shutil.which(name)
             if found:
                 return found
@@ -374,6 +450,7 @@ class GoogleWebAuthManager:
                         cookies = resp_data["result"].get("cookies", [])
                         psid = None
                         psidts = None
+                        psidcc = None
 
                         for c in cookies:
                             c_name = c.get("name")
@@ -383,59 +460,74 @@ class GoogleWebAuthManager:
                                     psid = c.get("value")
                                 elif c_name == "__Secure-1PSIDTS":
                                     psidts = c.get("value")
+                                elif c_name == "__Secure-1PSIDCC":
+                                    psidcc = c.get("value")
 
                         # If __Secure-1PSID is detected:
                         if psid:
-                            # If __Secure-1PSIDTS is not yet present, wait up to 4 iterations (~6s)
-                            # for Google to finish redirecting to gemini.google.com and set PSIDTS
-                            if not psidts and psid_wait_count < 4:
+                            # Google Gemini requires both __Secure-1PSID and __Secure-1PSIDTS for modern auth.
+                            # Keep waiting while browser is open (up to 90 seconds)
+                            if not psidts:
                                 psid_wait_count += 1
-                                logger.info(f"Đã bắt được __Secure-1PSID, đang chờ __Secure-1PSIDTS ({psid_wait_count}/4)...")
+                                if psid_wait_count % 3 == 0:
+                                    logger.info(f"Đã bắt được __Secure-1PSID, đang chờ __Secure-1PSIDTS ({psid_wait_count}s)...")
+                                    # Prompt active page to navigate to gemini.google.com if redirect is pending
+                                    try:
+                                        msg_id += 1
+                                        await ws.send(json.dumps({
+                                            "id": msg_id,
+                                            "method": "Page.navigate",
+                                            "params": {"url": "https://gemini.google.com"}
+                                        }))
+                                    except Exception:
+                                        pass
                                 await asyncio.sleep(1.5)
                                 continue
 
-                            logger.info("🎉 ĐÃ BẮT ĐƯỢC COOKIES GOOGLE GEMINI TỪ TRÌNH DUYỆT!")
-
-                            # 1. Close login browser cleanly immediately
-                            await self._close_login_browser(ws)
-
-                            # 2. Initialize Gemini service session
+                            # Both PSID and PSIDTS are present! Verify session BEFORE closing browser
+                            logger.info("🎉 Đã bắt được __Secure-1PSID và __Secure-1PSIDTS! Đang kích hoạt kết nối Gemini...")
                             from app.gemini_service import gemini_service
                             from app.sound_effects import sound_manager
 
-                            ok = await gemini_service.init_session(psid, psidts)
+                            ok = await gemini_service.init_session(psid, psidts, secure_1psidcc=psidcc)
+                            if ok:
+                                logger.info("🎉 KẾT NỐI GOOGLE GEMINI HOÀN TẤT VÀ SẴN SÀNG 100%!")
 
-                            self.is_logging_in = False
-                            sound_manager.play_done()
+                                # 1. Close login browser cleanly now that session is verified
+                                await self._close_login_browser(ws)
+                                self.is_logging_in = False
+                                sound_manager.play_done()
 
-                            # 3. Bring Spotlight window to front
-                            from app.spotlight_launcher import bring_spotlight_to_front_windows, broadcast_spotlight_message
-                            if sys.platform.startswith("win"):
-                                bring_spotlight_to_front_windows()
-                            broadcast_spotlight_message({"type": "SPOTLIGHT_FOCUS"})
+                                # 2. Bring Spotlight window to front
+                                from app.spotlight_launcher import bring_spotlight_to_front_windows, broadcast_spotlight_message
+                                if sys.platform.startswith("win"):
+                                    bring_spotlight_to_front_windows()
+                                broadcast_spotlight_message({"type": "SPOTLIGHT_FOCUS"})
 
-                            # 4. Notify all web clients and update server status
-                            try:
-                                from app.main import hub
-                                await hub.broadcast_status()
-                                await hub.broadcast_webui({
-                                    "type": "GOOGLE_AUTH_SUCCESS",
-                                    "gemini_ready": ok,
-                                    "message": "Đã đăng nhập Google thành công! Gemini đã sẵn sàng." if ok else "Đã nhận cookie Google nhưng chưa thể kết nối Gemini."
-                                })
-                            except Exception as e:
-                                logger.warning(f"Error broadcasting auth success: {e}")
-
-                            if self._on_success_callback:
+                                # 3. Notify all web clients and update server status
                                 try:
-                                    if asyncio.iscoroutinefunction(self._on_success_callback):
-                                        await self._on_success_callback()
-                                    else:
-                                        self._on_success_callback()
-                                except Exception as cb_err:
-                                    logger.warning(f"Error in on_success_callback: {cb_err}")
+                                    from app.main import hub
+                                    await hub.broadcast_status()
+                                    await hub.broadcast_webui({
+                                        "type": "GOOGLE_AUTH_SUCCESS",
+                                        "gemini_ready": True,
+                                        "message": "Đã đăng nhập Google thành công! Gemini đã sẵn sàng."
+                                    })
+                                except Exception as e:
+                                    logger.warning(f"Error broadcasting auth success: {e}")
 
-                            return
+                                if self._on_success_callback:
+                                    try:
+                                        if asyncio.iscoroutinefunction(self._on_success_callback):
+                                            await self._on_success_callback()
+                                        else:
+                                            self._on_success_callback()
+                                    except Exception as cb_err:
+                                        logger.warning(f"Error in on_success_callback: {cb_err}")
+
+                                return
+                            else:
+                                logger.warning("⚠️ Chưa thể kết nối GeminiClient với cookie hiện tại, tiếp tục theo dõi trình duyệt...")
 
                     await asyncio.sleep(1.5)
 

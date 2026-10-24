@@ -4,7 +4,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D4.svg?logo=windows)](https://github.com)
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-green.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-24%2F24%20Passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-25%2F25%20Passing-brightgreen.svg)](tests/)
 [![NVDA](https://img.shields.io/badge/Accessibility-100%25%20NVDA%20Tested-blue.svg)](https://www.nvaccess.org/)
 [![Port](https://img.shields.io/badge/Port-8765-orange.svg)](http://127.0.0.1:8765)
 

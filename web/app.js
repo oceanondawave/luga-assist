@@ -216,10 +216,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function handleServerMessage(msg) {
     if (msg.type === "GOOGLE_AUTH_SUCCESS") {
-      extDot.classList.add("online");
-      extStatusText.innerText = "Google Gemini: Đã sẵn sàng";
-      if (btnMainGoogleLogin) btnMainGoogleLogin.style.display = "none";
-      appendChatBubble("ai", "🎉 Đăng nhập Google thành công! Gemini đã sẵn sàng kết nối.");
+      const isReady = msg.gemini_ready !== false;
+      if (isReady) {
+        extDot.classList.add("online");
+        extStatusText.innerText = "Google Gemini: Đã sẵn sàng";
+        if (btnMainGoogleLogin) btnMainGoogleLogin.style.display = "none";
+        appendChatBubble("ai", "🎉 Đăng nhập Google thành công! Gemini đã sẵn sàng kết nối.");
+      } else {
+        appendChatBubble("ai", `⚠️ ${msg.message || "Đã nhận cookie nhưng chưa thể kết nối Gemini. Vui lòng thử lại."}`);
+      }
     } else if (msg.type === "GOOGLE_AUTH_LOGGED_OUT") {
       extDot.classList.remove("online");
       extStatusText.innerText = "Google Gemini: Chưa đăng nhập";

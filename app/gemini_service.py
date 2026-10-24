@@ -31,8 +31,17 @@ class GeminiSessionService:
         self.is_ready = False
         self._current_psid: str = ""
         self._current_psidts: str = ""
+        self._current_psidcc: str = ""
+        self.current_thinking_level: str = "medium"
         self._init_lock = asyncio.Lock()
         self._saved_cookies = self._read_saved_cookies()
+
+    def set_thinking_level(self, level: str):
+        """Update active AI thinking level (low, medium, high)."""
+        lvl = (level or "medium").strip().lower()
+        if lvl in ("low", "medium", "high"):
+            self.current_thinking_level = lvl
+            print(f"[GeminiSessionService] ⚙️ Đã thiết lập mức độ suy nghĩ AI: {lvl.upper()}")
 
     def _read_saved_cookies(self) -> Optional[Dict[str, str]]:
         if SESSION_FILE.exists():
@@ -45,8 +54,13 @@ class GeminiSessionService:
                 print(f"[GeminiSessionService] Warning loading saved session: {e}")
         return None
 
-    def _start_chat_safe(self):
+    def _start_chat_safe(self, preferred_model: Optional[str] = None):
         """Start chat with standard Gemini model (full multimodal vision & spatial reasoning)."""
+        if preferred_model and self.client:
+            try:
+                return self.client.start_chat(model=preferred_model)
+            except Exception:
+                pass
         try:
             return self.client.start_chat()
         except Exception:
@@ -62,13 +76,20 @@ class GeminiSessionService:
             await self.init_session(
                 cookies.get("secure_1psid", ""),
                 cookies.get("secure_1psidts", ""),
+                cookies.get("secure_1psidcc", ""),
             )
 
-    async def init_session(self, secure_1psid: str, secure_1psidts: Optional[str] = None) -> bool:
+    async def init_session(
+        self,
+        secure_1psid: str,
+        secure_1psidts: Optional[str] = None,
+        secure_1psidcc: Optional[str] = None
+    ) -> bool:
         """Initialize or keep active background Gemini client using cookies."""
         async with self._init_lock:
             cleaned_psid = (secure_1psid or "").strip()
             cleaned_psidts = (secure_1psidts or "").strip() if secure_1psidts else ""
+            cleaned_psidcc = (secure_1psidcc or "").strip() if secure_1psidcc else ""
 
             if not cleaned_psid:
                 return False
@@ -90,9 +111,16 @@ class GeminiSessionService:
                     secure_1psid=cleaned_psid,
                     secure_1psidts=cleaned_psidts or None,
                 )
-                await self.client.init(timeout=60)
+                if cleaned_psidcc:
+                    try:
+                        self.client.cookies.set("__Secure-1PSIDCC", cleaned_psidcc, domain=".google.com", secure=True)
+                    except Exception:
+                        pass
+
+                await self.client.init(timeout=30)
                 self._current_psid = cleaned_psid
                 self._current_psidts = cleaned_psidts
+                self._current_psidcc = cleaned_psidcc
                 self.is_ready = True
 
                 # Start or retain continuous chat session
@@ -105,6 +133,7 @@ class GeminiSessionService:
                     json.dump({
                         "secure_1psid": cleaned_psid,
                         "secure_1psidts": cleaned_psidts,
+                        "secure_1psidcc": cleaned_psidcc,
                     }, f)
 
                 print("[GeminiSessionService] ✅ Kết nối Google Gemini ngầm thành công! (Duy trì 1 cuộc trò chuyện liên tục)")
@@ -114,11 +143,16 @@ class GeminiSessionService:
                 self.is_ready = False
                 return False
 
-    async def send_prompt(self, prompt: str, image_path: Optional[Path] = None) -> str:
+    async def send_prompt(
+        self,
+        prompt: str,
+        image_path: Optional[Path] = None,
+        thinking_level: Optional[str] = None
+    ) -> str:
         """
         Send prompt and current screenshot to Gemini in the SAME continuous chat.
         This preserves all conversation history and screen context.
-        Uses high-speed Flash-Lite model for immediate responses (<5s).
+        Directly passes extended_thinking to Gemini when thinking_level is high!
         """
         if not self.is_ready or not self.client:
             raise RuntimeError(
@@ -131,9 +165,21 @@ class GeminiSessionService:
 
         files = [str(image_path)] if image_path and image_path.exists() else None
 
+        active_lvl = (thinking_level or self.current_thinking_level or "medium").strip().lower()
+        use_extended_thinking = (active_lvl == "high")
+
         try:
-            print(f"[GeminiSessionService] Gửi lệnh vào cuộc trò chuyện hiện tại (cid={self.chat_session.cid or 'mới'})...")
-            output = await self.chat_session.send_message(prompt, files=files)
+            print(f"[GeminiSessionService] Gửi lệnh vào cuộc trò chuyện hiện tại (cid={self.chat_session.cid or 'mới'}, mức={active_lvl}, extended_thinking={use_extended_thinking})...")
+            try:
+                output = await self.chat_session.send_message(
+                    prompt,
+                    files=files,
+                    extended_thinking=use_extended_thinking
+                )
+            except TypeError:
+                # If library method doesn't take extended_thinking kwargs
+                output = await self.chat_session.send_message(prompt, files=files)
+
             response_text = output.text if hasattr(output, "text") else str(output)
             # Remove any citation badges e.g. [cite: 1], [cite: 1, 2], [cite: ...]
             response_text = re.sub(r"\[\s*cite[^\]]*\]", "", response_text, flags=re.IGNORECASE)
@@ -148,7 +194,14 @@ class GeminiSessionService:
             elif "exhausted" in err_str or "too long" in err_str or "context window" in err_str:
                 print(f"[GeminiSessionService] Context bị quá tải ({e}), tự động làm mới chat session...")
                 self.reset_chat()
-                output = await self.chat_session.send_message(prompt, files=files)
+                try:
+                    output = await self.chat_session.send_message(
+                        prompt,
+                        files=files,
+                        extended_thinking=use_extended_thinking
+                    )
+                except TypeError:
+                    output = await self.chat_session.send_message(prompt, files=files)
                 response_text = output.text if hasattr(output, "text") else str(output)
                 return re.sub(r"\[\s*cite[^\]]*\]", "", response_text, flags=re.IGNORECASE)
             raise e
@@ -159,10 +212,11 @@ class GeminiSessionService:
             self.chat_session = self._start_chat_safe()
             print("[GeminiSessionService] Đã tạo phiên chat mới thành công.")
 
-    async def send_chat_message(self, message: str) -> str:
+    async def send_chat_message(self, message: str, thinking_level: Optional[str] = None) -> str:
         """
         Send a natural conversational message to Gemini in Chat Mode.
         Maintains conversational context across turns with zero screen clutter.
+        Directly passes extended_thinking to Gemini when thinking_level is high!
         """
         if not self.is_ready or not self.client:
             raise RuntimeError(
@@ -173,9 +227,19 @@ class GeminiSessionService:
         if self.conversation_session is None:
             self.conversation_session = self._start_chat_safe()
 
+        active_lvl = (thinking_level or self.current_thinking_level or "medium").strip().lower()
+        use_extended_thinking = (active_lvl == "high")
+
         try:
-            print(f"[GeminiSessionService] [Chat Mode] Gửi tin nhắn: \"{message[:60]}...\"")
-            output = await self.conversation_session.send_message(message)
+            print(f"[GeminiSessionService] [Chat Mode] Gửi tin nhắn (mức={active_lvl}, extended_thinking={use_extended_thinking}): \"{message[:60]}...\"")
+            try:
+                output = await self.conversation_session.send_message(
+                    message,
+                    extended_thinking=use_extended_thinking
+                )
+            except TypeError:
+                output = await self.conversation_session.send_message(message)
+
             response_text = output.text if hasattr(output, "text") else str(output)
             # Remove any citation badges
             response_text = re.sub(r"\[\s*cite[^\]]*\]", "", response_text, flags=re.IGNORECASE)
@@ -188,7 +252,13 @@ class GeminiSessionService:
                 self.conversation_session = None
             elif "exhausted" in err_str or "too long" in err_str or "context window" in err_str:
                 self.conversation_session = self._start_chat_safe()
-                output = await self.conversation_session.send_message(message)
+                try:
+                    output = await self.conversation_session.send_message(
+                        message,
+                        extended_thinking=use_extended_thinking
+                    )
+                except TypeError:
+                    output = await self.conversation_session.send_message(message)
                 response_text = output.text if hasattr(output, "text") else str(output)
                 return re.sub(r"\[\s*cite[^\]]*\]", "", response_text, flags=re.IGNORECASE).strip()
             raise e

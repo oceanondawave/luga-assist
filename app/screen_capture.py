@@ -67,11 +67,12 @@ class ScreenCapturer:
                 except Exception:
                     pass
 
-        # 1. High-speed scale down first (reduces memory & drawing time by 75%)
+        # 1. High-resolution scaling: keep native resolution up to 2K/QHD (SCREENSHOT_MAX_WIDTH)
+        # For 4K/retina displays, downscale smoothly using LANCZOS to preserve razor-sharp text & icons
         if orig_w > SCREENSHOT_MAX_WIDTH:
             scale_ratio = SCREENSHOT_MAX_WIDTH / float(orig_w)
             new_h = int(orig_h * scale_ratio)
-            processed_img = img.resize((SCREENSHOT_MAX_WIDTH, new_h), Image.Resampling.BILINEAR)
+            processed_img = img.resize((SCREENSHOT_MAX_WIDTH, new_h), Image.Resampling.LANCZOS)
         else:
             processed_img = img
 
@@ -79,9 +80,9 @@ class ScreenCapturer:
         if with_grid:
             processed_img = self._draw_coordinate_grid(processed_img)
 
-        # 3. High-speed JPEG save & Base64 encoding in memory
+        # 3. High-quality JPEG save & Base64 encoding in memory (subsampling=0 for razor-sharp text)
         buffered = io.BytesIO()
-        processed_img.save(buffered, format="JPEG", quality=85)
+        processed_img.save(buffered, format="JPEG", quality=92, subsampling=0)
         raw_bytes = buffered.getvalue()
 
         with open(self.screenshot_path, "wb") as f:

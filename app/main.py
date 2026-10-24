@@ -463,6 +463,7 @@ async def api_set_thinking_level(payload: ThinkingLevelPayload):
     if lvl not in ("low", "medium", "high"):
         lvl = "medium"
     current_thinking_level = lvl
+    gemini_service.set_thinking_level(lvl)
     await hub.broadcast_webui({
         "type": "THINKING_LEVEL_CHANGED",
         "thinking_level": current_thinking_level
@@ -868,6 +869,7 @@ async def websocket_webui(ws: WebSocket):
                 lvl = (data.get("thinking_level") or "").strip().lower()
                 if lvl in ("low", "medium", "high"):
                     current_thinking_level = lvl
+                    gemini_service.set_thinking_level(lvl)
                     await hub.broadcast_webui({
                         "type": "THINKING_LEVEL_CHANGED",
                         "thinking_level": current_thinking_level
@@ -1199,66 +1201,56 @@ async def _execute_pipeline(
         used_background = False
 
         if gemini_service.is_ready:
-            print(f"[Pipeline] [Bước {step}] Gửi tới Background Gemini Service...")
+            print(f"[Pipeline] [Bước {step}] Gửi tới Background Gemini Service (mức={cmd_thinking_level})...")
             try:
                 raw_response = await gemini_service.send_prompt(
                     prompt=prompt,
-                    image_path=screen_capturer.screenshot_path
+                    image_path=screen_capturer.screenshot_path,
+                    thinking_level=cmd_thinking_level
                 )
                 used_background = True
             except Exception as e:
-                print(f"[Pipeline] ⚠️ Background Gemini Service không khả dụng ({e})")
-                gemini_service.is_ready = False
-                # Notify extension to sync fresh cookies in background
-                if hub.extension_client is not None:
-                    try:
-                        await hub.extension_client.send_json({"type": "SYNC_COOKIES"})
-                    except Exception:
-                        pass
+                err_msg = str(e)
+                print(f"[Pipeline] ⚠️ Lỗi Background Gemini Service: {err_msg}")
+                err_lower = err_msg.lower()
+                is_auth_error = any(k in err_lower for k in ("unauthenticated", "permission denied", "auth", "login", "cookie"))
+                if is_auth_error:
+                    gemini_service.is_ready = False
+                    err_text = (
+                        "Phiên đăng nhập Google Gemini đã hết hạn. "
+                        "Vui lòng nhấn nút 'Đăng nhập Google' trên cửa sổ Spotlight (F7) để kết nối lại."
+                    )
+                else:
+                    err_text = f"Lỗi phản hồi từ Gemini ({err_msg}). Vui lòng thử lại câu lệnh."
 
-        if not used_background:
-            if hub.extension_client is not None:
-                print(f"[Pipeline] 🔄 [Bước {step}] Tự động chuyển tiếp qua Chrome Extension...")
-                task_id = str(uuid.uuid4())
-                loop = asyncio.get_running_loop()
-                future = loop.create_future()
-                hub.pending_tasks[task_id] = future
-                await hub.extension_client.send_json({
-                    "type": "EXECUTE_COMMAND",
-                    "id": task_id,
-                    "prompt": prompt,
-                    "imageBase64": screenshot_b64,
-                })
-
-                try:
-                    result_payload = await asyncio.wait_for(future, timeout=45.0)
-                    raw_response = result_payload.get("raw_text", "")
-                except asyncio.TimeoutError:
-                    sound_manager.play_error()
-                    hub.pending_tasks.pop(task_id, None)
-                    timeout_msg = "Quá thời gian chờ phản hồi từ Gemini. Vui lòng thử lại câu lệnh."
-                    await hub.broadcast_webui({"type": "ERROR", "message": timeout_msg, "user_command": user_command})
-                    await tts_service.speak(timeout_msg)
-                    return {
-                        "success": False,
-                        "speech": timeout_msg,
-                        "action_result": {"success": False, "error": timeout_msg},
-                        "done": True,
-                    }
-            else:
                 sound_manager.play_error()
-                err_text = (
-                    "Session Google đã hết hạn. "
-                    "Vui lòng nhấn nút 'Đăng nhập Google' trên cửa sổ Spotlight (F7) để kết nối lại."
-                )
+                sound_manager.stop_pulsing()
                 await hub.broadcast_webui({"type": "ERROR", "message": err_text, "user_command": user_command})
-                await tts_service.speak(err_text)
+                if speak:
+                    await tts_service.speak(err_text)
                 return {
                     "success": False,
                     "speech": err_text,
                     "action_result": {"success": False, "error": err_text},
                     "done": True,
                 }
+
+        if not used_background:
+            sound_manager.play_error()
+            sound_manager.stop_pulsing()
+            err_text = (
+                "Chưa kết nối tài khoản Google. "
+                "Vui lòng nhấn nút 'Đăng nhập Google' trên cửa sổ Spotlight (F7) để kết nối."
+            )
+            await hub.broadcast_webui({"type": "ERROR", "message": err_text, "user_command": user_command})
+            if speak:
+                await tts_service.speak(err_text)
+            return {
+                "success": False,
+                "speech": err_text,
+                "action_result": {"success": False, "error": err_text},
+                "done": True,
+            }
 
         raw_response = strip_citations(raw_response)
         print(f"[Pipeline] [Bước {step}] Phản hồi từ Gemini:\n{raw_response}")
