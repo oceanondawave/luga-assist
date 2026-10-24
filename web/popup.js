@@ -264,9 +264,15 @@ document.addEventListener("DOMContentLoaded", () => {
           thinking_level: thinkingLevel
         })
       });
-      const data = await res.json();
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        const textErr = await res.text().catch(() => "");
+        throw new Error(textErr || `Máy chủ phản hồi HTTP ${res.status}`);
+      }
       chatThinking.style.display = "none";
-      const reply = data.response || data.speech || "Thao tác đã thực hiện xong.";
+      const reply = data.response || data.speech || (data.status === "error" ? "Đã xảy ra lỗi khi xử lý câu lệnh." : "Thao tác đã thực hiện xong.");
       appendBubble("ai", reply);
     } catch (e) {
       chatThinking.style.display = "none";

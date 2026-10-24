@@ -482,13 +482,23 @@ async def api_command(payload: CommandPayload):
     cmd = (payload.command or "").strip()
     if not cmd:
         return {"status": "error", "message": "Command cannot be empty"}
-    res = await process_user_command(
-        cmd,
-        voice=payload.voice or DEFAULT_TTS_VOICE,
-        speak=payload.speak if payload.speak is not None else True,
-        thinking_level=payload.thinking_level or current_thinking_level
-    )
-    return {"status": "ok", **res}
+    try:
+        res = await process_user_command(
+            cmd,
+            voice=payload.voice or DEFAULT_TTS_VOICE,
+            speak=payload.speak if payload.speak is not None else True,
+            thinking_level=payload.thinking_level or current_thinking_level
+        )
+        return {"status": "ok", **res}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "success": False,
+            "speech": f"Lỗi xử lý câu lệnh: {e}",
+            "action_result": {"success": False, "error": str(e)}
+        }
 
 class ChatPayload(BaseModel):
     message: str
@@ -502,19 +512,31 @@ async def api_chat(payload: ChatPayload):
     cmd = (payload.message or "").strip()
     if not cmd:
         return {"status": "error", "response": ""}
-    res = await process_user_command(
-        cmd,
-        voice=payload.voice or DEFAULT_TTS_VOICE,
-        speak=payload.speak if payload.speak is not None else True,
-        thinking_level=payload.thinking_level or current_thinking_level
-    )
-    if not isinstance(res, dict):
-        res = {"success": False, "speech": "Không nhận được phản hồi từ hệ thống."}
-    speech = res.get("speech", "")
-    dyn = res.get("action_result", {}).get("speech_result")
-    if dyn and dyn != speech:
-        speech = f"{speech}\n{dyn}"
-    return {"status": "ok", "response": speech, **res}
+    try:
+        res = await process_user_command(
+            cmd,
+            voice=payload.voice or DEFAULT_TTS_VOICE,
+            speak=payload.speak if payload.speak is not None else True,
+            thinking_level=payload.thinking_level or current_thinking_level
+        )
+        if not isinstance(res, dict):
+            res = {"success": False, "speech": "Không nhận được phản hồi từ hệ thống."}
+        speech = res.get("speech", "")
+        dyn = res.get("action_result", {}).get("speech_result")
+        if dyn and dyn != speech:
+            speech = f"{speech}\n{dyn}"
+        return {"status": "ok", "response": speech, **res}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        err_msg = f"Lỗi xử lý câu lệnh: {e}"
+        return {
+            "status": "error",
+            "response": err_msg,
+            "speech": err_msg,
+            "success": False,
+            "action_result": {"success": False, "error": str(e)}
+        }
 
 @app.post("/api/chat/clear")
 async def api_chat_clear():
@@ -1201,12 +1223,12 @@ async def _execute_pipeline(
         used_background = False
 
         if gemini_service.is_ready:
-            print(f"[Pipeline] [Bước {step}] Gửi tới Background Gemini Service (mức={cmd_thinking_level})...")
+            print(f"[Pipeline] [Bước {step}] Gửi tới Background Gemini Service (mức={actual_thinking_level})...")
             try:
                 raw_response = await gemini_service.send_prompt(
                     prompt=prompt,
                     image_path=screen_capturer.screenshot_path,
-                    thinking_level=cmd_thinking_level
+                    thinking_level=actual_thinking_level
                 )
                 used_background = True
             except Exception as e:
