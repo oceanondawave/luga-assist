@@ -54,6 +54,32 @@ class GeminiSessionService:
                 print(f"[GeminiSessionService] Warning loading saved session: {e}")
         return None
 
+    def _get_model_for_level(self, level: str) -> Optional[Any]:
+        """Find the most appropriate registered Gemini model for the requested thinking level."""
+        if not self.client or not getattr(self.client, "_model_registry", None):
+            return None
+        models = self.client.list_models() or []
+        available = [m for m in models if getattr(m, "is_available", True)]
+        if not available:
+            return None
+
+        lvl = (level or "medium").strip().lower()
+        if lvl == "high":
+            # Prefer Pro model if available for this account
+            pro_models = [m for m in available if "pro" in getattr(m, "model_name", "").lower()]
+            if pro_models:
+                return pro_models[0]
+        elif lvl == "low":
+            # Prefer flash-lite or fastest flash model
+            flash_lite = [m for m in available if "lite" in getattr(m, "model_name", "").lower()]
+            if flash_lite:
+                return flash_lite[0]
+            flash_models = [m for m in available if "flash" in getattr(m, "model_name", "").lower()]
+            if flash_models:
+                return flash_models[0]
+
+        return None
+
     def _start_chat_safe(self, preferred_model: Optional[str] = None):
         """Start chat with standard Gemini model (full multimodal vision & spatial reasoning)."""
         if preferred_model and self.client:
@@ -167,9 +193,13 @@ class GeminiSessionService:
 
         active_lvl = (thinking_level or self.current_thinking_level or "medium").strip().lower()
         use_extended_thinking = (active_lvl == "high")
+        target_model = self._get_model_for_level(active_lvl)
+        if target_model and self.chat_session:
+            self.chat_session.model = target_model
 
         try:
-            print(f"[GeminiSessionService] Gửi lệnh vào cuộc trò chuyện hiện tại (cid={self.chat_session.cid or 'mới'}, mức={active_lvl}, extended_thinking={use_extended_thinking})...")
+            model_info = getattr(target_model, "model_name", "mặc định") if target_model else "mặc định"
+            print(f"[GeminiSessionService] Gửi lệnh vào cuộc trò chuyện hiện tại (cid={self.chat_session.cid or 'mới'}, model={model_info}, mức={active_lvl}, extended_thinking={use_extended_thinking})...")
             try:
                 output = await self.chat_session.send_message(
                     prompt,
@@ -229,9 +259,13 @@ class GeminiSessionService:
 
         active_lvl = (thinking_level or self.current_thinking_level or "medium").strip().lower()
         use_extended_thinking = (active_lvl == "high")
+        target_model = self._get_model_for_level(active_lvl)
+        if target_model and self.conversation_session:
+            self.conversation_session.model = target_model
 
         try:
-            print(f"[GeminiSessionService] [Chat Mode] Gửi tin nhắn (mức={active_lvl}, extended_thinking={use_extended_thinking}): \"{message[:60]}...\"")
+            model_info = getattr(target_model, "model_name", "mặc định") if target_model else "mặc định"
+            print(f"[GeminiSessionService] [Chat Mode] Gửi tin nhắn (model={model_info}, mức={active_lvl}, extended_thinking={use_extended_thinking}): \"{message[:60]}...\"")
             try:
                 output = await self.conversation_session.send_message(
                     message,
