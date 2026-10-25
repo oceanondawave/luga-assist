@@ -745,13 +745,14 @@ async def api_spotlight_show():
 @app.get("/api/spotlight/hide")
 @app.post("/api/spotlight/hide")
 async def api_spotlight_hide():
+    from app.spotlight_launcher import minimize_spotlight_window_windows
+    minimized = minimize_spotlight_window_windows()
     from app.spotlight_ui import get_spotlight_hud
     hud = get_spotlight_hud()
     if hud:
         hud.hide()
-    await hub.broadcast_webui({"type": "SPOTLIGHT_HIDE"})
     await broadcast_to_spotlight({"action": "hide"})
-    return {"status": "ok", "visible": False}
+    return {"status": "ok", "visible": False, "minimized": minimized}
 
 @app.get("/api/spotlight/toggle")
 @app.post("/api/spotlight/toggle")
@@ -1210,6 +1211,15 @@ async def _execute_pipeline(
         })
 
         # Step 2: Screen Capture with Dual-Tier Grid Overlay & UI Elements
+        # Ensure Spotlight window is minimized/hidden so it NEVER obstructs the screenshot or targets!
+        if is_first_step:
+            from app.spotlight_launcher import minimize_spotlight_window_windows
+            if sys.platform.startswith("win"):
+                minimized = minimize_spotlight_window_windows()
+                if minimized:
+                    print("[Pipeline] 🙈 Đã tự động thu nhỏ cửa sổ Spotlight để chụp ảnh màn hình không bị che khuất!")
+                    await asyncio.sleep(0.12)  # 120ms for DWM to repaint uncovered area
+
         screenshot_b64, screen_size = screen_capturer.capture(with_grid=True)
         ui_context = accessibility_manager.get_ui_grounding_context()
 

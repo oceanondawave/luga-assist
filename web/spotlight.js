@@ -328,7 +328,9 @@ document.addEventListener("DOMContentLoaded", () => {
         spotlightInput.select();
       }
     } else if (msg.type === "SPOTLIGHT_HIDE") {
-      window.close();
+      if (document.activeElement) {
+        document.activeElement.blur();
+      }
     }
   }
 
@@ -380,8 +382,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     appendBubble("user", text);
     spotlightInput.value = "";
-    spotlightThinking.style.display = "flex";
-    spotlightThinkingText.innerText = "Luga đang chụp màn hình và phân tích...";
+
+    // In Control Mode (operating PC), automatically hide/minimize Spotlight
+    // so it uncovers the screen immediately for visual perception and automation!
+    if (currentMode === "control") {
+      fetch(getApiUrl("/api/spotlight/hide"), { method: "POST" }).catch(() => {});
+    } else {
+      spotlightThinking.style.display = "flex";
+      spotlightThinkingText.innerText = "Luga đang suy nghĩ...";
+    }
 
     const speak = chkTTS ? chkTTS.checked : true;
     const thinkingLevel = (spotlightThinkingLevel ? spotlightThinkingLevel.value : currentThinkingLevel) || "medium";
@@ -470,7 +479,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (btnSpotlightHide) {
     btnSpotlightHide.addEventListener("click", () => {
-      window.close();
+      fetch(getApiUrl("/api/spotlight/hide"), { method: "POST" }).catch(() => {});
     });
   }
 
@@ -497,7 +506,7 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("keydown", (e) => {
     if (e.code === "Escape") {
       e.preventDefault();
-      window.close();
+      fetch(getApiUrl("/api/spotlight/hide"), { method: "POST" }).catch(() => {});
     }
     if ((e.ctrlKey || e.metaKey) && (e.key === "q" || e.key === "Q")) {
       e.preventDefault();

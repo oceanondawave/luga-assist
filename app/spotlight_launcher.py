@@ -195,6 +195,26 @@ def toggle_spotlight_window_windows(force_show: bool = False) -> bool:
         return False
 
 
+def minimize_spotlight_window_windows() -> bool:
+    """
+    Minimize / hide Spotlight window on Windows immediately so that
+    it never obstructs screen captures or blocks mouse clicks on underlying applications.
+    """
+    if not sys.platform.startswith("win"):
+        return False
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        hwnd = find_spotlight_hwnd_windows()
+        if hwnd:
+            user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE = 6
+            return True
+        return False
+    except Exception as e:
+        logger.debug(f"Could not minimize Spotlight window: {e}")
+        return False
+
+
 def broadcast_spotlight_message(payload: dict):
     """Safely broadcast message to Spotlight client from sync thread."""
     try:
