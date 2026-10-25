@@ -283,7 +283,19 @@ class GeminiSessionService:
             return response_text
         except Exception as e:
             err_str = str(e).lower()
-            if isinstance(e, AuthError) or "unauthenticated" in err_str or "401" in err_str:
+            if "tos_pending" in err_str or "terms of service" in err_str:
+                msg = (
+                    "Tài khoản Google cần chấp nhận Điều khoản sử dụng mới của Gemini (Terms of Service). "
+                    "Vui lòng truy cập https://gemini.google.com và bấm 'Đồng ý' (Accept / I agree) để kích hoạt tài khoản."
+                )
+                print(f"[GeminiSessionService] ⚠️ {msg}")
+                try:
+                    import webbrowser
+                    webbrowser.open("https://gemini.google.com")
+                except Exception:
+                    pass
+                raise RuntimeError(msg) from e
+            elif isinstance(e, AuthError) or "unauthenticated" in err_str or "401" in err_str:
                 print(f"[GeminiSessionService] ⚠️ Session Google hết hạn hoặc chưa xác thực: {e}")
                 self.is_ready = False
                 self.client = None
@@ -352,7 +364,19 @@ class GeminiSessionService:
             return response_text.strip()
         except Exception as e:
             err_str = str(e).lower()
-            if isinstance(e, AuthError) or "unauthenticated" in err_str or "401" in err_str:
+            if "tos_pending" in err_str or "terms of service" in err_str:
+                msg = (
+                    "Tài khoản Google cần chấp nhận Điều khoản sử dụng mới của Gemini (Terms of Service). "
+                    "Vui lòng truy cập https://gemini.google.com và bấm 'Đồng ý' (Accept / I agree) để kích hoạt tài khoản."
+                )
+                print(f"[GeminiSessionService] ⚠️ {msg}")
+                try:
+                    import webbrowser
+                    webbrowser.open("https://gemini.google.com")
+                except Exception:
+                    pass
+                raise RuntimeError(msg) from e
+            elif isinstance(e, AuthError) or "unauthenticated" in err_str or "401" in err_str:
                 self.is_ready = False
                 self.client = None
                 self.conversation_session = None
