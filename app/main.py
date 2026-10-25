@@ -63,6 +63,7 @@ from app.os_controller import os_controller
 from app.tts_service import tts_service
 from app.prompt_templates import build_gemini_prompt, build_verification_prompt
 from app.gemini_service import gemini_service
+from gemini_webapi.exceptions import AuthError
 from app.native_voice import NativeVoiceListener
 from app.sound_effects import sound_manager
 from app.accessibility import accessibility_manager
@@ -187,7 +188,7 @@ async def lifespan(app: FastAPI):
         asyncio.run_coroutine_threadsafe(toggle_mode(), loop)
 
     def handle_native_spotlight_toggle():
-        print("\n[Global Handler] Đã nhận tín hiệu F7 / Ctrl+Alt+Space -> Bật/Tắt Cửa sổ Web Spotlight!")
+        print("\n[Global Handler] Đã nhận tín hiệu F7 -> Bật/Tắt Cửa sổ Web Spotlight!")
         from app.spotlight_launcher import launch_or_toggle_web_spotlight
         launch_or_toggle_web_spotlight()
 
@@ -212,6 +213,18 @@ async def lifespan(app: FastAPI):
             print(f"[Lifespan] Background session init: {e}")
 
     asyncio.create_task(_init_gemini_bg())
+
+    # 3. Auto-launch Web Spotlight popup immediately on startup (zero Alt-Tab required)
+    def _auto_show_spotlight_on_startup():
+        time.sleep(0.8)
+        try:
+            from app.spotlight_launcher import launch_or_toggle_web_spotlight
+            print("[Lifespan] 🚀 Tự động mở cửa sổ Web Spotlight (F7) trên màn hình...")
+            launch_or_toggle_web_spotlight(force_show=True)
+        except Exception as e:
+            print(f"[Lifespan] Lỗi mở Web Spotlight lúc khởi động: {e}")
+
+    threading.Thread(target=_auto_show_spotlight_on_startup, daemon=True).start()
 
     yield
 
@@ -1204,7 +1217,8 @@ async def _execute_pipeline(
             prompt = build_gemini_prompt(
                 user_command,
                 ui_context=ui_context,
-                thinking_level=actual_thinking_level
+                thinking_level=actual_thinking_level,
+                is_initial=(not gemini_service.has_grounding)
             )
         else:
             # Verification Prompt: inspect screen after previous action
@@ -1216,9 +1230,6 @@ async def _execute_pipeline(
                 thinking_level=actual_thinking_level
             )
 
-        raw_response = ""
-
-        # Step 3: Execute via Background Service (Priority 1) or Extension (Priority 2)
         raw_response = ""
         used_background = False
 
@@ -1235,7 +1246,7 @@ async def _execute_pipeline(
                 err_msg = str(e)
                 print(f"[Pipeline] ⚠️ Lỗi Background Gemini Service: {err_msg}")
                 err_lower = err_msg.lower()
-                is_auth_error = any(k in err_lower for k in ("unauthenticated", "permission denied", "auth", "login", "cookie"))
+                is_auth_error = isinstance(e, AuthError) or "401" in err_lower or "unauthenticated" in err_lower
                 if is_auth_error:
                     gemini_service.is_ready = False
                     err_text = (
@@ -1243,7 +1254,7 @@ async def _execute_pipeline(
                         "Vui lòng nhấn nút 'Đăng nhập Google' trên cửa sổ Spotlight (F7) để kết nối lại."
                     )
                 else:
-                    err_text = f"Lỗi phản hồi từ Gemini ({err_msg}). Vui lòng thử lại câu lệnh."
+                    err_text = f"Lỗi phản hồi từ Gemini: {err_msg}. Vui lòng thử lại câu lệnh."
 
                 sound_manager.play_error()
                 sound_manager.stop_pulsing()
@@ -1385,13 +1396,22 @@ async def _execute_pipeline(
                 for a in active_actions
             )
 
-            # NOTE: terminal_command, click, type, press NEVER auto-complete if Gemini marked done: false!
+            user_cmd_lower = user_command.lower()
+            is_direct_click_request = (
+                len(active_actions) == 1
+                and active_actions[0].get("action", "").lower() in ("click", "select_element", "press", "launch_app")
+                and any(k in user_cmd_lower for k in ("click", "nhấn", "bấm", "chọn", "press", "mở"))
+            )
+
             if pure_hardware_controls:
                 is_goal_verified_completed = True
                 print(f"[Pipeline] ⚡ Điều khiển phần cứng hoàn tất tại bước {step}: {speech_to_say}")
             elif file_info_actions and (claimed_done or len(active_actions) == 1):
                 is_goal_verified_completed = True
                 print(f"[Pipeline] ⚡ Thao tác file hoàn tất tại bước {step}: {speech_to_say}")
+            elif is_direct_click_request and (claimed_done or step >= 1):
+                is_goal_verified_completed = True
+                print(f"[Pipeline] ⚡ Thao tác click trực tiếp hoàn tất tại bước {step}: {speech_to_say}")
             elif claimed_done and not is_complex_form and not any(a.get("action") in ("terminal_command", "terminal", "run_terminal") for a in active_actions):
                 is_goal_verified_completed = True
                 print(f"[Pipeline] ⚡ Thao tác hoàn tất theo xác nhận AI tại bước {step}: {speech_to_say}")
@@ -1609,8 +1629,9 @@ def start():
     print("      LUGA ASSIST - TRỢ LÝ ĐIỀU KHIỂN TOÀN DIỆN")
     print(f"      Cổng API ngầm:   http://{HOST}:{PORT}")
     print("      Phím tắt F7:     Bật / Tắt Cửa sổ Chat Nổi (Spotlight)")
-    print("      Phím tắt F8:     Nói trực tiếp qua Micro")
-    print("      Phím tắt F9:     Chuyển đổi Chế độ (Điều khiển <-> Chat)")
+    print("      Phím tắt F8:     Nói trực tiếp qua Micro (Push-to-Talk)")
+    print("      Phím tắt F9:     Chuyển đổi Chế độ (Điều khiển OS <-> Chat AI)")
+    print("      Phím tắt F10:    Ngắt khẩn cấp / Hủy lệnh ngay lập tức")
     print("=" * 60)
 
     try:

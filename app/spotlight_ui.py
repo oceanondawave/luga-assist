@@ -60,7 +60,7 @@ class SpotlightHUD:
         """Run the Tkinter GUI main loop on this thread."""
         logger.info("Initializing Spotlight Tkinter HUD...")
         self.root = tk.Tk()
-        self.root.title("Luga Assist - Spotlight Chat (Ctrl+Shift+Space / F7)")
+        self.root.title("Luga Assist - Spotlight Chat (F7)")
 
         # Configure window properties
         self.root.attributes("-topmost", True)
@@ -404,7 +404,7 @@ class SpotlightHUD:
 
         hints = tk.Label(
             footer,
-            text="Phím tắt: [Ctrl+Shift+Space / F7] Chat • [Ctrl+Space / F8] Nói • [Ctrl+Shift+M / F9] Đổi chế độ • [Esc] Ẩn/Ngắt",
+            text="Phím tắt: [F7] Chat • [F8] Nói • [F9] Đổi chế độ • [F10] Ngắt",
             font=("Arial", 10),
             fg="#64748b",
             bg="#0f172a"

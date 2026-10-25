@@ -493,76 +493,28 @@ class NativeVoiceListener:
 
         def on_press(key):
             try:
-                # Sync physical modifier state on Windows to prevent stuck keys
-                if sys.platform.startswith("win"):
-                    for mod in ("ctrl", "alt", "shift"):
-                        if _is_modifier_pressed(mod):
-                            self._current_keys.add(mod)
-                        else:
-                            self._current_keys.discard(mod)
-
-                # Track modifier keys from pynput events
-                if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
-                    self._current_keys.add("ctrl")
-                elif key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
-                    self._current_keys.add("alt")
-                elif key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r):
-                    self._current_keys.add("cmd")
-                elif key in (keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r):
-                    self._current_keys.add("shift")
-
-                char_val = getattr(key, "char", None)
-                str_key = str(key).lower()
-
-                # 1. Emergency Cancel (F10 / Ctrl+Esc / Shift+Esc)
-                is_f10 = _is_f10(key)
-                is_cancel = (key == keyboard.Key.esc and (_has_mod("ctrl") or _has_mod("shift") or _has_mod("alt")))
-                if is_f10 or is_cancel:
-                    print("\n[Global Hotkey] Đã kích hoạt NGẮT TÁC VỤ (Emergency Cancel)!")
+                # 1. Emergency Cancel (F10 ONLY)
+                if _is_f10(key):
+                    print("\n[Global Hotkey] Đã kích hoạt F10: NGẮT TÁC VỤ KHẨN CẤP (Emergency Cancel)!")
                     self.cancel_all()
                     return
 
-                # 2. Spotlight Floating Chat HUD
-                # Supports: F7 | Ctrl+Shift+Space | Ctrl+Alt+Space | Ctrl+` | Alt+Z | Ctrl+Shift+L
-                is_f7 = _is_f7(key)
-                is_ctrl_shift_space = (key == keyboard.Key.space and _has_mod("ctrl") and _has_mod("shift"))
-                is_ctrl_alt_space = (key == keyboard.Key.space and _has_mod("ctrl") and _has_mod("alt"))
-                is_ctrl_tilde = (char_val in ("`", "~") or str_key in ("'`'", "'~'")) and _has_mod("ctrl")
-                is_alt_z = (char_val in ("z", "Z") or str_key in ("'z'", "'Z'")) and _has_mod("alt") and not _has_mod("ctrl")
-                is_ctrl_shift_l = (char_val in ("l", "L") or str_key in ("'l'", "'L'")) and _has_mod("ctrl") and _has_mod("shift")
-
-                if is_f7 or is_ctrl_shift_space or is_ctrl_alt_space or is_ctrl_tilde or is_alt_z or is_ctrl_shift_l:
-                    print("\n[Global Hotkey] Đã kích hoạt -> Bật/Tắt Cửa sổ Chat Nổi (Spotlight)!")
+                # 2. Spotlight Floating Chat HUD (F7 ONLY)
+                if _is_f7(key):
+                    print("\n[Global Hotkey] Đã kích hoạt F7: Bật/Tắt Cửa sổ Chat Nổi (Spotlight)!")
                     if self.on_spotlight_toggle:
                         self.on_spotlight_toggle()
                     return
 
-                # 3. Direct Microphone Voice Trigger
-                # Supports: F8 | Ctrl+Space | Alt+Space (when Shift is not held)
-                is_f8 = _is_f8(key)
-                is_voice_space = (
-                    key == keyboard.Key.space
-                    and not _has_mod("shift")
-                    and (
-                        (_has_mod("ctrl") and not _has_mod("alt"))
-                        or (_has_mod("alt") and not _has_mod("ctrl") and not _has_mod("cmd"))
-                    )
-                )
-                if is_f8 or is_voice_space:
-                    print("\n[Global Hotkey] Đã kích hoạt -> Lắng nghe giọng nói qua Micro!")
+                # 3. Direct Microphone Voice Trigger (F8 ONLY)
+                if _is_f8(key):
+                    print("\n[Global Hotkey] Đã kích hoạt F8: Lắng nghe giọng nói qua Micro!")
                     self.trigger_voice_flow()
                     return
 
-                # 4. Toggle Mode: OS Control <-> AI Chat
-                # Supports: F9 | Ctrl+Shift+M | Ctrl+Alt+M
-                is_f9 = _is_f9(key)
-                is_mode_m = (
-                    (char_val in ("m", "M") or str_key in ("'m'", "'M'"))
-                    and (_has_mod("ctrl") or _has_mod("alt"))
-                    and (_has_mod("shift") or _has_mod("alt"))
-                )
-                if is_f9 or is_mode_m:
-                    print("\n[Global Hotkey] Đã chuyển đổi chế độ (Điều khiển <-> Trò chuyện AI)!")
+                # 4. Toggle Mode: OS Control <-> AI Chat (F9 ONLY)
+                if _is_f9(key):
+                    print("\n[Global Hotkey] Đã kích hoạt F9: Chuyển đổi chế độ (Điều khiển OS <-> Chat AI)!")
                     if self.on_mode_toggle:
                         self.on_mode_toggle()
                     return
@@ -571,22 +523,7 @@ class NativeVoiceListener:
                 pass
 
         def on_release(key):
-            try:
-                if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
-                    self._current_keys.discard("ctrl")
-                elif key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
-                    self._current_keys.discard("alt")
-                elif key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r):
-                    self._current_keys.discard("cmd")
-                elif key in (keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r):
-                    self._current_keys.discard("shift")
-
-                if sys.platform.startswith("win"):
-                    for mod in ("ctrl", "alt", "shift"):
-                        if not _is_modifier_pressed(mod):
-                            self._current_keys.discard(mod)
-            except Exception:
-                pass
+            pass
 
         try:
             listener = keyboard.Listener(on_press=on_press, on_release=on_release)
@@ -618,16 +555,15 @@ class NativeVoiceListener:
                     if not self._has_announced_hotkeys:
                         self._has_announced_hotkeys = True
                         print("\n" + "=" * 65)
-                        print("🎙️ LUGA ASSIST - HỆ THỐNG PHÍM TẮT TOÀN CẦU ĐÃ SẴN SÀNG!")
-                        print("👉 Bật/Tắt Chat Nổi   : Ctrl + Shift + Space  (hoặc F7, Ctrl + `)")
-                        print("👉 Bật Micro để Nói   : Ctrl + Space          (hoặc F8)")
-                        print("👉 Đổi Chế Độ         : Ctrl + Shift + M      (hoặc F9)")
-                        print("👉 Ngắt Khẩn Cấp      : Shift + Esc           (hoặc F10, Ctrl + Esc)")
-                        print("💡 Mẹo: Bàn phím không có phím F vẫn dùng thoải mái bằng Ctrl+Space!")
+                        print("🎙️ LUGA ASSIST - HỆ THỐNG PHÍM TẮT TOÀN CẦU (F7 - F10)")
+                        print("👉 F7  : Bật / Tắt Cửa sổ Chat Nổi (Spotlight)")
+                        print("👉 F8  : Bật Micro Lắng nghe Giọng nói (Push-to-Talk)")
+                        print("👉 F9  : Chuyển đổi Chế độ (Điều khiển OS <-> Chat AI)")
+                        print("👉 F10 : Ngắt Khẩn Cấp / Hủy lệnh ngay lập tức")
                         print("=" * 65 + "\n")
                         try:
                             from app.system_ui import show_desktop_notification
-                            show_desktop_notification("Luga Assist", "✅ Phím tắt đã sẵn sàng: Ctrl+Space để Nói, Ctrl+Shift+Space để Chat!")
+                            show_desktop_notification("Luga Assist", "✅ Phím tắt F7-F10 đã sẵn sàng! F7: Chat, F8: Nói, F9: Chế độ, F10: Ngắt.")
                         except Exception:
                             pass
             else:

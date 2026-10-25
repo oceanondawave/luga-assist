@@ -5,6 +5,7 @@ and fallback to gTTS and native OS audio playback.
 import asyncio
 import os
 import sys
+import shutil
 import subprocess
 import base64
 from pathlib import Path
@@ -145,18 +146,14 @@ class TTSService:
                 return
             # 2. Secondary: Silent background PowerShell (CREATE_NO_WINDOW)
             self._play_via_powershell(audio_file, block=block)
-        elif sys.platform == "darwin":
-            cmd = ["/usr/bin/afplay", str(audio_file)]
-            if block:
-                subprocess.run(cmd, check=False)
-            else:
-                self._current_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
-            cmd = ["paplay", str(audio_file)]
-            if block:
-                subprocess.run(cmd, check=False)
-            else:
-                self._current_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            player = shutil.which("afplay") or shutil.which("paplay") or shutil.which("aplay")
+            if player:
+                cmd = [player, str(audio_file)]
+                if block:
+                    subprocess.run(cmd, check=False)
+                else:
+                    self._current_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     async def speak(self, text: str, block: bool = False) -> str:
         """

@@ -116,8 +116,8 @@ def is_chromium_browser(path: str) -> bool:
 
 def find_chromium_browser() -> Optional[str]:
     """
-    Find any available Chromium-based browser (Google Chrome, Microsoft Edge, Brave, Cốc Cốc)
-    across Windows, macOS, and Linux.
+    Find available Chromium-based browser (Google Chrome, Brave, Cốc Cốc, Microsoft Edge)
+    specifically optimized for Windows 10 & 11.
     Prioritizes the user's actual default browser whenever it is Chromium-based!
     """
     if sys.platform.startswith("win"):
@@ -128,7 +128,6 @@ def find_chromium_browser() -> Optional[str]:
             return default_browser
 
         # 2. Check user's preferred browsers in order: Chrome -> Brave -> Cốc Cốc -> Edge
-        # (Edge is last fallback so it never overrides user's preferred installed browsers)
         candidates = [
             # Chrome (%LOCALAPPDATA% first for standard per-user installs, then %PROGRAMFILES%)
             Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "Application" / "chrome.exe",
@@ -168,26 +167,12 @@ def find_chromium_browser() -> Optional[str]:
             found = shutil.which(name)
             if found:
                 return found
-    elif sys.platform == "darwin":
-        mac_candidates = [
-            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-            "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-            "/Applications/Chromium.app/Contents/MacOS/Chromium",
-        ]
-        for p in mac_candidates:
-            if Path(p).exists():
-                return p
-        for name in ("google-chrome", "chromium", "microsoft-edge"):
-            found = shutil.which(name)
-            if found:
-                return found
-    else:
-        # Linux
-        for name in ("google-chrome-stable", "google-chrome", "microsoft-edge-stable", "microsoft-edge", "chromium-browser", "chromium"):
-            found = shutil.which(name)
-            if found:
-                return found
+
+    # Fallback for generic environments / development
+    for name in ("chrome", "google-chrome", "msedge", "chromium"):
+        found = shutil.which(name)
+        if found:
+            return found
 
     return None
 
@@ -460,23 +445,20 @@ class GoogleWebAuthManager:
                                     psid = c.get("value")
                                 elif c_name == "__Secure-1PSIDTS":
                                     psidts = c.get("value")
-                                elif c_name == "__Secure-1PSIDCC":
-                                    psidcc = c.get("value")
 
                         # If __Secure-1PSID is detected:
                         if psid:
                             # Google Gemini requires both __Secure-1PSID and __Secure-1PSIDTS for modern auth.
-                            # Keep waiting while browser is open (up to 90 seconds)
+                            # Keep waiting while browser completes Google Gemini load
                             if not psidts:
                                 psid_wait_count += 1
                                 if psid_wait_count % 3 == 0:
                                     logger.info(f"Đã bắt được __Secure-1PSID, đang chờ __Secure-1PSIDTS ({psid_wait_count}s)...")
-                                    # Prompt active page to navigate to gemini.google.com if redirect is pending
                                     try:
                                         msg_id += 1
                                         await ws.send(json.dumps({
                                             "id": msg_id,
-                                            "method": "Page.navigate",
+                                            "method": "Target.createTarget",
                                             "params": {"url": "https://gemini.google.com"}
                                         }))
                                     except Exception:
@@ -489,7 +471,7 @@ class GoogleWebAuthManager:
                             from app.gemini_service import gemini_service
                             from app.sound_effects import sound_manager
 
-                            ok = await gemini_service.init_session(psid, psidts, secure_1psidcc=psidcc)
+                            ok = await gemini_service.init_session(psid, psidts)
                             if ok:
                                 logger.info("🎉 KẾT NỐI GOOGLE GEMINI HOÀN TẤT VÀ SẴN SÀNG 100%!")
 
@@ -498,10 +480,9 @@ class GoogleWebAuthManager:
                                 self.is_logging_in = False
                                 sound_manager.play_done()
 
-                                # 2. Bring Spotlight window to front
+                                # 2. Bring Spotlight window to front forcefully
                                 from app.spotlight_launcher import bring_spotlight_to_front_windows, broadcast_spotlight_message
-                                if sys.platform.startswith("win"):
-                                    bring_spotlight_to_front_windows()
+                                bring_spotlight_to_front_windows()
                                 broadcast_spotlight_message({"type": "SPOTLIGHT_FOCUS"})
 
                                 # 3. Notify all web clients and update server status

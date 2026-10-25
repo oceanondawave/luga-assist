@@ -171,10 +171,10 @@ class SoundManager:
                 pass
         else:
             try:
-                if sys.platform == "darwin":
-                    subprocess.Popen(["/usr/bin/afplay", path_str], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                else:
-                    subprocess.Popen(["paplay", path_str], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                import shutil
+                player = shutil.which("afplay") or shutil.which("paplay") or shutil.which("aplay")
+                if player:
+                    subprocess.Popen([player, path_str], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
                 pass
 

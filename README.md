@@ -39,18 +39,18 @@
 
 ---
 
-### ⌨️ Bảng phím tắt toàn hệ thống (Windows Hotkeys)
+### ⌨️ Bảng phím tắt toàn hệ thống (Duy nhất F7 -> F10)
 
-Bạn có thể bấm các phím tắt này từ **BẤT KỲ ĐÂU** trên Windows mà không cần chuyển về cửa sổ Luga:
+Hệ thống tinh giản tối đa, chỉ dùng duy nhất hàng phím **F7 đến F10** để không xung đột với ứng dụng khác:
 
-| Phím tắt | Phím dự phòng | Chức năng chi tiết |
-| :--- | :--- | :--- |
-| **`F7`** | `Ctrl + Alt + Space` | **Bật / Tắt Cửa sổ Web Spotlight (F7)**: Chế độ 1 cửa sổ duy nhất, tự động focus ô nhập lệnh |
-| **`F8`** | `Ctrl + Space` | **Nói lệnh qua Micro**: Phát âm thanh kích hoạt, lắng nghe tiếng Việt và tự động thực thi |
-| **`F9`** | `Ctrl + Alt + M` | **Chuyển đổi chế độ**: [Điều khiển máy tính 🎮] ⇄ [Trò chuyện hỏi đáp AI 💬] |
-| **`F10`** | `Ctrl + Esc` | **⏹️ NGẮT KHẨN CẤP (Cancel / Emergency Stop)**: Dừng ngay tác vụ đang chạy, hủy ghi âm, tắt tiếng đọc |
-| **`Esc`** | — | **Ẩn cửa sổ Spotlight**: Đóng tạm thời giao diện, dịch vụ ngầm vẫn chạy bình thường |
-| **`Ctrl + Q`** | — | **🛑 Thoát hoàn toàn**: Tắt toàn bộ ứng dụng Luga Assist với thông báo xác nhận và âm thanh tạm biệt |
+| Phím tắt | Chức năng chi tiết |
+| :--- | :--- |
+| **`F7`** | **Bật / Tắt Cửa sổ Web Spotlight**: Bật popup ngay lập tức lên trên cùng và focus ô nhập liệu (100% không cần Alt-Tab) |
+| **`F8`** | **Nói lệnh qua Micro (Push-to-Talk)**: Phát âm thanh kích hoạt, lắng nghe tiếng Việt và tự động thực thi |
+| **`F9`** | **Chuyển đổi chế độ**: [Điều khiển máy tính 🎮] ⇄ [Trò chuyện hỏi đáp AI 💬] |
+| **`F10`** | **⏹️ NGẮT KHẨN CẤP (Cancel / Emergency Stop)**: Dừng ngay tác vụ đang chạy, hủy ghi âm, tắt tiếng đọc lập tức |
+
+> 💡 **Tự động mở khi khởi động**: Khi bật Luga Assist, cửa sổ Web Spotlight sẽ tự động xuất hiện ở giữa màn hình để bạn dùng ngay.
 
 ---
 
@@ -173,16 +173,18 @@ Các file thành phẩm sẽ được lưu trong thư mục `dist/`:
 
 ---
 
-### ⌨️ Windows Hotkeys Cheat Sheet
+### ⌨️ Windows Hotkeys Cheat Sheet (F7 -> F10 Only)
 
-| Hotkey | Secondary Shortcut | Description |
-| :--- | :--- | :--- |
-| **`F7`** | `Ctrl + Alt + Space` | **Toggle Spotlight Web HUD**: Single-instance app window, auto-focuses command input |
-| **`F8`** | `Ctrl + Space` | **Voice Command**: Plays chime, captures spoken audio, and executes autonomously |
-| **`F9`** | `Ctrl + Alt + M` | **Toggle Mode**: [Computer Control 🎮] ⇄ [Conversational AI 💬] |
-| **`F10`** | `Ctrl + Esc` | **⏹️ EMERGENCY CANCEL**: Halts running task, cancels STT, and stops TTS speech |
-| **`Esc`** | — | **Hide Spotlight**: Closes/hides the Spotlight window; background service remains active |
-| **`Ctrl + Q`** | — | **🛑 Complete Shutdown**: Exits Luga Assist completely with confirmation and goodbye chime |
+Minimalist design strictly reserved to function keys **F7 through F10** to guarantee zero hotkey conflicts:
+
+| Hotkey | Description |
+| :--- | :--- |
+| **`F7`** | **Toggle Spotlight Web HUD**: Immediately pops up in foreground and focuses input box (zero Alt-Tab required) |
+| **`F8`** | **Voice Command (Push-to-Talk)**: Plays chime, captures spoken audio, and executes autonomously |
+| **`F9`** | **Toggle Mode**: [Computer Control 🎮] ⇄ [Conversational AI 💬] |
+| **`F10`** | **⏹️ EMERGENCY CANCEL**: Halts running task, cancels STT, and stops TTS speech immediately |
+
+> 💡 **Auto-show on startup**: Spotlight appears in front of you automatically upon app launch.
 
 ---
 

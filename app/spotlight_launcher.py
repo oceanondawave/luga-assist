@@ -90,28 +90,80 @@ def is_spotlight_window_open() -> bool:
     return False
 
 
-def bring_spotlight_to_front_windows() -> bool:
-    """Bring Spotlight window to foreground on Windows."""
-    if not sys.platform.startswith("win"):
+def force_foreground_window(hwnd: int) -> bool:
+    """
+    Forcefully bring a window to the foreground on Windows 10 & 11,
+    bypassing Windows Focus-Stealing Prevention without requiring Alt-Tab.
+    """
+    if not sys.platform.startswith("win") or not hwnd:
         return False
     try:
         import ctypes
         user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+
+        try:
+            user32.AllowSetForegroundWindow(-1)
+        except Exception:
+            pass
+
+        fg_hwnd = user32.GetForegroundWindow()
+        if fg_hwnd == hwnd:
+            user32.SetFocus(hwnd)
+            return True
+
+        fg_thread = user32.GetWindowThreadProcessId(fg_hwnd, None) if fg_hwnd else 0
+        cur_thread = kernel32.GetCurrentThreadId()
+
+        attached = False
+        if fg_thread and fg_thread != cur_thread:
+            attached = bool(user32.AttachThreadInput(cur_thread, fg_thread, True))
+
+        try:
+            SW_RESTORE = 9
+            user32.ShowWindow(hwnd, SW_RESTORE)
+
+            HWND_TOPMOST = -1
+            HWND_NOTOPMOST = -2
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_SHOWWINDOW = 0x0040
+
+            # Toggle HWND_TOPMOST to pierce through other windows
+            user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+            user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+            user32.SetFocus(hwnd)
+        finally:
+            if attached:
+                user32.AttachThreadInput(cur_thread, fg_thread, False)
+
+        return True
+    except Exception as e:
+        logger.debug(f"Error in force_foreground_window: {e}")
+        return False
+
+
+def bring_spotlight_to_front_windows() -> bool:
+    """Bring Spotlight window to foreground on Windows without requiring Alt-Tab."""
+    if not sys.platform.startswith("win"):
+        return False
+    try:
         hwnd = find_spotlight_hwnd_windows()
         if hwnd:
-            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-            user32.SetForegroundWindow(hwnd)
-            return True
+            return force_foreground_window(hwnd)
         return False
     except Exception as e:
         logger.debug(f"Could not bring Spotlight to front: {e}")
         return False
 
 
-def toggle_spotlight_window_windows() -> bool:
+def toggle_spotlight_window_windows(force_show: bool = False) -> bool:
     """
     On Windows: if Spotlight window is in foreground, minimize it.
-    If window is in background or minimized, restore and bring to front.
+    If window is in background or minimized (or force_show=True), restore and bring to front.
     Returns True if window was found and toggled.
     """
     if not sys.platform.startswith("win"):
@@ -123,6 +175,10 @@ def toggle_spotlight_window_windows() -> bool:
         if not hwnd:
             return False
 
+        if force_show:
+            force_foreground_window(hwnd)
+            return True
+
         fg_hwnd = user32.GetForegroundWindow()
         if fg_hwnd == hwnd:
             # Window is currently active in foreground -> minimize it
@@ -130,10 +186,9 @@ def toggle_spotlight_window_windows() -> bool:
             logger.info("Spotlight window minimized.")
             return True
         else:
-            # Window is minimized or in background -> restore & bring to foreground
-            user32.ShowWindow(hwnd, 9)  # SW_RESTORE = 9
-            user32.SetForegroundWindow(hwnd)
-            logger.info("Spotlight window brought to foreground.")
+            # Window is minimized or in background -> restore & force to foreground
+            force_foreground_window(hwnd)
+            logger.info("Spotlight window forced to foreground.")
             return True
     except Exception as e:
         logger.debug(f"Could not toggle Spotlight window via Win32: {e}")
@@ -154,36 +209,46 @@ def broadcast_spotlight_message(payload: dict):
         logger.debug(f"Error broadcasting to Spotlight: {e}")
 
 
-def launch_or_toggle_web_spotlight():
+def launch_or_toggle_web_spotlight(force_show: bool = False):
     """
-    Launch or toggle Web Spotlight App Window when user presses F7.
-    - If already open: toggles visibility (minimizes if foreground, restores if background).
+    Launch or toggle Web Spotlight App Window when user presses F7 or on app startup.
+    - If already open: toggles visibility (minimizes if foreground, forces to front if background).
       NEVER spawns a duplicate process.
-    - If not open: launches a single standalone Chromium App window with isolated user profile.
+    - If not open: launches a single standalone Chromium App window and immediately brings it to front.
     """
     global _spotlight_proc, _last_launch_time
     with _spotlight_lock:
         now = time.time()
-        if now - _last_launch_time < 0.4:
+        if not force_show and now - _last_launch_time < 0.35:
             return  # Debounce quick double-presses
         _last_launch_time = now
 
-        # Case 1: Spotlight is already open -> Toggle visibility, DO NOT launch another process!
+        # Case 1: Spotlight is already open -> Toggle or focus, DO NOT launch another process!
         if is_spotlight_window_open():
-            logger.info("Spotlight is already open. Toggling window...")
+            logger.info("Spotlight is already open. Bringing to front...")
             if sys.platform.startswith("win"):
-                toggled = toggle_spotlight_window_windows()
+                toggled = toggle_spotlight_window_windows(force_show=force_show)
                 if toggled:
                     broadcast_spotlight_message({"type": "SPOTLIGHT_FOCUS"})
                     return
-            # Non-Windows or Win32 fallback: broadcast toggle event to browser
-            broadcast_spotlight_message({"type": "SPOTLIGHT_TOGGLE"})
+            # Non-Windows or Win32 fallback: broadcast focus event to browser
+            broadcast_spotlight_message({"type": "SPOTLIGHT_FOCUS" if force_show else "SPOTLIGHT_TOGGLE"})
             return
 
         # Case 2: Spotlight is NOT open -> Launch cleanly
         spotlight_url = f"http://{HOST}:{PORT}/spotlight"
         browser_path = find_chromium_browser()
         profile_dir = get_spotlight_profile_dir()
+
+        def _poll_and_focus():
+            """Poll for Spotlight window and immediately force it to the foreground with zero Alt-Tab."""
+            for _ in range(35):
+                time.sleep(0.1)
+                hwnd = find_spotlight_hwnd_windows()
+                if hwnd:
+                    force_foreground_window(hwnd)
+                    broadcast_spotlight_message({"type": "SPOTLIGHT_FOCUS"})
+                    break
 
         if browser_path:
             cmd = [
@@ -198,6 +263,8 @@ def launch_or_toggle_web_spotlight():
             logger.info(f"🚀 Khởi chạy Web Spotlight App Window (F7): {browser_path}")
             try:
                 _spotlight_proc = subprocess.Popen(cmd)
+                if sys.platform.startswith("win"):
+                    threading.Thread(target=_poll_and_focus, daemon=True).start()
                 return
             except Exception as e:
                 logger.warning(f"Lỗi khi chạy browser --app: {e}")
@@ -205,3 +272,5 @@ def launch_or_toggle_web_spotlight():
         # Fallback: standard default browser
         logger.info(f"Mở Spotlight qua trình duyệt mặc định: {spotlight_url}")
         webbrowser.open(spotlight_url)
+        if sys.platform.startswith("win"):
+            threading.Thread(target=_poll_and_focus, daemon=True).start()
