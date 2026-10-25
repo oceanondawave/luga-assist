@@ -39,13 +39,31 @@ def is_network_path(path: Path) -> bool:
         pass
     return False
 
-def close_running_instances():
-    """Closes any background running Luga Assist.exe so files are not locked."""
-    if os.name == "nt":
+def safe_rmtree(path: Path):
+    """Safely removes a directory tree, resetting read-only permissions if needed."""
+    if not path.exists():
+        return
+    import stat
+    def on_error(func, p, exc_info):
         try:
-            subprocess.run(["taskkill", "/F", "/IM", "Luga Assist.exe"], capture_output=True, check=False)
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
         except Exception:
             pass
+    try:
+        shutil.rmtree(path, onerror=on_error)
+    except Exception:
+        pass
+
+def close_running_instances():
+    """Closes any background running Luga Assist.exe, wscript.exe, cscript.exe so files are not locked."""
+    if os.name == "nt":
+        for proc in ("Luga Assist.exe", "wscript.exe", "cscript.exe"):
+            try:
+                subprocess.run(["taskkill", "/F", "/IM", proc], capture_output=True, check=False)
+            except Exception:
+                pass
+        time.sleep(0.5)
 
 def disable_windows_quickedit():
     """
@@ -299,9 +317,19 @@ def main():
     if is_network:
         local_base = Path(tempfile.gettempdir()) / "luga_build"
         build_work_dir = local_base / "work"
-        build_dist_dir = local_base / "dist"
+        # Use isolated clean dist folder per build to prevent PyInstaller PermissionError WinError 5
+        build_dist_dir = local_base / f"dist_{int(time.time())}"
         build_work_dir.mkdir(parents=True, exist_ok=True)
         build_dist_dir.mkdir(parents=True, exist_ok=True)
+
+        # Pre-clean any stale dist directories from previous runs
+        try:
+            for old_d in local_base.glob("dist*"):
+                if old_d != build_dist_dir:
+                    safe_rmtree(old_d)
+        except Exception:
+            pass
+
         print("--> [Notice] Network share / VM shared folder detected (UNC/Remote Drive):")
         print(f"    {BASE_DIR}")
         print("--> [Auto-Redirect] Windows kernel blocks PE resource updates on network shares (WinError 19).")
@@ -395,12 +423,13 @@ def main():
 
         # Clean up temporary build directory on C: drive to free space
         print("--> [Build] Cleaning up temporary build directory on C: drive...")
+        safe_rmtree(build_dist_dir)
         try:
-            if local_base.exists():
-                shutil.rmtree(local_base, ignore_errors=True)
-                print(f"    Cleaned: {local_base}")
+            for old_d in local_base.glob("dist*"):
+                safe_rmtree(old_d)
         except Exception:
             pass
+        print(f"    Cleaned: {build_dist_dir}")
     else:
         target_setup_exe = final_setup_exe
 
