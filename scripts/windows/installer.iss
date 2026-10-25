@@ -11,6 +11,14 @@
   #define AppRootDir "..\.."
 #endif
 
+#ifndef DistSourceDir
+  #define DistSourceDir AppRootDir + "\dist\Luga Assist"
+#endif
+
+#ifndef OutputDir
+  #define OutputDir AppRootDir + "\dist"
+#endif
+
 [Setup]
 AppId={{8B1D4F37-5674-4C4A-9A4B-3D4F5A6B7C8D}
 AppName={#MyAppName}
@@ -22,7 +30,7 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-OutputDir={#AppRootDir}\dist
+OutputDir={#OutputDir}
 OutputBaseFilename=Luga-Assist-Setup
 #if FileExists(AppRootDir + "\app.ico")
 SetupIconFile={#AppRootDir}\app.ico
@@ -44,7 +52,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "autostart"; Description: "Khoi dong cung Windows (Run on startup)"; GroupDescription: "Cau hinh khoi dong:"; Flags: unchecked
 
 [Files]
-Source: "{#AppRootDir}\dist\Luga Assist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#DistSourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#AppRootDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#AppRootDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 

@@ -10,9 +10,42 @@ import shutil
 import zipfile
 import subprocess
 import time
+import tempfile
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+def is_network_path(path: Path) -> bool:
+    """
+    Checks if a directory path resides on a network share or UNC path.
+    Windows Win32 PE Resource APIs (BeginUpdateResourceW) strictly require
+    local NTFS/FAT filesystems and fail with WinError 19 (ERROR_WRITE_PROTECT)
+    on SMB network shares, UNC paths, and VM shared folders (e.g. Parallels \\Mac\\...).
+    """
+    try:
+        resolved = str(path.resolve())
+        # Check UNC prefixes: \\..., //...
+        if resolved.startswith(("\\\\", "//")):
+            return True
+        if os.name == "nt":
+            import ctypes
+            drive = os.path.splitdrive(resolved)[0]
+            if drive:
+                drive_root = drive + ("\\" if not drive.endswith("\\") else "")
+                # DRIVE_REMOTE = 4
+                if ctypes.windll.kernel32.GetDriveTypeW(drive_root) == 4:
+                    return True
+    except Exception:
+        pass
+    return False
+
+def close_running_instances():
+    """Closes any background running Luga Assist.exe so files are not locked."""
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "Luga Assist.exe"], capture_output=True, check=False)
+        except Exception:
+            pass
 
 def disable_windows_quickedit():
     """
@@ -235,6 +268,7 @@ def check_dependencies():
 def main():
     disable_windows_quickedit()
     check_python_environment()
+    close_running_instances()
     print_banner("LUGA ASSIST - FAST STANDALONE WINDOWS PACKAGING & RELEASE")
     print(f"Working Directory: {BASE_DIR}")
     print(f"Python: {sys.executable}")
@@ -247,19 +281,50 @@ def main():
     # 2. Ensure application icon
     ensure_app_icon()
 
+    # Determine build paths (Work & Dist)
+    # If the workspace is on a network share (UNC or Parallels VM shared folder \\Mac\...),
+    # redirect workpath and distpath to local NTFS %TEMP% to prevent:
+    # win32ctypes.pywin32.pywintypes.error: (19, 'BeginUpdateResourceW', 'The media is write protected.')
+    is_network = is_network_path(BASE_DIR) or ("--temp-build" in sys.argv)
+    if is_network:
+        local_base = Path(tempfile.gettempdir()) / "luga_build"
+        build_work_dir = local_base / "work"
+        build_dist_dir = local_base / "dist"
+        build_work_dir.mkdir(parents=True, exist_ok=True)
+        build_dist_dir.mkdir(parents=True, exist_ok=True)
+        print("--> [Notice] Network share / VM shared folder detected (UNC/Remote Drive):")
+        print(f"    {BASE_DIR}")
+        print("--> [Auto-Redirect] Windows kernel blocks PE resource updates on network shares (WinError 19).")
+        print("--> [Auto-Redirect] Automatically redirecting build work & dist paths to local drive:")
+        print(f"    Work path: {build_work_dir}")
+        print(f"    Dist path: {build_dist_dir}")
+    else:
+        build_work_dir = BASE_DIR / "build"
+        build_dist_dir = BASE_DIR / "dist"
+
     # 3. Run PyInstaller (incremental, UPX disabled for maximum speed)
     spec_path = BASE_DIR / "luga_assist_win.spec"
     if not spec_path.exists():
         print(f"[X] Spec file not found: {spec_path}")
         sys.exit(1)
 
-    pyinstaller_cmd = [sys.executable, "-m", "PyInstaller", "-y", str(spec_path)]
+    pyinstaller_cmd = [
+        sys.executable,
+        "-m",
+        "PyInstaller",
+        "-y",
+        "--workpath",
+        str(build_work_dir),
+        "--distpath",
+        str(build_dist_dir),
+    ]
     if "--clean" in sys.argv:
-        pyinstaller_cmd.insert(4, "--clean")
+        pyinstaller_cmd.append("--clean")
+    pyinstaller_cmd.append(str(spec_path))
 
     run_cmd(pyinstaller_cmd, "Building standalone executable with PyInstaller (upx=False)")
 
-    dist_app_dir = BASE_DIR / "dist" / "Luga Assist"
+    dist_app_dir = build_dist_dir / "Luga Assist"
     if not dist_app_dir.exists():
         print(f"[X] Expected output folder not found: {dist_app_dir}")
         sys.exit(1)
@@ -269,15 +334,21 @@ def main():
     if vbs_src.exists():
         shutil.copy2(vbs_src, dist_app_dir / "start_windows.vbs")
 
-    dist_dir = BASE_DIR / "dist"
-    dist_dir.mkdir(parents=True, exist_ok=True)
+    project_dist_dir = BASE_DIR / "dist"
+    project_dist_dir.mkdir(parents=True, exist_ok=True)
 
     # 5. Build the Standalone Setup Wizard Installer (Luga-Assist-Setup.exe)
     iss_file = BASE_DIR / "scripts" / "windows" / "installer.iss"
     iscc_bin = ensure_iscc_compiler()
 
     if iscc_bin and iss_file.exists():
-        iscc_cmd = [iscc_bin, f"/DAppRootDir={BASE_DIR}", str(iss_file)]
+        iscc_cmd = [
+            iscc_bin,
+            f"/DAppRootDir={BASE_DIR}",
+            f"/DDistSourceDir={dist_app_dir}",
+            f"/DOutputDir={build_dist_dir}",
+            str(iss_file),
+        ]
         run_cmd(iscc_cmd, "Compiling Windows Setup Wizard (Luga-Assist-Setup.exe)")
     else:
         print_banner("WARNING: INNO SETUP NOT FOUND")
@@ -286,20 +357,47 @@ def main():
         print("  2. Install it, then run 'build_windows.bat' again.")
         print("=" * 68)
 
-    # 6. Create Portable ZIP only if requested (--zip)
+    # 6. If network build, copy final artifacts back to project dist folder
+    final_setup_exe = build_dist_dir / "Luga-Assist-Setup.exe"
+    target_setup_exe = project_dist_dir / "Luga-Assist-Setup.exe"
+    target_app_dir = project_dist_dir / "Luga Assist"
+
+    if is_network:
+        print("--> [Build] Copying final build artifacts back to project dist folder...")
+        if final_setup_exe.exists():
+            try:
+                shutil.copy2(final_setup_exe, target_setup_exe)
+                print(f"    Copied: {target_setup_exe}")
+            except Exception as e:
+                print(f"    Warning copying setup exe: {e}")
+        if dist_app_dir.exists():
+            print(f"    Syncing: {target_app_dir}...")
+            try:
+                if target_app_dir.exists():
+                    shutil.rmtree(target_app_dir)
+            except Exception as e:
+                print(f"    Notice cleaning old dist dir: {e}")
+            try:
+                shutil.copytree(dist_app_dir, target_app_dir, dirs_exist_ok=True)
+                print(f"    Copied: {target_app_dir}")
+            except Exception as e:
+                print(f"    Warning syncing app dir: {e}")
+    else:
+        target_setup_exe = final_setup_exe
+
+    # 7. Create Portable ZIP only if requested (--zip)
     win_zip = None
     if "--zip" in sys.argv:
-        win_zip = dist_dir / "Luga-Assist-Windows.zip"
-        zip_directory(dist_app_dir, win_zip)
+        win_zip = project_dist_dir / "Luga-Assist-Windows.zip"
+        zip_directory(target_app_dir, win_zip)
 
-    # 7. Print Complete Release Summary
-    installer_exe = dist_dir / "Luga-Assist-Setup.exe"
+    # 8. Print Complete Release Summary
     total_elapsed = time.time() - total_start_time
     print_banner(f"BUILD COMPLETED IN {total_elapsed:.1f}s!")
-    if installer_exe.exists():
-        mb = installer_exe.stat().st_size / (1024 * 1024)
+    if target_setup_exe.exists():
+        mb = target_setup_exe.stat().st_size / (1024 * 1024)
         print("  🎉 BO CAI DAT CHINH (STANDALONE SETUP WIZARD):")
-        print(f"  👉 {installer_exe} ({mb:.1f} MB)\n")
+        print(f"  👉 {target_setup_exe} ({mb:.1f} MB)\n")
         print("  * Day la file duy nhat can gui cho nguoi dung Windows.")
         print("  * May tinh dich KHONG CAN cai dat Python hay Chrome Extension.")
         print("  * Click dup vao file .exe nay de bat Setup Wizard cai dat:")
@@ -308,7 +406,7 @@ def main():
         print("      + Tich hop trinh Go cai dat (Uninstaller) chuan Windows.")
     else:
         print(f"  * Luu y: Bo cai dat Setup.exe chua duoc tao do thieu Inno Setup.")
-        print(f"  * Ban co the dung ban chay truc tiep: {dist_app_dir / 'Luga Assist.exe'}")
+        print(f"  * Ban co the dung ban chay truc tiep: {target_app_dir / 'Luga Assist.exe'}")
 
     if win_zip and win_zip.exists():
         print(f"\n  Cac file bo tro:\n    - Portable ZIP  : {win_zip}")
