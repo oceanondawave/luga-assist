@@ -20,30 +20,22 @@ if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
 else:
     WEB_DIR = BASE_DIR / "web"
 
-# Runtime directories (temp and logs)
-# If running as standalone bundled app, use user home directory to guarantee write permissions
-# even if installed in /Applications or Program Files.
-if getattr(sys, "frozen", False):
-    USER_DATA_DIR = Path.home() / ".luga_assist"
-    TEMP_DIR = USER_DATA_DIR / "temp"
-    LOGS_DIR = USER_DATA_DIR / "logs"
-else:
-    TEMP_DIR = BASE_DIR / "temp"
-    LOGS_DIR = BASE_DIR / "logs"
+# Runtime directories (User Data, temp and logs)
+# Use user home directory (.luga_assist) to guarantee write permissions
+# and ensure credentials & profiles persist permanently across application updates.
+USER_DATA_DIR = Path.home() / ".luga_assist"
+USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-try:
-    TEMP_DIR.mkdir(parents=True, exist_ok=True)
-except Exception:
-    USER_DATA_DIR = Path.home() / ".luga_assist"
-    TEMP_DIR = USER_DATA_DIR / "temp"
-    TEMP_DIR.mkdir(parents=True, exist_ok=True)
+TEMP_DIR = USER_DATA_DIR / "temp"
+LOGS_DIR = USER_DATA_DIR / "logs"
+GEMINI_CACHE_DIR = USER_DATA_DIR / "gemini_cache"
 
-try:
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
-except Exception:
-    USER_DATA_DIR = Path.home() / ".luga_assist"
-    LOGS_DIR = USER_DATA_DIR / "logs"
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+GEMINI_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Tell gemini_webapi to use persistent cache in USER_DATA_DIR (never in %TEMP%)
+os.environ["GEMINI_COOKIE_PATH"] = str(GEMINI_CACHE_DIR)
 
 LOG_FILE = LOGS_DIR / "luga_assist.log"
 ERROR_LOG_FILE = LOGS_DIR / "error.log"

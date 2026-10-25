@@ -204,13 +204,26 @@ async def lifespan(app: FastAPI):
     # 2. Initialize background Gemini session asynchronously (never block server startup)
     async def _init_gemini_bg():
         try:
-            await gemini_service.auto_init_from_disk()
-            if gemini_service.is_ready:
+            print("[Lifespan] 🔄 Đang tự động khôi phục session Google Gemini từ phiên trước...")
+            ok = await gemini_service.auto_init_from_disk()
+            if ok or gemini_service.is_ready:
                 print("[Lifespan] ✅ Session Google Gemini đã sẵn sàng từ phiên lưu trước.")
+                await hub.broadcast_status()
+                await hub.broadcast_webui({
+                    "type": "STATUS_UPDATE",
+                    "gemini_ready": True,
+                    "message": "Session Google Gemini đã sẵn sàng."
+                })
             else:
-                print("[Lifespan] ℹ️ Chưa có session Google Gemini. Nhấn 'Đăng nhập Google' trên Spotlight để kết nối.")
+                print("[Lifespan] ℹ️ Chưa có session Google Gemini hoặc cookie hết hạn.")
+                await hub.broadcast_status()
+                await hub.broadcast_webui({
+                    "type": "STATUS_UPDATE",
+                    "gemini_ready": False
+                })
         except Exception as e:
             print(f"[Lifespan] Background session init: {e}")
+            await hub.broadcast_status()
 
     asyncio.create_task(_init_gemini_bg())
 
@@ -227,6 +240,12 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=_auto_show_spotlight_on_startup, daemon=True).start()
 
     yield
+
+    # Clean up and persist rotated cookies on shutdown
+    try:
+        gemini_service._sync_cookies_to_disk()
+    except Exception:
+        pass
 
     # Clean up Spotlight HUD on server shutdown
     if spotlight_process:

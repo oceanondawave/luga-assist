@@ -21,12 +21,21 @@ from typing import Optional, Dict, Any, Callable
 
 import websockets
 
-from app.config import TEMP_DIR
+from app.config import USER_DATA_DIR, TEMP_DIR
 from app.logger import get_logger
 
 logger = get_logger("GoogleAuth")
 
-GOOGLE_PROFILE_DIR = TEMP_DIR / "luga_google_profile"
+# Persistent browser profile in USER_DATA_DIR (never in %TEMP%)
+GOOGLE_PROFILE_DIR = USER_DATA_DIR / "google_profile"
+
+# Auto-migrate legacy profile if present in TEMP_DIR
+legacy_profile = TEMP_DIR / "luga_google_profile"
+if legacy_profile.exists() and not GOOGLE_PROFILE_DIR.exists():
+    try:
+        shutil.move(legacy_profile, GOOGLE_PROFILE_DIR)
+    except Exception:
+        pass
 DEFAULT_CDP_PORT = 19222
 
 
@@ -368,6 +377,117 @@ class GoogleWebAuthManager:
         sound_manager.play_done()
         logger.info("🚪 Đã đăng xuất tài khoản Google Gemini thành công.")
         return {"status": "ok", "message": "Đã đăng xuất tài khoản Google thành công."}
+
+    async def silent_refresh_cookies(self, timeout_sec: float = 12.0) -> bool:
+        """
+        Silently retrieves fresh Google session cookies using the saved browser profile
+        in headless/background mode, with ZERO user intervention and ZERO visible windows.
+        """
+        if self.is_logging_in:
+            return False
+
+        browser_path = find_chromium_browser()
+        if not browser_path or not GOOGLE_PROFILE_DIR.exists():
+            return False
+
+        # Check if profile has any actual user data
+        profile_path = str(GOOGLE_PROFILE_DIR.resolve())
+        default_dir = GOOGLE_PROFILE_DIR / "Default"
+        if not default_dir.exists():
+            return False
+
+        logger.info("🔄 Đang tự động làm mới session Google Gemini ngầm qua Chromium profile...")
+        cdp_port = get_available_cdp_port(DEFAULT_CDP_PORT)
+        cmd = [
+            browser_path,
+            f"--remote-debugging-port={cdp_port}",
+            f"--user-data-dir={profile_path}",
+            "--headless=new",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-gpu",
+            "--window-size=800,600",
+            "https://gemini.google.com"
+        ]
+
+        proc = None
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            t0 = time.time()
+            ws_url = None
+            while time.time() - t0 < 6.0:
+                try:
+                    req = urllib.request.Request(f"http://127.0.0.1:{cdp_port}/json/version")
+                    with urllib.request.urlopen(req, timeout=0.6) as r:
+                        if r.status == 200:
+                            data = json.loads(r.read().decode())
+                            ws_url = data.get("webSocketDebuggerUrl")
+                            if ws_url:
+                                break
+                except Exception:
+                    pass
+                await asyncio.sleep(0.4)
+
+            if not ws_url:
+                logger.debug("Không thể kết nối CDP của trình duyệt ngầm.")
+                return False
+
+            async with websockets.connect(ws_url, max_size=10_000_000) as ws:
+                msg_id = 1
+                await ws.send(json.dumps({"id": msg_id, "method": "Network.enable"}))
+
+                start_poll = time.time()
+                while time.time() - start_poll < timeout_sec:
+                    msg_id += 1
+                    await ws.send(json.dumps({"id": msg_id, "method": "Storage.getCookies"}))
+                    resp_data = None
+                    for _ in range(10):
+                        raw_resp = await asyncio.wait_for(ws.recv(), timeout=3.0)
+                        msg_obj = json.loads(raw_resp)
+                        if msg_obj.get("id") == msg_id:
+                            resp_data = msg_obj
+                            break
+
+                    if resp_data and "result" in resp_data:
+                        cookies = resp_data["result"].get("cookies", [])
+                        psid = None
+                        psidts = None
+                        for c in cookies:
+                            c_name = c.get("name")
+                            c_domain = c.get("domain", "")
+                            if "google.com" in c_domain:
+                                if c_name == "__Secure-1PSID":
+                                    psid = c.get("value")
+                                elif c_name == "__Secure-1PSIDTS":
+                                    psidts = c.get("value")
+
+                        if psid and psidts:
+                            logger.info("🎉 Đã lấy được cookies mới từ profile ngầm! Đang kết nối Gemini...")
+                            from app.gemini_service import gemini_service
+                            ok = await gemini_service.init_session(psid, psidts)
+                            if ok:
+                                logger.info("✅ Phục hồi session Google Gemini ngầm thành công!")
+                                return True
+
+                    await asyncio.sleep(1.0)
+        except Exception as e:
+            logger.debug(f"Silent cookie refresh exception: {e}")
+        finally:
+            if proc and proc.poll() is None:
+                try:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=1.5)
+                    except Exception:
+                        proc.kill()
+                except Exception:
+                    pass
+
+        return False
 
     async def switch_account(self, hub_broadcast_func: Optional[Callable] = None) -> Dict[str, Any]:
         """Log out current account and immediately launch browser to choose/add another account."""

@@ -94,9 +94,20 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const res = await fetch(getApiUrl("/api/status"));
       const data = await res.json();
-      updateGoogleAuthUI(Boolean(data.gemini_ready));
+      const ready = Boolean(data && data.gemini_ready);
+      updateGoogleAuthUI(ready);
+      return ready;
     } catch (e) {
       updateGoogleAuthUI(false);
+      return false;
+    }
+  }
+
+  async function startupGoogleStatusCheck() {
+    for (let i = 0; i < 15; i++) {
+      const ready = await checkGoogleStatus();
+      if (ready) break;
+      await new Promise(r => setTimeout(r, 800));
     }
   }
 
@@ -519,5 +530,5 @@ document.addEventListener("DOMContentLoaded", () => {
   // Init
   fetchThinkingLevel();
   connectWebSocket();
-  checkGoogleStatus();
+  startupGoogleStatusCheck();
 });

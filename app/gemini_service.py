@@ -5,6 +5,7 @@ Runs 100% in the background with ZERO browser tabs needed.
 Maintains continuous conversation context across all user requests.
 Only creates a new chat if explicitly requested or if context is truly overloaded.
 """
+import shutil
 from pathlib import Path
 import json
 import re
@@ -13,7 +14,7 @@ from typing import Optional, Dict, Any
 
 from gemini_webapi import GeminiClient, set_log_level
 from gemini_webapi.exceptions import AuthError
-from app.config import TEMP_DIR
+from app.config import USER_DATA_DIR, TEMP_DIR
 
 # Suppress verbose quota logs in terminal safely (guards against windowless PyInstaller NoneType)
 try:
@@ -22,7 +23,16 @@ try:
 except Exception:
     pass
 
-SESSION_FILE = TEMP_DIR / "gemini_session.json"
+# Session file stored permanently in USER_DATA_DIR (never in %TEMP%)
+SESSION_FILE = USER_DATA_DIR / "gemini_session.json"
+
+# Auto-migrate legacy session file if present in TEMP_DIR
+legacy_session = TEMP_DIR / "gemini_session.json"
+if legacy_session.exists() and not SESSION_FILE.exists():
+    try:
+        shutil.copy2(legacy_session, SESSION_FILE)
+    except Exception:
+        pass
 
 class GeminiSessionService:
     def __init__(self):
@@ -103,7 +113,7 @@ class GeminiSessionService:
         try:
             live_psid = self._current_psid
             live_psidts = self._current_psidts
-            if hasattr(self.client, "cookies"):
+            if hasattr(self.client, "cookies") and self.client.cookies:
                 c_psid = self.client.cookies.get("__Secure-1PSID")
                 c_psidts = self.client.cookies.get("__Secure-1PSIDTS")
                 if c_psid:
@@ -118,25 +128,52 @@ class GeminiSessionService:
             if live_psid:
                 self._current_psid = live_psid
                 self._current_psidts = live_psidts
+                SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
                 with open(SESSION_FILE, "w") as f:
                     json.dump({"secure_1psid": live_psid, "secure_1psidts": live_psidts}, f)
+        except Exception as e:
+            print(f"[GeminiSessionService] Warning syncing session to disk: {e}")
+
+    async def _cookie_sync_loop(self):
+        """Periodically sync rotated cookies to disk so next startup has latest token."""
+        try:
+            while self.is_ready:
+                await asyncio.sleep(20)
+                self._sync_cookies_to_disk()
+        except asyncio.CancelledError:
+            pass
         except Exception:
             pass
 
-    async def auto_init_from_disk(self):
+    async def auto_init_from_disk(self) -> bool:
         """Try to automatically initialize if session was previously saved."""
         cookies = self._read_saved_cookies()
         if cookies:
             psid = cookies.get("secure_1psid", "")
             psidts = cookies.get("secure_1psidts", "")
             if psid:
-                # 1. Try with saved cookies
+                # 1. Try with saved cookies (PSID + PSIDTS)
                 ok = await self.init_session(psid, psidts)
+                if ok:
+                    return True
                 # 2. If failed (e.g. psidts expired while app was closed), try with psid alone
                 # so gemini_webapi can load rotated cookies from its cache
-                if not ok:
-                    print("[GeminiSessionService] 🔄 Đang khôi phục session bằng __Secure-1PSID từ cache...")
-                    await self.init_session(psid, None)
+                print("[GeminiSessionService] 🔄 Đang khôi phục session bằng __Secure-1PSID từ cache...")
+                ok = await self.init_session(psid, None)
+                if ok:
+                    return True
+
+        # 3. If cookies failed or expired, attempt silent background refresh using Chromium profile
+        try:
+            from app.google_auth import google_auth_manager
+            print("[GeminiSessionService] 🔄 Đang tự động làm mới session từ Google profile ngầm...")
+            ok = await google_auth_manager.silent_refresh_cookies()
+            if ok:
+                return True
+        except Exception as e:
+            print(f"[GeminiSessionService] Silent refresh notice: {e}")
+
+        return False
 
     async def init_session(
         self,
@@ -183,6 +220,10 @@ class GeminiSessionService:
 
                 # Persist to disk
                 self._sync_cookies_to_disk()
+
+                # Start periodic background cookie sync
+                if not hasattr(self, "_sync_task") or self._sync_task is None or self._sync_task.done():
+                    self._sync_task = asyncio.create_task(self._cookie_sync_loop())
 
                 print("[GeminiSessionService] ✅ Kết nối Google Gemini ngầm thành công! (Duy trì 1 cuộc trò chuyện liên tục)")
                 return True
