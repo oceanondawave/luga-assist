@@ -269,9 +269,19 @@ def main():
     disable_windows_quickedit()
     check_python_environment()
     close_running_instances()
+    
+    import platform
+    arch = platform.machine().upper()
+
     print_banner("LUGA ASSIST - FAST STANDALONE WINDOWS PACKAGING & RELEASE")
     print(f"Working Directory: {BASE_DIR}")
     print(f"Python: {sys.executable}")
+    if arch in ("AMD64", "X86_64"):
+        print(f"Target Architecture: x86_64 / AMD64 (Chay tot tren tat ca PC Intel/AMD x86 & Windows ARM)")
+    elif arch == "ARM64":
+        print(f"Target Architecture: ARM64 (Windows ARM ban dia)")
+    else:
+        print(f"Target Architecture: {arch}")
 
     total_start_time = time.time()
 
@@ -382,6 +392,15 @@ def main():
                 print(f"    Copied: {target_app_dir}")
             except Exception as e:
                 print(f"    Warning syncing app dir: {e}")
+
+        # Clean up temporary build directory on C: drive to free space
+        print("--> [Build] Cleaning up temporary build directory on C: drive...")
+        try:
+            if local_base.exists():
+                shutil.rmtree(local_base, ignore_errors=True)
+                print(f"    Cleaned: {local_base}")
+        except Exception:
+            pass
     else:
         target_setup_exe = final_setup_exe
 
