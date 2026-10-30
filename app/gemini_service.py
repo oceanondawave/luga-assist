@@ -40,9 +40,11 @@ class GeminiSessionService:
         self.chat_session = None
         self.conversation_session = None
         self.is_ready = False
+        self.is_restoring = False
         self.has_grounding = False
         self._current_psid: str = ""
         self._current_psidts: str = ""
+        self._current_all_cookies: Dict[str, str] = {}
         self.current_thinking_level: str = "medium"
         self._init_lock = asyncio.Lock()
         self._saved_cookies = self._read_saved_cookies()
@@ -54,12 +56,15 @@ class GeminiSessionService:
             self.current_thinking_level = lvl
             print(f"[GeminiSessionService] ⚙️ Đã thiết lập mức độ suy nghĩ AI: {lvl.upper()}")
 
-    def _read_saved_cookies(self) -> Optional[Dict[str, str]]:
+    def _read_saved_cookies(self) -> Optional[Dict[str, Any]]:
         if SESSION_FILE.exists():
             try:
                 with open(SESSION_FILE, "r") as f:
                     data = json.load(f)
-                    if data.get("secure_1psid"):
+                    if data.get("secure_1psid") or data.get("all_cookies"):
+                        all_c = data.get("all_cookies", {})
+                        if all_c:
+                            self._current_all_cookies.update(all_c)
                         return data
             except Exception as e:
                 print(f"[GeminiSessionService] Warning loading saved session: {e}")
@@ -107,30 +112,52 @@ class GeminiSessionService:
                 return self.client.start_chat(model="gemini-flash-lite")
 
     def _sync_cookies_to_disk(self):
-        """Persist rotated __Secure-1PSIDTS back to disk so next startup never expires."""
+        """Persist rotated __Secure-1PSIDTS and all Google cookies back to disk so next startup never expires."""
         if not self.client:
             return
         try:
             live_psid = self._current_psid
             live_psidts = self._current_psidts
+            all_cookies = dict(self._current_all_cookies)
+
             if hasattr(self.client, "cookies") and self.client.cookies:
-                c_psid = self.client.cookies.get("__Secure-1PSID")
-                c_psidts = self.client.cookies.get("__Secure-1PSIDTS")
-                if c_psid:
-                    live_psid = c_psid
-                if c_psidts:
-                    live_psidts = c_psidts
-            elif hasattr(self.client, "_live_client") and self.client._live_client:
-                c_psidts = self.client._live_client.cookies.get("__Secure-1PSIDTS")
-                if c_psidts:
-                    live_psidts = c_psidts
+                try:
+                    for c in self.client.cookies.jar:
+                        all_cookies[c.name] = c.value
+                    c_psid = self.client.cookies.get("__Secure-1PSID")
+                    c_psidts = self.client.cookies.get("__Secure-1PSIDTS")
+                    if c_psid:
+                        live_psid = c_psid
+                    if c_psidts:
+                        live_psidts = c_psidts
+                except Exception:
+                    pass
+
+            if hasattr(self.client, "_live_client") and self.client._live_client:
+                try:
+                    lc = getattr(self.client._live_client, "cookies", None)
+                    if lc:
+                        for c in lc.jar:
+                            all_cookies[c.name] = c.value
+                        c_psidts = lc.get("__Secure-1PSIDTS")
+                        if c_psidts:
+                            live_psidts = c_psidts
+                except Exception:
+                    pass
 
             if live_psid:
                 self._current_psid = live_psid
                 self._current_psidts = live_psidts
+                self._current_all_cookies = all_cookies
                 SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+                save_data = {
+                    "secure_1psid": live_psid,
+                    "secure_1psidts": live_psidts,
+                    "all_cookies": all_cookies,
+                    "updated_at": time.time()
+                }
                 with open(SESSION_FILE, "w") as f:
-                    json.dump({"secure_1psid": live_psid, "secure_1psidts": live_psidts}, f)
+                    json.dump(save_data, f)
         except Exception as e:
             print(f"[GeminiSessionService] Warning syncing session to disk: {e}")
 
@@ -145,40 +172,93 @@ class GeminiSessionService:
         except Exception:
             pass
 
-    async def auto_init_from_disk(self) -> bool:
-        """Try to automatically initialize if session was previously saved."""
-        cookies = self._read_saved_cookies()
-        if cookies:
-            psid = cookies.get("secure_1psid", "")
-            psidts = cookies.get("secure_1psidts", "")
-            if psid:
-                # 1. Try with saved cookies (PSID + PSIDTS)
-                ok = await self.init_session(psid, psidts)
-                if ok:
-                    return True
-                # 2. If failed (e.g. psidts expired while app was closed), try with psid alone
-                # so gemini_webapi can load rotated cookies from its cache
-                print("[GeminiSessionService] 🔄 Đang khôi phục session bằng __Secure-1PSID từ cache...")
-                ok = await self.init_session(psid, None)
-                if ok:
-                    return True
-
-        # 3. If cookies failed or expired, attempt silent background refresh using Chromium profile
+    async def _rotate_cookies_direct(self, psid: str, all_cookies: Dict[str, str]) -> Optional[str]:
+        """
+        Attempts to rotate and fetch a fresh __Secure-1PSIDTS directly from Google
+        using the full account cookie set via curl_cffi AsyncSession.
+        """
         try:
-            from app.google_auth import google_auth_manager
-            print("[GeminiSessionService] 🔄 Đang tự động làm mới session từ Google profile ngầm...")
-            ok = await google_auth_manager.silent_refresh_cookies()
-            if ok:
-                return True
-        except Exception as e:
-            print(f"[GeminiSessionService] Silent refresh notice: {e}")
+            from curl_cffi.requests import AsyncSession
+            from gemini_webapi.constants import Endpoint, Headers, BROWSER_TYPE
 
-        return False
+            async with AsyncSession(impersonate=BROWSER_TYPE, allow_redirects=True) as session:
+                for k, v in all_cookies.items():
+                    if v:
+                        session.cookies.set(k, v, domain=".google.com", secure=True)
+                if psid:
+                    session.cookies.set("__Secure-1PSID", psid, domain=".google.com", secure=True)
+
+                resp = await session.post(
+                    Endpoint.ROTATE_COOKIES,
+                    headers=Headers.ROTATE_COOKIES.value,
+                    data='[000,"-0000000000000000000"]',
+                    timeout=10.0
+                )
+                if resp.status_code == 200:
+                    new_ts = session.cookies.get("__Secure-1PSIDTS")
+                    if new_ts:
+                        for c in session.cookies.jar:
+                            all_cookies[c.name] = c.value
+                        return new_ts
+        except Exception as e:
+            print(f"[GeminiSessionService] Direct RotateCookies notice: {e}")
+        return None
+
+    async def auto_init_from_disk(self) -> bool:
+        """Try to automatically initialize and restore session with zero user friction."""
+        self.is_restoring = True
+        try:
+            cookies_data = self._read_saved_cookies()
+            psid = ""
+            psidts = ""
+            all_cookies = {}
+            if cookies_data:
+                psid = cookies_data.get("secure_1psid", "")
+                psidts = cookies_data.get("secure_1psidts", "")
+                all_cookies = cookies_data.get("all_cookies", {})
+                if all_cookies:
+                    self._current_all_cookies.update(all_cookies)
+
+            # Tier 1: Try with saved cookies directly (fastest path, works if reboot was quick)
+            if psid and psidts:
+                print("[GeminiSessionService] 🔄 [Tier 1] Đang thử kết nối session Google Gemini từ cookie lưu sẵn...")
+                try:
+                    ok = await self.init_session(psid, psidts, all_cookies=all_cookies)
+                    if ok:
+                        return True
+                except Exception as e:
+                    print(f"[GeminiSessionService] Tier 1 notice: {e}")
+
+            # Tier 2: If psidts expired on reboot, rotate directly via RotateCookies endpoint
+            if all_cookies and (psid or all_cookies.get("__Secure-1PSID")):
+                target_psid = psid or all_cookies.get("__Secure-1PSID", "")
+                print("[GeminiSessionService] 🔄 [Tier 2] Đang tự động làm mới token qua Google RotateCookies...")
+                new_psidts = await self._rotate_cookies_direct(target_psid, all_cookies)
+                if new_psidts:
+                    ok = await self.init_session(target_psid, new_psidts, all_cookies=all_cookies)
+                    if ok:
+                        print("[GeminiSessionService] ✅ Làm mới token thành công qua RotateCookies!")
+                        return True
+
+            # Tier 3: Silent off-screen Chromium recovery (100% reliable, runs off-screen, zero user disruption)
+            try:
+                from app.google_auth import google_auth_manager
+                print("[GeminiSessionService] 🔄 [Tier 3] Đang tự động làm mới session ngầm qua Google Chromium profile...")
+                ok = await google_auth_manager.silent_refresh_cookies(old_psidts=psidts)
+                if ok:
+                    return True
+            except Exception as e:
+                print(f"[GeminiSessionService] Tier 3 notice: {e}")
+
+            return False
+        finally:
+            self.is_restoring = False
 
     async def init_session(
         self,
         secure_1psid: str,
-        secure_1psidts: Optional[str] = None
+        secure_1psidts: Optional[str] = None,
+        all_cookies: Optional[Dict[str, str]] = None
     ) -> bool:
         """Initialize or keep active background Gemini client using cookies."""
         async with self._init_lock:
@@ -187,6 +267,9 @@ class GeminiSessionService:
 
             if not cleaned_psid:
                 return False
+
+            if all_cookies:
+                self._current_all_cookies.update(all_cookies)
 
             # If already initialized with THE EXACT SAME COOKIES and IS HEALTHY, keep existing session
             if (
@@ -207,7 +290,16 @@ class GeminiSessionService:
                     secure_1psidts=cleaned_psidts or None,
                 )
 
-                await self.client.init(timeout=30)
+                # Populate client cookies with full set if available
+                if self._current_all_cookies:
+                    for k, v in self._current_all_cookies.items():
+                        if v and k not in ("__Secure-1PSID", "__Secure-1PSIDTS"):
+                            try:
+                                self.client.cookies.set(k, v, domain=".google.com", secure=True)
+                            except Exception:
+                                pass
+
+                await self.client.init(timeout=25)
                 self._current_psid = cleaned_psid
                 self._current_psidts = cleaned_psidts
                 self.is_ready = True
@@ -296,7 +388,22 @@ class GeminiSessionService:
                     pass
                 raise RuntimeError(msg) from e
             elif isinstance(e, AuthError) or "unauthenticated" in err_str or "401" in err_str:
-                print(f"[GeminiSessionService] ⚠️ Session Google hết hạn hoặc chưa xác thực: {e}")
+                print(f"[GeminiSessionService] ⚠️ Session Google hết hạn hoặc chưa xác thực: {e}. Đang tự động khôi phục ngầm...")
+                recovered = await self.auto_init_from_disk()
+                if recovered and self.chat_session:
+                    print("[GeminiSessionService] ✅ Khôi phục session ngầm thành công, đang gửi lại câu lệnh...")
+                    try:
+                        output = await self.chat_session.send_message(
+                            prompt,
+                            files=files,
+                            extended_thinking=use_extended_thinking
+                        )
+                        self.has_grounding = True
+                        self._sync_cookies_to_disk()
+                        response_text = output.text if hasattr(output, "text") else str(output)
+                        return re.sub(r"\[\s*cite[^\]]*\]", "", response_text, flags=re.IGNORECASE)
+                    except Exception as retry_e:
+                        print(f"[GeminiSessionService] Lỗi khi gửi lại sau phục hồi: {retry_e}")
                 self.is_ready = False
                 self.client = None
                 self.chat_session = None
@@ -377,6 +484,20 @@ class GeminiSessionService:
                     pass
                 raise RuntimeError(msg) from e
             elif isinstance(e, AuthError) or "unauthenticated" in err_str or "401" in err_str:
+                print(f"[GeminiSessionService] ⚠️ Session Google hết hạn trong Chat Mode: {e}. Đang tự động khôi phục ngầm...")
+                recovered = await self.auto_init_from_disk()
+                if recovered and self.conversation_session:
+                    print("[GeminiSessionService] ✅ Khôi phục session Chat Mode thành công, đang gửi lại...")
+                    try:
+                        output = await self.conversation_session.send_message(
+                            message,
+                            extended_thinking=use_extended_thinking
+                        )
+                        self._sync_cookies_to_disk()
+                        response_text = output.text if hasattr(output, "text") else str(output)
+                        return re.sub(r"\[\s*cite[^\]]*\]", "", response_text, flags=re.IGNORECASE).strip()
+                    except Exception as retry_e:
+                        print(f"[GeminiSessionService] Lỗi khi gửi lại Chat Mode: {retry_e}")
                 self.is_ready = False
                 self.client = None
                 self.conversation_session = None

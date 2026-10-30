@@ -68,7 +68,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 1. Google Web Login & Account Management (Login, Switch, Logout)
-  function updateGoogleAuthUI(isReady) {
+  function updateGoogleAuthUI(isReady, isRestoring = false) {
     geminiReady = isReady;
     if (isReady) stopAuthPolling();
     if (googleAccountMenu) googleAccountMenu.style.display = "none";
@@ -80,6 +80,12 @@ document.addEventListener("DOMContentLoaded", () => {
         btnGoogleAuth.setAttribute("title", "Tùy chọn tài khoản Google (Đổi tài khoản / Đăng xuất)");
         btnGoogleAuth.setAttribute("aria-expanded", "false");
         btnGoogleAuth.innerHTML = '<span aria-hidden="true">🟢</span> <span>Google: Đã kết nối ▾</span>';
+      } else if (isRestoring) {
+        btnGoogleAuth.className = "spotlight-auth-btn restoring pulse";
+        btnGoogleAuth.setAttribute("aria-label", "Google Gemini: Đang tự động kết nối lại phiên trước...");
+        btnGoogleAuth.setAttribute("title", "Đang tự động kết nối lại...");
+        btnGoogleAuth.setAttribute("aria-expanded", "false");
+        btnGoogleAuth.innerHTML = '<span aria-hidden="true">🔄</span> <span>Đang kết nối...</span>';
       } else {
         btnGoogleAuth.className = "spotlight-auth-btn offline pulse";
         btnGoogleAuth.setAttribute("aria-label", "Google Gemini: Chưa đăng nhập. Nhấn phím Enter hoặc Space để đăng nhập trên web");
@@ -95,16 +101,17 @@ document.addEventListener("DOMContentLoaded", () => {
       const res = await fetch(getApiUrl("/api/status"));
       const data = await res.json();
       const ready = Boolean(data && data.gemini_ready);
-      updateGoogleAuthUI(ready);
+      const restoring = Boolean(data && data.restoring_session);
+      updateGoogleAuthUI(ready, restoring);
       return ready;
     } catch (e) {
-      updateGoogleAuthUI(false);
+      updateGoogleAuthUI(false, false);
       return false;
     }
   }
 
   async function startupGoogleStatusCheck() {
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 25; i++) {
       const ready = await checkGoogleStatus();
       if (ready) break;
       await new Promise(r => setTimeout(r, 800));
@@ -294,7 +301,7 @@ document.addEventListener("DOMContentLoaded", () => {
       appendBubble("ai", "🚪 Đã đăng xuất khỏi tài khoản Google.");
     } else if (msg.type === "STATUS_UPDATE") {
       if (msg.gemini_ready !== undefined) {
-        updateGoogleAuthUI(msg.gemini_ready);
+        updateGoogleAuthUI(msg.gemini_ready, Boolean(msg.restoring_session));
       }
       if (msg.mode) updateMode(msg.mode);
       if (msg.thinking_level) setThinkingLevelUI(msg.thinking_level);

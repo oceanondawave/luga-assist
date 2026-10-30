@@ -319,6 +319,7 @@ class ConnectionHub:
             "type": "STATUS_UPDATE",
             "extension_connected": ext_connected,
             "gemini_ready": gemini_service.is_ready or ext_connected,
+            "restoring_session": getattr(gemini_service, "is_restoring", False),
             "mode": current_mode,
             "thinking_level": current_thinking_level,
         }
@@ -431,6 +432,7 @@ async def api_auth_google_status():
     return {
         "status": "ok",
         "gemini_ready": gemini_service.is_ready,
+        "restoring_session": getattr(gemini_service, "is_restoring", False),
         "is_logging_in": google_auth_manager.is_logging_in,
     }
 
@@ -464,6 +466,7 @@ async def get_status():
     return {
         "status": "online",
         "gemini_ready": gemini_service.is_ready or (hub.extension_client is not None),
+        "restoring_session": getattr(gemini_service, "is_restoring", False),
         "gemini_background_mode": gemini_service.is_ready,
         "extension_connected": hub.extension_client is not None,
         "mode": current_mode,
@@ -1191,6 +1194,13 @@ async def _execute_pipeline(
     # Step 1: Check Connection (Gemini Background Service)
     is_gemini_ready = gemini_service.is_ready or (hub.extension_client is not None)
     if not is_gemini_ready:
+        print("[Pipeline] 🔄 Đang tự động kết nối lại session Google Gemini...")
+        recovered = await gemini_service.auto_init_from_disk()
+        if recovered or gemini_service.is_ready:
+            is_gemini_ready = True
+            await hub.broadcast_status()
+
+    if not is_gemini_ready:
         sound_manager.play_error()
         error_msg = (
             "Chưa kết nối tài khoản Google Gemini! "
@@ -1277,25 +1287,44 @@ async def _execute_pipeline(
                 err_lower = err_msg.lower()
                 is_auth_error = isinstance(e, AuthError) or "401" in err_lower or "unauthenticated" in err_lower
                 if is_auth_error:
-                    gemini_service.is_ready = False
-                    err_text = (
-                        "Phiên đăng nhập Google Gemini đã hết hạn. "
-                        "Vui lòng nhấn nút 'Đăng nhập Google' trên cửa sổ Spotlight (F7) để kết nối lại."
-                    )
+                    print("[Pipeline] ⚠️ Session Google hết hạn trong khi gọi AI. Đang tự động khôi phục ngầm...")
+                    recovered = await gemini_service.auto_init_from_disk()
+                    if recovered and gemini_service.is_ready:
+                        try:
+                            raw_response = await gemini_service.send_prompt(
+                                prompt=prompt,
+                                image_path=screen_capturer.screenshot_path,
+                                thinking_level=actual_thinking_level
+                            )
+                            used_background = True
+                            err_text = None
+                        except Exception as retry_e:
+                            gemini_service.is_ready = False
+                            err_text = (
+                                "Phiên đăng nhập Google Gemini đã hết hạn. "
+                                "Vui lòng nhấn nút 'Đăng nhập Google' trên cửa sổ Spotlight (F7) để kết nối lại."
+                            )
+                    else:
+                        gemini_service.is_ready = False
+                        err_text = (
+                            "Phiên đăng nhập Google Gemini đã hết hạn. "
+                            "Vui lòng nhấn nút 'Đăng nhập Google' trên cửa sổ Spotlight (F7) để kết nối lại."
+                        )
                 else:
                     err_text = f"Lỗi phản hồi từ Gemini: {err_msg}. Vui lòng thử lại câu lệnh."
 
-                sound_manager.play_error()
-                sound_manager.stop_pulsing()
-                await hub.broadcast_webui({"type": "ERROR", "message": err_text, "user_command": user_command})
-                if speak:
-                    await tts_service.speak(err_text)
-                return {
-                    "success": False,
-                    "speech": err_text,
-                    "action_result": {"success": False, "error": err_text},
-                    "done": True,
-                }
+                if not used_background:
+                    sound_manager.play_error()
+                    sound_manager.stop_pulsing()
+                    await hub.broadcast_webui({"type": "ERROR", "message": err_text, "user_command": user_command})
+                    if speak:
+                        await tts_service.speak(err_text)
+                    return {
+                        "success": False,
+                        "speech": err_text,
+                        "action_result": {"success": False, "error": err_text},
+                        "done": True,
+                    }
 
         if not used_background:
             sound_manager.play_error()

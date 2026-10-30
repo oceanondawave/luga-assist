@@ -238,6 +238,13 @@ document.addEventListener("DOMContentLoaded", () => {
         extDot.classList.add("online");
         extStatusText.innerText = "Google Gemini: Đã sẵn sàng";
         if (btnMainGoogleLogin) btnMainGoogleLogin.style.display = "none";
+      } else if (msg.restoring_session) {
+        extDot.classList.remove("online");
+        extStatusText.innerText = "Google Gemini: Đang tự động kết nối lại...";
+        if (btnMainGoogleLogin) {
+          btnMainGoogleLogin.style.display = "inline-flex";
+          btnMainGoogleLogin.innerText = "🔄 Đang kết nối...";
+        }
       } else {
         extDot.classList.remove("online");
         extStatusText.innerText = "Google Gemini: Chưa đăng nhập";

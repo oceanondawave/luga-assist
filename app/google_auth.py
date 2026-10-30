@@ -378,10 +378,11 @@ class GoogleWebAuthManager:
         logger.info("🚪 Đã đăng xuất tài khoản Google Gemini thành công.")
         return {"status": "ok", "message": "Đã đăng xuất tài khoản Google thành công."}
 
-    async def silent_refresh_cookies(self, timeout_sec: float = 12.0) -> bool:
+    async def silent_refresh_cookies(self, old_psidts: Optional[str] = None, timeout_sec: float = 16.0) -> bool:
         """
         Silently retrieves fresh Google session cookies using the saved browser profile
-        in headless/background mode, with ZERO user intervention and ZERO visible windows.
+        in an off-screen, non-headless Chromium window with ZERO user intervention,
+        ZERO visible windows, and BotGuard-safe token renewal.
         """
         if self.is_logging_in:
             return False
@@ -398,28 +399,42 @@ class GoogleWebAuthManager:
 
         logger.info("🔄 Đang tự động làm mới session Google Gemini ngầm qua Chromium profile...")
         cdp_port = get_available_cdp_port(DEFAULT_CDP_PORT)
+        # We run full Chromium engine (not headless to avoid Google BotGuard rejection)
+        # positioned far off-screen with hidden window style
         cmd = [
             browser_path,
             f"--remote-debugging-port={cdp_port}",
             f"--user-data-dir={profile_path}",
-            "--headless=new",
+            "--window-position=-32000,-32000",
+            "--window-size=300,300",
             "--no-first-run",
             "--no-default-browser-check",
-            "--disable-gpu",
-            "--window-size=800,600",
+            "--disable-background-networking=false",
+            "--disable-sync",
             "https://gemini.google.com"
         ]
+
+        startupinfo = None
+        creationflags = 0
+        if sys.platform.startswith("win"):
+            import subprocess
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0  # SW_HIDE
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
         proc = None
         try:
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.DEVNULL,
+                startupinfo=startupinfo,
+                creationflags=creationflags
             )
             t0 = time.time()
             ws_url = None
-            while time.time() - t0 < 6.0:
+            while time.time() - t0 < 8.0:
                 try:
                     req = urllib.request.Request(f"http://127.0.0.1:{cdp_port}/json/version")
                     with urllib.request.urlopen(req, timeout=0.6) as r:
@@ -456,21 +471,30 @@ class GoogleWebAuthManager:
                         cookies = resp_data["result"].get("cookies", [])
                         psid = None
                         psidts = None
+                        all_google_cookies = {}
+                        now = time.time()
+
                         for c in cookies:
                             c_name = c.get("name")
                             c_domain = c.get("domain", "")
-                            if "google.com" in c_domain:
+                            c_val = c.get("value", "")
+                            c_exp = c.get("expires", 0)
+                            if "google.com" in c_domain and c_name and c_val:
+                                all_google_cookies[c_name] = c_val
                                 if c_name == "__Secure-1PSID":
-                                    psid = c.get("value")
+                                    psid = c_val
                                 elif c_name == "__Secure-1PSIDTS":
-                                    psidts = c.get("value")
+                                    is_fresh = (c_exp > now + 60) or (old_psidts and c_val != old_psidts) or (not old_psidts and c_val)
+                                    if is_fresh:
+                                        psidts = c_val
 
                         if psid and psidts:
                             logger.info("🎉 Đã lấy được cookies mới từ profile ngầm! Đang kết nối Gemini...")
                             from app.gemini_service import gemini_service
-                            ok = await gemini_service.init_session(psid, psidts)
+                            ok = await gemini_service.init_session(psid, psidts, all_cookies=all_google_cookies)
                             if ok:
                                 logger.info("✅ Phục hồi session Google Gemini ngầm thành công!")
+                                await self._close_login_browser(ws)
                                 return True
 
                     await asyncio.sleep(1.0)
@@ -555,16 +579,18 @@ class GoogleWebAuthManager:
                         cookies = resp_data["result"].get("cookies", [])
                         psid = None
                         psidts = None
-                        psidcc = None
+                        all_google_cookies = {}
 
                         for c in cookies:
                             c_name = c.get("name")
                             c_domain = c.get("domain", "")
-                            if "google.com" in c_domain:
+                            c_val = c.get("value", "")
+                            if "google.com" in c_domain and c_name and c_val:
+                                all_google_cookies[c_name] = c_val
                                 if c_name == "__Secure-1PSID":
-                                    psid = c.get("value")
+                                    psid = c_val
                                 elif c_name == "__Secure-1PSIDTS":
-                                    psidts = c.get("value")
+                                    psidts = c_val
 
                         # If __Secure-1PSID is detected:
                         if psid:
@@ -591,7 +617,7 @@ class GoogleWebAuthManager:
                             from app.gemini_service import gemini_service
                             from app.sound_effects import sound_manager
 
-                            ok = await gemini_service.init_session(psid, psidts)
+                            ok = await gemini_service.init_session(psid, psidts, all_cookies=all_google_cookies)
                             if ok:
                                 logger.info("🎉 KẾT NỐI GOOGLE GEMINI HOÀN TẤT VÀ SẴN SÀNG 100%!")
 
