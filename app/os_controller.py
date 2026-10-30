@@ -216,6 +216,11 @@ class OSController:
             elif action == "type":
                 text = action_data.get("text", "")
                 if text:
+                    # Guard: If typing 'Settings' directly (e.g. into Run Win+R dialog),
+                    # convert to 'ms-settings:' so Windows doesn't fail with "Windows cannot find 'Settings'"
+                    if text.strip().lower() in ("settings", "cài đặt", "windows settings"):
+                        text = "ms-settings:"
+
                     target = action_data.get("target") or action_data.get("field")
                     focused = False
                     if target:
@@ -491,14 +496,96 @@ class OSController:
 
     def _launch_app(self, app_name: str):
         """Open application natively on Windows."""
+        clean = (app_name or "").strip().lower()
+        if not clean:
+            return
+
+        # 1. Native Windows Settings & Sub-settings (100% reliable via hotkey or protocol)
+        if clean in ("settings", "cài đặt", "setting", "windows settings", "cài đặt hệ thống", "cài đặt máy tính"):
+            try:
+                pyautogui.hotkey("win", "i")
+                return
+            except Exception:
+                subprocess.Popen(["cmd", "/c", "start", "ms-settings:"], shell=True)
+                return
+
+        if "bluetooth" in clean:
+            subprocess.Popen(["cmd", "/c", "start", "ms-settings:bluetooth"], shell=True)
+            return
+
+        if "wifi" in clean or "wi-fi" in clean or "mạng" in clean:
+            subprocess.Popen(["cmd", "/c", "start", "ms-settings:network-wifi"], shell=True)
+            return
+
+        if "sound" in clean or "âm thanh" in clean:
+            subprocess.Popen(["cmd", "/c", "start", "ms-settings:sound"], shell=True)
+            return
+
+        if "display" in clean or "màn hình" in clean:
+            subprocess.Popen(["cmd", "/c", "start", "ms-settings:display"], shell=True)
+            return
+
+        if "update" in clean or "cập nhật" in clean:
+            subprocess.Popen(["cmd", "/c", "start", "ms-settings:windowsupdate"], shell=True)
+            return
+
+        # 2. Native System Apps
+        if clean in ("explorer", "file explorer", "thư mục", "quản lý file", "my computer", "this pc"):
+            pyautogui.hotkey("win", "e")
+            return
+
+        if clean in ("taskmgr", "task manager", "trình quản lý tác vụ", "quản lý tác vụ"):
+            pyautogui.hotkey("ctrl", "shift", "esc")
+            return
+
+        if clean in ("calc", "calculator", "máy tính"):
+            subprocess.Popen(["cmd", "/c", "start", "calc.exe"], shell=True)
+            return
+
+        if clean in ("control panel", "bảng điều khiển"):
+            subprocess.Popen(["cmd", "/c", "start", "control.exe"], shell=True)
+            return
+
+        if clean in ("notepad", "ghi chú", "sổ tay"):
+            subprocess.Popen(["cmd", "/c", "start", "notepad.exe"], shell=True)
+            return
+
+        if clean in ("paint", "mspaint", "vẽ"):
+            subprocess.Popen(["cmd", "/c", "start", "mspaint.exe"], shell=True)
+            return
+
+        if clean in ("snipping tool", "snip", "cắt màn hình"):
+            pyautogui.hotkey("win", "shift", "s")
+            return
+
+        if clean in ("store", "microsoft store", "cửa hàng"):
+            subprocess.Popen(["cmd", "/c", "start", "ms-windows-store:"], shell=True)
+            return
+
+        if clean in ("cmd", "command prompt", "terminal", "powershell", "windows terminal"):
+            subprocess.Popen(["cmd", "/c", "start", "wt.exe"], shell=True)
+            return
+
+        if clean in ("chrome", "google chrome"):
+            subprocess.Popen(["cmd", "/c", "start", "chrome.exe"], shell=True)
+            return
+
+        if clean in ("edge", "microsoft edge"):
+            subprocess.Popen(["cmd", "/c", "start", "msedge.exe"], shell=True)
+            return
+
+        # 3. For any other application (Zalo, Telegram, Spotify, Word, Excel, Photoshop, etc.):
+        # Launching via Windows Start Search is 100% native on Windows 10 & 11:
+        # Press Win, paste app name, wait briefly, press Enter.
+        # This NEVER triggers the modal "Windows cannot find..." error box!
         try:
-            subprocess.Popen(["cmd", "/c", "start", "", app_name], shell=True)
-        except Exception:
             pyautogui.press("win")
-            time.sleep(0.3)
+            time.sleep(0.35)
             self._paste_unicode_text(app_name)
-            time.sleep(0.2)
+            time.sleep(0.35)
             pyautogui.press("enter")
+        except Exception as e:
+            print(f"[OSController] Lỗi khi mở app qua Start menu: {e}")
 
     def window_control(self, command: str, app_name: str = "") -> Dict[str, Any]:
         """

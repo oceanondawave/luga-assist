@@ -59,6 +59,43 @@ def show_desktop_dialog(title: str, message: str) -> None:
         logger.error(f"Error displaying desktop dialog: {e}")
 
 
+def dismiss_windows_error_dialog() -> bool:
+    """
+    Automatically dismiss any blocking 'Windows cannot find...' modal error dialogs
+    (class #32770) so they don't obstruct the user's screen or freeze workflows.
+    """
+    if not sys.platform.startswith("win"):
+        return False
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        WM_CLOSE = 0x0010
+        found = False
+
+        def enum_cb(hwnd, extra):
+            nonlocal found
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length > 0:
+                buff = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buff, length + 1)
+                title = buff.value.lower()
+                if title in ("settings", "run", "cài đặt", "open"):
+                    class_buff = ctypes.create_unicode_buffer(256)
+                    user32.GetClassNameW(hwnd, class_buff, 256)
+                    if class_buff.value == "#32770":
+                        user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+                        found = True
+            return True
+
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
+        user32.EnumWindows(WNDENUMPROC(enum_cb), 0)
+        return found
+    except Exception:
+        return False
+
+
 async def trigger_graceful_shutdown(delay: float = 1.0, speak: bool = True, goodbye_text: Optional[str] = None) -> None:
     """
     Gracefully shuts down the Luga Assist server and background daemon.

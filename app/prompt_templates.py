@@ -24,6 +24,11 @@ QUY TẮC THAO TÁC TRÊN GIAO DIỆN WEB & TRÌNH DUYỆT (CHROME, EDGE):
      * Bước 1: "press": "ctrl+l" để vào thanh địa chỉ URL.
      * Bước 2: "type": địa chỉ web (ví dụ: "youtube.com").
      * Bước 3: "press": "enter" để truy cập ngay.
+3. NẾU CẦN MỞ CÀI ĐẶT WINDOWS (SETTINGS) HOẶC ỨNG DỤNG HỆ THỐNG:
+   - Mở Cài đặt / Settings: Dùng "launch_app": "Settings" HOẶC phím nóng "press": "win+i".
+   - TUYỆT ĐỐI KHÔNG mở hộp thoại Run (Win+R) rồi gõ "Settings" vì Windows không có file thực thi Settings.exe!
+   - Mở File Explorer: Dùng "launch_app": "explorer" hoặc phím nóng "press": "win+e".
+   - Mở Task Manager: Dùng "launch_app": "taskmgr" hoặc phím nóng "press": "ctrl+shift+esc".
 
 DANH SÁCH ACTION ĐƯỢC PHÉP TRÊN WINDOWS:
 - "click": Nhấp chuột trái vào tọa độ (x_percent, y_percent). Kèm "target" (ví dụ: "Đăng ký", "Play", "Save") để snap chuẩn 100%.

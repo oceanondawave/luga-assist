@@ -1165,6 +1165,50 @@ async def process_user_command(
             "action_result": {"success": True, "action": "google_switch"}
         }
 
+    # Direct fast-path: Voice intent to open Windows Settings & System Panels
+    settings_intents = (
+        "mở cài đặt", "mở settings", "vào cài đặt", "bật cài đặt",
+        "mở setting", "cài đặt máy tính", "mở windows settings",
+        "mở phần cài đặt", "cài đặt hệ thống"
+    )
+    if any(intent == user_cmd_lower or user_cmd_lower.startswith(intent) for intent in settings_intents):
+        os_controller._launch_app("Settings")
+        speech = "Đang mở Cài đặt Windows."
+        sound_manager.play_done()
+        if speak:
+            await tts_service.speak(speech)
+        return {
+            "success": True,
+            "speech": speech,
+            "action_result": {"success": True, "action": "open_settings"}
+        }
+
+    bluetooth_intents = ("mở bluetooth", "cài đặt bluetooth", "bật bluetooth", "vào bluetooth")
+    if any(intent == user_cmd_lower or user_cmd_lower.startswith(intent) for intent in bluetooth_intents):
+        os_controller._launch_app("bluetooth")
+        speech = "Đang mở cài đặt Bluetooth."
+        sound_manager.play_done()
+        if speak:
+            await tts_service.speak(speech)
+        return {
+            "success": True,
+            "speech": speech,
+            "action_result": {"success": True, "action": "open_bluetooth"}
+        }
+
+    wifi_intents = ("mở wifi", "cài đặt wifi", "mở wi-fi", "cài đặt mạng", "vào wifi")
+    if any(intent == user_cmd_lower or user_cmd_lower.startswith(intent) for intent in wifi_intents):
+        os_controller._launch_app("wifi")
+        speech = "Đang mở cài đặt mạng Wi-Fi."
+        sound_manager.play_done()
+        if speak:
+            await tts_service.speak(speech)
+        return {
+            "success": True,
+            "speech": speech,
+            "action_result": {"success": True, "action": "open_wifi"}
+        }
+
     if pipeline_lock.locked():
         msg = "Hệ thống đang bận xử lý câu lệnh trước, vui lòng chờ."
         print(f"[Pipeline] ⚠️ {msg}: '{user_command}'")
@@ -1242,6 +1286,8 @@ async def _execute_pipeline(
         # Step 2: Screen Capture with Dual-Tier Grid Overlay & UI Elements
         # Ensure Spotlight window is minimized/hidden so it NEVER obstructs the screenshot or targets!
         if is_first_step:
+            from app.system_ui import dismiss_windows_error_dialog
+            dismiss_windows_error_dialog()
             from app.spotlight_launcher import minimize_spotlight_window_windows
             if sys.platform.startswith("win"):
                 minimized = minimize_spotlight_window_windows()
