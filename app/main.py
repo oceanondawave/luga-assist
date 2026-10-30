@@ -373,7 +373,7 @@ async def set_mode(mode: str, announce: bool = True) -> str:
     })
     if announce:
         if current_mode == "chat":
-            speech = "Đã chuyển sang chế độ trò chuyện AI. Bạn có thể hỏi đáp tự nhiên mà không cần thao tác màn hình."
+            speech = "Đã chuyển sang chế độ trò chuyện AI."
         else:
             speech = "Đã chuyển sang chế độ điều khiển máy tính."
         await tts_service.speak(speech)
@@ -1015,7 +1015,7 @@ async def process_user_command(
     )
     if any(intent in user_cmd_lower for intent in chat_mode_intents):
         await set_mode("chat", announce=speak)
-        return {"success": True, "speech": "Đã chuyển sang chế độ trò chuyện", "action_result": {"success": True, "action": "set_mode"}}
+        return {"success": True, "speech": "Đã chuyển sang chế độ trò chuyện AI.", "action_result": {"success": True, "action": "set_mode"}}
 
     control_mode_intents = (
         "chuyển sang chế độ điều khiển", "chuyển qua chế độ điều khiển",
@@ -1025,7 +1025,7 @@ async def process_user_command(
     )
     if any(intent in user_cmd_lower for intent in control_mode_intents):
         await set_mode("control", announce=speak)
-        return {"success": True, "speech": "Đã chuyển sang chế độ điều khiển", "action_result": {"success": True, "action": "set_mode"}}
+        return {"success": True, "speech": "Đã chuyển sang chế độ điều khiển máy tính.", "action_result": {"success": True, "action": "set_mode"}}
 
     toggle_mode_intents = (
         "đổi chế độ", "chuyển chế độ", "đổi trạng thái", "chuyển trạng thái"
@@ -1034,7 +1034,7 @@ async def process_user_command(
         new_mode = await toggle_mode(announce=speak)
         return {
             "success": True,
-            "speech": f"Đã chuyển sang chế độ {'trò chuyện AI' if new_mode == 'chat' else 'điều khiển máy tính'}",
+            "speech": f"Đã chuyển sang chế độ {'trò chuyện AI' if new_mode == 'chat' else 'điều khiển máy tính'}.",
             "action_result": {"success": True, "action": "toggle_mode", "mode": new_mode}
         }
 
@@ -1215,7 +1215,141 @@ async def process_user_command(
         return {"success": False, "speech": msg, "action_result": {"success": False, "action": "busy"}}
 
     async with pipeline_lock:
+        if current_mode == "chat":
+            return await _execute_chat_mode(user_command, voice, speak=speak, thinking_level=thinking_level)
         return await _execute_pipeline(user_command, voice, speak=speak, thinking_level=thinking_level)
+
+async def _execute_chat_mode(
+    user_command: str,
+    voice: str = DEFAULT_TTS_VOICE,
+    speak: bool = True,
+    thinking_level: Optional[str] = None
+) -> Dict[str, Any]:
+    print(f"\n[ChatMode] 💬 Nhận câu hỏi/yêu cầu: '{user_command}'")
+    actual_thinking_level = (thinking_level or current_thinking_level or "medium").strip().lower()
+    if actual_thinking_level not in ("low", "medium", "high"):
+        actual_thinking_level = "medium"
+    print(f"[ChatMode] 🧠 Thinking Level: {actual_thinking_level.upper()}")
+
+    pipeline_abort_event.clear()
+    sound_manager.start_pulsing()
+
+    # Step 1: Check Connection (Gemini Background Service)
+    is_gemini_ready = gemini_service.is_ready or (hub.extension_client is not None)
+    if not is_gemini_ready:
+        print("[ChatMode] 🔄 Đang tự động kết nối lại session Google Gemini...")
+        recovered = await gemini_service.auto_init_from_disk()
+        if recovered or gemini_service.is_ready:
+            is_gemini_ready = True
+            await hub.broadcast_status()
+
+    if not is_gemini_ready:
+        sound_manager.play_error()
+        error_msg = (
+            "Chưa kết nối tài khoản Google Gemini! "
+            "Vui lòng nhấn nút 'Đăng nhập Google' trên cửa sổ Spotlight (F7) để kết nối."
+        )
+        await hub.broadcast_webui({
+            "type": "ERROR",
+            "message": error_msg,
+            "user_command": user_command,
+        })
+        if speak:
+            await tts_service.speak(error_msg)
+        return {
+            "success": False,
+            "speech": error_msg,
+            "action_result": {"success": False, "error": error_msg},
+            "done": True,
+        }
+
+    await hub.broadcast_webui({
+        "type": "ACTION_PROGRESS",
+        "message": "Luga đang phân tích và chuẩn bị câu trả lời chi tiết...",
+        "step": 1,
+    })
+
+    # Step 2: Screen capture without grid lines (clean high-res view for charts/images/documents)
+    screenshot_b64, screen_size = screen_capturer.capture(with_grid=False)
+    ui_context = accessibility_manager.get_ui_grounding_context()
+
+    # Step 3: Build specialized Chat & Accessibility prompt
+    from app.prompt_templates import build_chat_mode_prompt
+    chat_prompt = build_chat_mode_prompt(
+        user_command=user_command,
+        ui_context=ui_context,
+        thinking_level=actual_thinking_level
+    )
+
+    response_text = ""
+    try:
+        response_text = await gemini_service.send_prompt_with_screenshot(
+            prompt=chat_prompt,
+            screenshot_b64=screenshot_b64,
+            thinking_level=actual_thinking_level
+        )
+    except Exception as e:
+        print(f"[ChatMode] Lỗi gọi Gemini: {e}")
+        response_text = f"Đã xảy ra lỗi khi trao đổi với Gemini: {e}"
+
+    sound_manager.stop_pulsing()
+
+    # Clean response
+    response_text = strip_citations(response_text).strip()
+    # If Gemini accidentally wrapped response in JSON, extract full narrative or speech
+    if response_text.startswith("{") or "```json" in response_text or '"speech"' in response_text:
+        payload, narrative = extract_payload_and_narrative(response_text)
+        if narrative and len(narrative.strip()) > 30:
+            response_text = narrative.strip()
+        elif payload:
+            act_rich = ""
+            for a in payload.get("actions", []):
+                if isinstance(a, dict):
+                    s = a.get("speech") or a.get("description") or a.get("content") or a.get("text")
+                    if s and len(s) > len(act_rich):
+                        act_rich = s
+            response_text = (
+                act_rich
+                or payload.get("speech")
+                or payload.get("description")
+                or payload.get("content")
+                or payload.get("answer")
+                or response_text
+            )
+
+    speech_for_tts = clean_text_for_speech(response_text)
+    sound_manager.play_done()
+
+    # Broadcast to WebUI and Spotlight chat
+    await hub.broadcast_webui({
+        "type": "ACTION_COMPLETED",
+        "user_command": user_command,
+        "speech": response_text,
+        "action_result": {
+            "success": True,
+            "action": "chat",
+            "speech_result": response_text
+        },
+        "annotated_image": "",
+        "step": 1,
+        "done": True,
+    })
+
+    if speak and speech_for_tts:
+        await tts_service.speak(speech_for_tts)
+
+    return {
+        "success": True,
+        "speech": response_text,
+        "action_result": {
+            "success": True,
+            "action": "chat",
+            "speech_result": response_text
+        },
+        "annotated_image": "",
+        "step": 1,
+        "done": True,
+    }
 
 async def _execute_pipeline(
     user_command: str,
@@ -1420,6 +1554,17 @@ async def _execute_pipeline(
         if not actions_list and "action" in action_data:
             actions_list = [action_data]
 
+        # Extract rich descriptive speech from actions (e.g. action="read_screen" or rich speech payload)
+        action_rich_speech = ""
+        for a in actions_list:
+            if isinstance(a, dict):
+                s = a.get("speech") or a.get("description") or a.get("content") or a.get("text")
+                if s and isinstance(s, str) and len(s.strip()) > len(action_rich_speech):
+                    action_rich_speech = s.strip()
+
+        if action_rich_speech and len(action_rich_speech) > len(speech_to_say):
+            speech_to_say = action_rich_speech
+
         active_actions = [
             a for a in actions_list
             if isinstance(a, dict) and a.get("action", "").lower() not in ("none", "read_screen", "wait")
@@ -1441,7 +1586,7 @@ async def _execute_pipeline(
             )
 
             # If narrative text outside JSON exists and has substance (e.g. YouTube summary outside JSON):
-            if narrative_text and len(narrative_text.strip()) > 30:
+            if narrative_text and len(narrative_text.strip()) > len(speech_to_say) and len(narrative_text.strip()) > 30:
                 print(f"[Pipeline] 📝 Phát hiện nội dung tóm tắt/miêu tả ngoài JSON ({len(narrative_text)} ký tự).")
                 speech_to_say = narrative_text.strip()
             elif summary_inside and len(summary_inside.strip()) > len(speech_to_say):
@@ -1566,6 +1711,8 @@ async def _execute_pipeline(
 
         # Step 7: Execute Action Sequence on OS (if active actions exist)
         action_result = {"success": True, "action": "none", "details": "Verified state"}
+        if action_rich_speech:
+            action_result["speech_result"] = speech_to_say
         if active_actions:
             if pipeline_abort_event.is_set():
                 print(f"[Pipeline] ⏹️ Đã ngắt tác vụ trước khi thao tác chuột/phím!")

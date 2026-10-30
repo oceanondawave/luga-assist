@@ -255,7 +255,7 @@ document.addEventListener("DOMContentLoaded", () => {
       } catch (e) {}
       if (spotlightThread) {
         spotlightThread.innerHTML = `
-          <div class="spotlight-bubble ai" role="article" aria-label="Phản hồi từ Luga Spotlight">
+          <div class="spotlight-bubble ai" role="article" tabindex="0" aria-label="Phản hồi từ Luga Spotlight: Đã xóa sạch nội dung. Bạn có thể gõ câu lệnh hoặc ấn F8 để nói.">
             Đã xóa sạch nội dung. Bạn có thể gõ câu lệnh hoặc ấn F8 để nói!
           </div>
         `;
@@ -356,11 +356,58 @@ document.addEventListener("DOMContentLoaded", () => {
     const bubble = document.createElement("div");
     bubble.className = `spotlight-bubble ${sender}`;
     bubble.setAttribute("role", "article");
+    bubble.setAttribute("tabindex", "0");
     const label = sender === "user" ? `Bạn đã gửi: ${text}` : `Luga trả lời: ${text}`;
     bubble.setAttribute("aria-label", label);
-    bubble.innerText = text;
+    // Render text with line breaks preserved
+    bubble.innerHTML = escapeHtml(text).replace(/\n/g, "<br>");
     spotlightThread.appendChild(bubble);
     spotlightThread.scrollTop = spotlightThread.scrollHeight;
+  }
+
+  function escapeHtml(unsafe) {
+    return (unsafe || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  // Keyboard navigation between chat bubbles for Screen Reader (NVDA) users
+  if (spotlightThread) {
+    spotlightThread.addEventListener("keydown", (e) => {
+      const bubbles = Array.from(spotlightThread.querySelectorAll(".spotlight-bubble"));
+      const currentIndex = bubbles.indexOf(document.activeElement);
+      if (currentIndex === -1) return;
+
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (currentIndex > 0) {
+          bubbles[currentIndex - 1].focus();
+        }
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (currentIndex < bubbles.length - 1) {
+          bubbles[currentIndex + 1].focus();
+        } else if (spotlightInput) {
+          spotlightInput.focus();
+        }
+      }
+    });
+  }
+
+  if (spotlightInput) {
+    spotlightInput.addEventListener("keydown", (e) => {
+      // Pressing ArrowUp from an empty input navigates up into the last chat bubble
+      if (e.key === "ArrowUp" && (!spotlightInput.value || spotlightInput.selectionStart === 0)) {
+        const bubbles = Array.from(spotlightThread.querySelectorAll(".spotlight-bubble"));
+        if (bubbles.length > 0) {
+          e.preventDefault();
+          bubbles[bubbles.length - 1].focus();
+        }
+      }
+    });
   }
 
   function updateMode(mode) {

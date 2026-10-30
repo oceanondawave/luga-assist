@@ -1067,6 +1067,34 @@ def test_multistep_workflow_and_settings_guards():
 
     print("test_multistep_workflow_and_settings_guards: PASSED")
 
+def test_rich_screen_reading_and_chat_mode():
+    from app.prompt_templates import build_chat_mode_prompt
+    from app.os_controller import os_controller
+    import app.main as main_mod
+
+    # 1. Verify build_chat_mode_prompt enforces deep accessibility and chart descriptions
+    prompt = build_chat_mode_prompt("Mô tả biểu đồ", ui_context="", thinking_level="high")
+    assert "HỖ TRỢ NGƯỜI KHIẾM THỊ" in prompt
+    assert "ĐỐI VỚI BIỂU ĐỒ / ĐỒ THỊ" in prompt
+    assert "TUYỆT ĐỐI KHÔNG trả lời ngắn gọn" in prompt
+
+    # 2. Verify read_screen action in os_controller retains speech_result
+    chart_speech = "Biểu đồ ngắn hạn có đường cầu D_SR và chi phí MC."
+    res = os_controller.execute_action({"action": "read_screen", "speech": chart_speech})
+    assert res.get("success") is True
+    assert res.get("speech_result") == chart_speech
+
+    # 3. Test short announcement when switching to chat mode
+    chat_mode = asyncio.run(main_mod.set_mode("chat", announce=False))
+    assert chat_mode == "chat"
+    assert main_mod.current_mode == "chat"
+
+    # Reset back to control mode
+    asyncio.run(main_mod.set_mode("control", announce=False))
+    assert main_mod.current_mode == "control"
+
+    print("test_rich_screen_reading_and_chat_mode: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -1101,6 +1129,7 @@ if __name__ == "__main__":
     test_browser_default_and_coordinate_snapping()
     test_click_scroll_and_settings_launch()
     test_multistep_workflow_and_settings_guards()
+    test_rich_screen_reading_and_chat_mode()
     print("\n🎉 ALL TESTS (INCLUDING EMERGENCY STOP & CANCELLATION) PASSED SUCCESSFULLY!")
 
 

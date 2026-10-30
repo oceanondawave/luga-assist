@@ -32,11 +32,11 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      user-select: none;
+      user-select: text;
     }
 
     /* Screen Reader & Keyboard Focus Highlights */
-    button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
+    button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible, .spotlight-bubble:focus-visible, .spotlight-bubble:focus {
       outline: 3px solid #38bdf8 !important;
       outline-offset: 2px !important;
       box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.4) !important;
@@ -524,9 +524,10 @@
     id="spotlightThread"
     role="log"
     aria-live="polite"
-    aria-label="Lịch sử tin nhắn và phản hồi"
+    aria-relevant="additions text"
+    aria-label="Lịch sử tin nhắn và câu trả lời. Sử dụng phím Tab hoặc phím Mũi tên Lên/Xuống để duyệt từng tin nhắn"
   >
-    <div class="spotlight-bubble ai" role="article" aria-label="Phản hồi từ Luga Spotlight">
+    <div class="spotlight-bubble ai" role="article" tabindex="0" aria-label="Phản hồi từ Luga Spotlight: Xin chào! Cửa sổ này hỗ trợ 100% trình đọc màn hình NVDA. Bạn có thể nhấn Tab hoặc Mũi tên để duyệt tin nhắn.">
       Xin chào! Đây là <strong>Web Spotlight</strong>. Cửa sổ này hỗ trợ <strong>100% trình đọc màn hình NVDA</strong>.
       <br><br>
       👉 Nhập câu lệnh bên dưới rồi nhấn <strong>Enter</strong> để điều khiển máy tính, hoặc ấn <strong>F8</strong> để nói qua Micro!

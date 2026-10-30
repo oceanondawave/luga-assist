@@ -501,6 +501,8 @@ class OSController:
 
             elif action in ("none", "read_screen"):
                 result["details"] = "No mouse/keyboard action needed"
+                if action_data.get("speech"):
+                    result["speech_result"] = action_data.get("speech")
 
             else:
                 result["success"] = False
