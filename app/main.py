@@ -1283,9 +1283,9 @@ async def _execute_chat_mode(
 
     response_text = ""
     try:
-        response_text = await gemini_service.send_prompt_with_screenshot(
+        response_text = await gemini_service.send_prompt(
             prompt=chat_prompt,
-            screenshot_b64=screenshot_b64,
+            image_path=screen_capturer.screenshot_path,
             thinking_level=actual_thinking_level
         )
     except Exception as e:

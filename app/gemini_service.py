@@ -425,6 +425,20 @@ class GeminiSessionService:
                 return re.sub(r"\[\s*cite[^\]]*\]", "", response_text, flags=re.IGNORECASE)
             raise e
 
+    async def send_prompt_with_screenshot(
+        self,
+        prompt: str,
+        image_path: Optional[Path] = None,
+        screenshot_b64: Optional[str] = None,
+        thinking_level: Optional[str] = None
+    ) -> str:
+        """Alias for send_prompt, accepting image_path or screenshot."""
+        return await self.send_prompt(
+            prompt=prompt,
+            image_path=image_path,
+            thinking_level=thinking_level
+        )
+
     def reset_chat(self):
         """Reset to a fresh chat session only when explicitly requested or overloaded."""
         if self.client:
