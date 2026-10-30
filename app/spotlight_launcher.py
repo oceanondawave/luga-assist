@@ -51,16 +51,25 @@ def find_spotlight_hwnd_windows() -> Optional[int]:
         found_hwnd = []
 
         def enum_windows_callback(hwnd, extra):
-            if not user32.IsWindowVisible(hwnd):
-                return True
+            # 1. Match by child process PID if known
+            global _spotlight_proc
+            if _spotlight_proc and _spotlight_proc.pid:
+                proc_pid = ctypes.c_ulong()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(proc_pid))
+                if proc_pid.value == _spotlight_proc.pid:
+                    found_hwnd.append(hwnd)
+                    return False
+
+            # 2. Match by window title (case-insensitive)
             length = user32.GetWindowTextLengthW(hwnd)
             if length > 0:
                 buff = ctypes.create_unicode_buffer(length + 1)
                 user32.GetWindowTextW(hwnd, buff, length + 1)
-                title = buff.value
-                if "Luga Assist - Spotlight" in title or "Luga Spotlight" in title:
-                    found_hwnd.append(hwnd)
-                    return False
+                title = buff.value.lower()
+                if "spotlight" in title:
+                    if "visual studio" not in title and "code" not in title and "terminal" not in title:
+                        found_hwnd.append(hwnd)
+                        return False
             return True
 
         WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
@@ -93,7 +102,7 @@ def is_spotlight_window_open() -> bool:
 def force_foreground_window(hwnd: int) -> bool:
     """
     Forcefully bring a window to the foreground on Windows 10 & 11,
-    bypassing Windows Focus-Stealing Prevention without requiring Alt-Tab.
+    bypassing Windows Focus-Stealing Prevention without requiring Alt-Tab or manual mouse clicks.
     """
     if not sys.platform.startswith("win") or not hwnd:
         return False
@@ -102,43 +111,75 @@ def force_foreground_window(hwnd: int) -> bool:
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
 
+        # 1. Disable foreground lock timeout so Windows doesn't block focus switch
+        SPI_SETFOREGROUNDLOCKTIMEOUT = 0x2001
+        SPIF_SENDCHANGE = 0x02
         try:
-            user32.AllowSetForegroundWindow(-1)
+            user32.SystemParametersInfoW(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, 0, SPIF_SENDCHANGE)
+            user32.AllowSetForegroundWindow(-1)  # ASFW_ANY = -1
         except Exception:
             pass
+
+        # 2. If minimized (iconic), restore it first
+        SW_RESTORE = 9
+        SW_SHOW = 5
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, SW_RESTORE)
+        else:
+            user32.ShowWindow(hwnd, SW_SHOW)
 
         fg_hwnd = user32.GetForegroundWindow()
         if fg_hwnd == hwnd:
             user32.SetFocus(hwnd)
             return True
 
-        fg_thread = user32.GetWindowThreadProcessId(fg_hwnd, None) if fg_hwnd else 0
         cur_thread = kernel32.GetCurrentThreadId()
+        fg_thread = user32.GetWindowThreadProcessId(fg_hwnd, None) if fg_hwnd else 0
 
-        attached = False
+        # Attach to Explorer shell window thread as well to guarantee foreground activation privilege
+        shell_hwnd = user32.GetShellWindow()
+        shell_thread = user32.GetWindowThreadProcessId(shell_hwnd, None) if shell_hwnd else 0
+
+        attached_fg = False
+        attached_shell = False
+
         if fg_thread and fg_thread != cur_thread:
-            attached = bool(user32.AttachThreadInput(cur_thread, fg_thread, True))
+            attached_fg = bool(user32.AttachThreadInput(cur_thread, fg_thread, True))
+        if shell_thread and shell_thread != cur_thread:
+            attached_shell = bool(user32.AttachThreadInput(cur_thread, shell_thread, True))
 
         try:
-            SW_RESTORE = 9
-            user32.ShowWindow(hwnd, SW_RESTORE)
+            # 3. Simulate VK_MENU (Alt key) tap to trigger OS input processing right
+            VK_MENU = 0x12
+            KEYEVENTF_KEYUP = 0x0002
+            user32.keybd_event(VK_MENU, 0, 0, 0)
+            user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
 
+            # 4. Bring window to top & punch through z-order
             HWND_TOPMOST = -1
             HWND_NOTOPMOST = -2
             SWP_NOMOVE = 0x0002
             SWP_NOSIZE = 0x0001
             SWP_SHOWWINDOW = 0x0040
 
-            # Toggle HWND_TOPMOST to pierce through other windows
             user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
             user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
 
             user32.BringWindowToTop(hwnd)
             user32.SetForegroundWindow(hwnd)
+            user32.SetActiveWindow(hwnd)
             user32.SetFocus(hwnd)
+
+            # 5. Direct internal Windows Alt-Tab switcher call
+            try:
+                user32.SwitchToThisWindow(hwnd, True)
+            except Exception:
+                pass
         finally:
-            if attached:
+            if attached_fg:
                 user32.AttachThreadInput(cur_thread, fg_thread, False)
+            if attached_shell:
+                user32.AttachThreadInput(cur_thread, shell_thread, False)
 
         return True
     except Exception as e:
@@ -162,7 +203,7 @@ def bring_spotlight_to_front_windows() -> bool:
 
 def toggle_spotlight_window_windows(force_show: bool = False) -> bool:
     """
-    On Windows: if Spotlight window is in foreground, minimize it.
+    On Windows: if Spotlight window is active in the foreground, minimize it.
     If window is in background or minimized (or force_show=True), restore and bring to front.
     Returns True if window was found and toggled.
     """
@@ -179,9 +220,11 @@ def toggle_spotlight_window_windows(force_show: bool = False) -> bool:
             force_foreground_window(hwnd)
             return True
 
+        is_iconic = bool(user32.IsIconic(hwnd))
         fg_hwnd = user32.GetForegroundWindow()
-        if fg_hwnd == hwnd:
-            # Window is currently active in foreground -> minimize it
+
+        # If Spotlight is the active foreground window and NOT minimized -> minimize it
+        if fg_hwnd == hwnd and not is_iconic:
             user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE = 6
             logger.info("Spotlight window minimized.")
             return True

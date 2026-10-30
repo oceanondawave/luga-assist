@@ -149,14 +149,13 @@ pipeline_abort_event = threading.Event()
 
 def cancel_active_pipeline():
     """Cancel any active pipeline execution, TTS speech, and sound cues."""
-    print("\n[Pipeline] ⏹️ Kích hoạt ngắt khẩn cấp (Emergency Cancel Active Pipeline)!")
+    print("\n[Pipeline] ⏹️ Kích hoạt ngắt khẩn cấp (Emergency Cancel Active Pipeline / Mute Speech)!")
     pipeline_abort_event.set()
     tts_service.stop_speaking()
     sound_manager.stop_pulsing()
-    sound_manager.play_error()
-    update_global_voice_status("idle", "⏹️ Đã ngắt tác vụ đang xử lý!")
+    update_global_voice_status("idle", "⏹️ Đã ngắt tác vụ / Dừng giọng nói!")
     send_spotlight_action_sync("cancel")
-    show_desktop_notification("Luga Assist", "⏹️ Đã ngắt tác vụ đang xử lý!")
+    show_desktop_notification("Luga Assist", "⏹️ Đã ngắt tác vụ / Dừng giọng nói!")
     # Cancel any pending extension futures
     for task_id, fut in list(hub.pending_tasks.items()):
         if not fut.done():
@@ -165,7 +164,7 @@ def cancel_active_pipeline():
         asyncio.run_coroutine_threadsafe(
             hub.broadcast_webui({
                 "type": "ACTION_CANCELLED",
-                "message": "Đã ngắt tác vụ đang xử lý theo lệnh người dùng."
+                "message": "Đã ngắt tác vụ hoặc dừng giọng nói theo lệnh người dùng."
             }),
             server_async_loop
         )
@@ -226,18 +225,6 @@ async def lifespan(app: FastAPI):
             await hub.broadcast_status()
 
     asyncio.create_task(_init_gemini_bg())
-
-    # 3. Auto-launch Web Spotlight popup immediately on startup (zero Alt-Tab required)
-    def _auto_show_spotlight_on_startup():
-        time.sleep(0.8)
-        try:
-            from app.spotlight_launcher import launch_or_toggle_web_spotlight
-            print("[Lifespan] 🚀 Tự động mở cửa sổ Web Spotlight (F7) trên màn hình...")
-            launch_or_toggle_web_spotlight(force_show=True)
-        except Exception as e:
-            print(f"[Lifespan] Lỗi mở Web Spotlight lúc khởi động: {e}")
-
-    threading.Thread(target=_auto_show_spotlight_on_startup, daemon=True).start()
 
     yield
 
@@ -1270,6 +1257,13 @@ async def _execute_chat_mode(
     })
 
     # Step 2: Screen capture without grid lines (clean high-res view for charts/images/documents)
+    # Automatically minimize Spotlight so it never obstructs the screenshot
+    from app.system_ui import dismiss_windows_error_dialog
+    dismiss_windows_error_dialog()
+    from app.spotlight_launcher import minimize_spotlight_window_windows
+    minimize_spotlight_window_windows()
+    await asyncio.sleep(0.1)
+
     screenshot_b64, screen_size = screen_capturer.capture(with_grid=False)
     ui_context = accessibility_manager.get_ui_grounding_context()
 

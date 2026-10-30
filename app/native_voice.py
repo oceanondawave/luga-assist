@@ -180,13 +180,19 @@ class NativeVoiceListener:
     def cancel_all(self):
         """Immediately halt recording, speech, and executing pipeline."""
         print("\n[NativeVoice] ⏹️ Kích hoạt ngắt khẩn cấp (Emergency Stop / Cancel)...")
+        # 1. Immediately silence any active or pending TTS speech
+        try:
+            from app.tts_service import tts_service
+            tts_service.stop_speaking()
+        except Exception:
+            pass
+
         self._discard_recording = True
         self._stop_requested = True
         self.is_recording = False
         self.is_processing = False
         sound_manager.stop_pulsing()
-        sound_manager.play_error()
-        self._update_status("cancelled", "⏹️ Đã ngắt tác vụ đang xử lý!")
+        self._update_status("cancelled", "⏹️ Đã ngắt tác vụ / Dừng giọng nói!")
         if self.on_cancel:
             try:
                 self.on_cancel()

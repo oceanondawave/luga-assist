@@ -448,14 +448,11 @@ document.addEventListener("DOMContentLoaded", () => {
     appendBubble("user", text);
     spotlightInput.value = "";
 
-    // In Control Mode (operating PC), automatically hide/minimize Spotlight
-    // so it uncovers the screen immediately for visual perception and automation!
-    if (currentMode === "control") {
-      fetch(getApiUrl("/api/spotlight/hide"), { method: "POST" }).catch(() => {});
-    } else {
-      spotlightThinking.style.display = "flex";
-      spotlightThinkingText.innerText = "Luga đang suy nghĩ...";
-    }
+    // Automatically hide/minimize Spotlight when user sends a command/message
+    // so it immediately uncovers the desktop and doesn't obstruct the user
+    fetch(getApiUrl("/api/spotlight/hide"), { method: "POST" }).catch(() => {});
+    spotlightThinking.style.display = "flex";
+    spotlightThinkingText.innerText = "Luga đang suy nghĩ...";
 
     const speak = chkTTS ? chkTTS.checked : true;
     const thinkingLevel = (spotlightThinkingLevel ? spotlightThinkingLevel.value : currentThinkingLevel) || "medium";
