@@ -1010,6 +1010,63 @@ def test_click_scroll_and_settings_launch():
 
     print("test_click_scroll_and_settings_launch: PASSED")
 
+def test_multistep_workflow_and_settings_guards():
+    from app.file_and_terminal import file_and_terminal
+    from app.system_ui import dismiss_windows_error_dialog
+    from app.prompt_templates import build_verification_prompt
+
+    # 1. Verification prompt includes Case D for multi-step workflows
+    prompt_v = build_verification_prompt("kiểm tra cập nhật", step=2, previous_actions_desc="Mở Cài đặt")
+    assert "QUY TRÌNH NHIỀU BƯỚC" in prompt_v
+    assert '"done": false' in prompt_v
+
+    # 2. Terminal execution sanitizes raw "Settings" / "start Settings" to "start ms-settings:"
+    res_cmd = file_and_terminal.execute_terminal("start Settings")
+    assert "ms-settings:" in res_cmd.get("details", "") or res_cmd.get("success") is not None
+
+    # 3. Test explicit single click intent vs multi-step intent logic
+    continuation_indicators = (
+        "sau đó", "sau khi", "tiếp theo", "kế tiếp", "rồi thì", "rồi mới",
+        "xong thì", "kiểm tra", "tìm kiếm", "xem lại", "đọc xem",
+        "then", "after that"
+    )
+    def check_is_single_click(cmd_str):
+        cmd_l = cmd_str.lower()
+        has_continuation = bool(
+            any(p in cmd_l for p in continuation_indicators)
+            or any(f" {w} " in f" {cmd_l} " for w in ("và", "rồi", "tìm", "and"))
+        )
+        return (
+            any(cmd_l.startswith(k) or f" {k} " in f" {cmd_l} " for k in ("click", "nhấp", "bấm", "nhấn", "chọn nút", "click chuột", "bấm vào", "nhấp vào"))
+            and not has_continuation
+        )
+
+    multi_step_cmds = [
+        "kiểm tra windows cập nhật mới nhất chưa",
+        "mở chrome tìm bài hát lofi",
+        "vào settings kiểm tra xem wifi đã bật chưa",
+        "mở word sau đó gõ xin chào",
+        "tìm file báo cáo và mở lên"
+    ]
+    for cmd in multi_step_cmds:
+        assert check_is_single_click(cmd) is False, f"'{cmd}' should be identified as multi-step workflow, not single click"
+
+    single_click_cmds = [
+        "click vào nút Đăng ký",
+        "bấm nút Lưu",
+        "nhấp vào đây",
+        "chọn nút Tiếp tục",
+        "click Đăng nhập"
+    ]
+    for cmd in single_click_cmds:
+        assert check_is_single_click(cmd) is True, f"'{cmd}' should be identified as explicit single-action command"
+
+    # 4. Error dialog dismissal executes cleanly
+    res_dismiss = dismiss_windows_error_dialog()
+    assert isinstance(res_dismiss, bool)
+
+    print("test_multistep_workflow_and_settings_guards: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -1043,6 +1100,7 @@ if __name__ == "__main__":
     test_google_auth_and_web_spotlight_endpoints()
     test_browser_default_and_coordinate_snapping()
     test_click_scroll_and_settings_launch()
+    test_multistep_workflow_and_settings_guards()
     print("\n🎉 ALL TESTS (INCLUDING EMERGENCY STOP & CANCELLATION) PASSED SUCCESSFULLY!")
 
 

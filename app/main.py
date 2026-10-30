@@ -1284,10 +1284,11 @@ async def _execute_pipeline(
         })
 
         # Step 2: Screen Capture with Dual-Tier Grid Overlay & UI Elements
-        # Ensure Spotlight window is minimized/hidden so it NEVER obstructs the screenshot or targets!
+        # Ensure modal error dialogs and Spotlight window do NOT obstruct screenshot or targets!
+        from app.system_ui import dismiss_windows_error_dialog
+        dismiss_windows_error_dialog()
+
         if is_first_step:
-            from app.system_ui import dismiss_windows_error_dialog
-            dismiss_windows_error_dialog()
             from app.spotlight_launcher import minimize_spotlight_window_windows
             if sys.platform.startswith("win"):
                 minimized = minimize_spotlight_window_windows()
@@ -1501,6 +1502,24 @@ async def _execute_pipeline(
             )
 
             user_cmd_lower = user_command.lower()
+            # Explicit single-action intent: user specifically commands just 1 action ("click nút X", "bấm vào Y", "nhấn phím Z")
+            # and is NOT a multi-step workflow ("kiểm tra...", "tìm... và mở", "sau đó...", "xong thì...")
+            continuation_indicators = (
+                "sau đó", "sau khi", "tiếp theo", "kế tiếp", "rồi thì", "rồi mới",
+                "xong thì", "kiểm tra", "tìm kiếm", "xem lại", "đọc xem",
+                "then", "after that"
+            )
+            has_continuation_words = bool(
+                any(p in user_cmd_lower for p in continuation_indicators)
+                or any(f" {w} " in f" {user_cmd_lower} " for w in ("và", "rồi", "tìm", "and"))
+            )
+            is_explicit_single_click_intent = (
+                any(
+                    user_cmd_lower.startswith(k) or f" {k} " in f" {user_cmd_lower} "
+                    for k in ("click", "nhấp", "bấm", "nhấn", "chọn nút", "click chuột", "bấm vào", "nhấp vào")
+                )
+                and not has_continuation_words
+            )
             is_single_direct_action = (
                 len(active_actions) == 1
                 and active_actions[0].get("action", "").lower() in (
@@ -1523,14 +1542,18 @@ async def _execute_pipeline(
                 # Intermediate navigation: scrolled down to find off-screen element, keep verifying next view
                 is_goal_verified_completed = False
                 print(f"[Pipeline] 📜 Đang cuộn màn hình tại bước {step} để tìm phần tử ngoài khung nhìn...")
-            elif is_single_direct_action:
+            elif is_explicit_single_click_intent and is_single_direct_action:
+                # User specifically asked for a single physical action (e.g. "click nút Đăng ký")
                 is_goal_verified_completed = True
-                print(f"[Pipeline] ⚡ Thao tác trực tiếp hoàn tất tại bước {step}: {speech_to_say}")
+                print(f"[Pipeline] ⚡ Thao tác trực tiếp (đơn lệnh) hoàn tất tại bước {step}: {speech_to_say}")
             elif claimed_done and not is_complex_form and not any(a.get("action") in ("terminal_command", "terminal", "run_terminal") for a in active_actions):
+                # Multi-step or standard task where AI confirms goal is achieved
                 is_goal_verified_completed = True
                 print(f"[Pipeline] ⚡ Thao tác hoàn tất theo xác nhận AI tại bước {step}: {speech_to_say}")
             else:
+                # Multi-step task or intermediate step (claimed_done is False), proceed to next step
                 is_goal_verified_completed = False
+                print(f"[Pipeline] 🔄 Bước {step} hoàn tất một phần, tiếp tục bước tiếp theo...")
 
         # Step 5: Annotate Screenshot for Visual Feedback
         annotated_b64 = screen_capturer.annotate_actions(actions_list)

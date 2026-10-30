@@ -417,6 +417,13 @@ class FileAndTerminalManager:
                 "speech_result": "Không có lệnh terminal nào được cung cấp."
             }
 
+        # Guard against AI mistakes attempting to execute raw "Settings" or "start Settings" in shell
+        cmd_lower = cmd_clean.lower().strip()
+        if cmd_lower in ("settings", "start settings", "start \"\" settings", "start \"settings\"", "explorer settings"):
+            cmd_clean = "start ms-settings:"
+        elif cmd_lower.startswith("start settings"):
+            cmd_clean = cmd_clean.replace("start settings", "start ms-settings:")
+
         work_dir = str(resolve_target_path(cwd)) if cwd else str(Path.cwd())
 
         # CASE 1: Open a visible interactive Terminal / PowerShell window on Desktop

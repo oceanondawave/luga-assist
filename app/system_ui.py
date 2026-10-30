@@ -76,16 +76,17 @@ def dismiss_windows_error_dialog() -> bool:
             nonlocal found
             if not user32.IsWindowVisible(hwnd):
                 return True
-            length = user32.GetWindowTextLengthW(hwnd)
-            if length > 0:
-                buff = ctypes.create_unicode_buffer(length + 1)
-                user32.GetWindowTextW(hwnd, buff, length + 1)
-                title = buff.value.lower()
-                if title in ("settings", "run", "cài đặt", "open"):
-                    class_buff = ctypes.create_unicode_buffer(256)
-                    user32.GetClassNameW(hwnd, class_buff, 256)
-                    if class_buff.value == "#32770":
+            class_buff = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, class_buff, 256)
+            if class_buff.value == "#32770":
+                length = user32.GetWindowTextLengthW(hwnd)
+                if length > 0:
+                    buff = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd, buff, length + 1)
+                    title = buff.value.lower()
+                    if title in ("settings", "run", "cài đặt", "open", "error", "lỗi") or "cannot find" in title:
                         user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+                        logger.info(f"[SystemUI] Đã tự động đóng hộp thoại lỗi modal: '{buff.value}'")
                         found = True
             return True
 

@@ -327,8 +327,8 @@ class OSController:
                 if text:
                     # Guard: If typing 'Settings' directly (e.g. into Run Win+R dialog or search),
                     # convert to 'ms-settings:' so Windows doesn't fail with "Windows cannot find 'Settings'"
-                    clean_text = text.strip().lower().replace(".exe", "").rstrip(":")
-                    if clean_text in ("settings", "cài đặt", "setting", "windows settings", "cài đặt windows", "ms-settings") or clean_text.startswith("start settings"):
+                    clean_text = text.strip().lower().replace(".exe", "").replace('"', '').replace("'", "").rstrip(":").strip()
+                    if clean_text in ("settings", "cài đặt", "setting", "windows settings", "cài đặt windows", "ms-settings", "windows update") or clean_text.startswith("start settings"):
                         text = "ms-settings:"
 
                     target = action_data.get("target") or action_data.get("field")
@@ -607,8 +607,9 @@ class OSController:
         if sys.platform.startswith("win"):
             try:
                 import ctypes
-                ctypes.windll.shell32.ShellExecuteW(None, "open", uri, None, None, 1)
-                return
+                res = ctypes.windll.shell32.ShellExecuteW(None, "open", uri, None, None, 1)
+                if int(res) > 32:
+                    return
             except Exception:
                 pass
         try:
@@ -622,8 +623,11 @@ class OSController:
         if not clean:
             return
 
-        # 1. Native Windows Settings & Sub-settings (100% reliable via hotkey or ms-settings: protocol)
-        if any(k in clean for k in ("setting", "cài đặt", "ms-settings")):
+        # 1. Native Windows Settings & Sub-settings (100% reliable via ms-settings: protocol)
+        if any(k in clean for k in ("setting", "cài đặt", "ms-settings", "update", "cập nhật")):
+            if any(k in clean for k in ("update", "cập nhật")):
+                self._open_windows_protocol("ms-settings:windowsupdate")
+                return
             if "bluetooth" in clean:
                 self._open_windows_protocol("ms-settings:bluetooth")
                 return
@@ -636,16 +640,9 @@ class OSController:
             if any(k in clean for k in ("display", "màn hình")):
                 self._open_windows_protocol("ms-settings:display")
                 return
-            if any(k in clean for k in ("update", "cập nhật")):
-                self._open_windows_protocol("ms-settings:windowsupdate")
-                return
 
-            try:
-                pyautogui.hotkey("win", "i")
-                return
-            except Exception:
-                self._open_windows_protocol("ms-settings:")
-                return
+            self._open_windows_protocol("ms-settings:")
+            return
 
         # 2. Native System Apps
         if clean in ("explorer", "file explorer", "thư mục", "quản lý file", "my computer", "this pc"):

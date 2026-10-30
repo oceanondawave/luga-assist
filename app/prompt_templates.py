@@ -41,6 +41,7 @@ QUY TẮC THAO TÁC TRÊN GIAO DIỆN WEB & TRÌNH DUYỆT (CHROME, EDGE) & ỨN
 
 5. NẾU CẦN MỞ CÀI ĐẶT WINDOWS (SETTINGS) HOẶC ỨNG DỤNG HỆ THỐNG:
    - Mở Cài đặt / Settings: Dùng "launch_app": "Settings" HOẶC phím nóng "press": "win+i".
+   - Mở Windows Update trực tiếp: Dùng "launch_app": "Windows Update".
    - TUYỆT ĐỐI KHÔNG mở hộp thoại Run (Win+R) rồi gõ "Settings" vì Windows không có file thực thi Settings.exe!
    - Mở File Explorer: Dùng "launch_app": "explorer" hoặc phím nóng "press": "win+e".
    - Mở Task Manager: Dùng "launch_app": "taskmgr" hoặc phím nóng "press": "ctrl+shift+esc".
@@ -168,23 +169,31 @@ HÃY QUAN SÁT ẢNH MÀN HÌNH VỪA CHỤP LẠI VÀ RA QUYẾT ĐỊNH CHÍNH
    -> "actions": [{{"action": "scroll", "direction": "down", "amount": 6}}]
    -> "speech": "Đang cuộn trang xuống để tìm mục tiêu..."
 
-3. [TRƯỜNG HỢP C - CẦN CLICK VÀO PHẦN TỬ TRÊN MÀN HÌNH]:
-   Nếu đã nhìn thấy phần tử (nút bấm, mục cài đặt, liên kết...):
+3. [TRƯỜNG HỢP C - CẦN CLICK VÀO PHẦN TỬ ĐỂ KẾT THÚC]:
+   Nếu nhìn thấy phần tử cuối cùng cần thao tác để hoàn tất mục tiêu:
    -> BẮT BUỘC ĐỌC TỌA ĐỘ TỪ LƯỚI VÀ ĐIỀN x_percent, y_percent (từ 0.00 đến 1.00)!
    -> TUYỆT ĐỐI KHÔNG ĐƯỢC XUẤT "click" MÀ THIẾU x_percent, y_percent!
-   -> Cấu trúc JSON bắt buộc:
-   ```json
-   {{
-     "speech": "Đang nhấp vào [tên phần tử]...",
-     "done": true,
-     "actions": [
-       {{
-         "action": "click",
-         "target": "tên phần tử",
-         "x_percent": 0.50,
-         "y_percent": 0.50
-       }}
-     ]
-   }}
-   ```
+   -> Đặt "done": true nếu đây là thao tác cuối cùng hoàn thành toàn bộ mục tiêu.
+
+4. [TRƯỜNG HỢP D - QUY TRÌNH NHIỀU BƯỚC / CẦN THAO TÁC TIẾP TỤC]:
+   Nếu đây chỉ là bước đệm (ví dụ: vừa mở Cài đặt, giờ cần nhấp vào Windows Update; hoặc vừa vào trình duyệt, giờ cần gõ tìm kiếm...):
+   -> Đặt "done": false để hệ thống tiếp tục bước tiếp theo.
+   -> Điền hành động kế tiếp (click với tọa độ lưới, type, press...).
+   -> CHỈ đặt "done": true khi TOÀN BỘ mục tiêu ban đầu của người dùng đã được thực hiện và kết quả đã hiển thị!
+
+CẤU TRÚC JSON BẮT BUỘC:
+```json
+{{
+  "speech": "Câu thông báo ngắn gọn dưới 10 từ",
+  "done": false,
+  "actions": [
+    {{
+      "action": "click | type | press | scroll | none",
+      "target": "tên phần tử",
+      "x_percent": 0.50,
+      "y_percent": 0.50
+    }}
+  ]
+}}
+```
 """
