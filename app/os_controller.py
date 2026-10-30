@@ -42,12 +42,19 @@ class OSController:
     def _native_click(self, x: int, y: int, button: str = "left", click_count: int = 1):
         """
         Rock-solid physical click across macOS and Windows.
-        Ensures target window is activated, cursor is physically moved,
-        and click events are dispatched via native Win32 mouse_event with realistic hardware dwell time (0.05s).
+        Ensures target window is activated, cursor is physically moved to (x, y),
+        and click events are dispatched cleanly at the exact coordinates without any relative offsets.
         """
+        w, h = self.get_screen_size()
+        # Clamp coordinates to stay within screen boundaries and avoid (0,0) failsafe
+        x = max(2, min(w - 2, int(x)))
+        y = max(2, min(h - 2, int(y)))
+
         # 1. Smoothly move cursor so user visually sees movement to target
-        pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
-        time.sleep(0.02)
+        try:
+            pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
+        except Exception:
+            pass
 
         # 2. Windows native click pipeline
         if sys.platform.startswith("win"):
@@ -55,61 +62,80 @@ class OSController:
                 import ctypes
                 import ctypes.wintypes
                 user32 = ctypes.windll.user32
+                kernel32 = ctypes.windll.kernel32
 
-                # Activate window under cursor if not already active so click isn't swallowed
-                hwnd = user32.WindowFromPoint(ctypes.wintypes.POINT(x, y))
+                # Structure for WindowFromPoint
+                class POINT(ctypes.Structure):
+                    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+                user32.WindowFromPoint.argtypes = [POINT]
+                user32.WindowFromPoint.restype = ctypes.c_void_p
+
+                # Activate window under cursor if not active so click is immediately processed
+                pt = POINT(x, y)
+                hwnd = user32.WindowFromPoint(pt)
                 if hwnd:
-                    root_hwnd = user32.GetAncestor(hwnd, 2)  # GA_ROOT
+                    root_hwnd = user32.GetAncestor(hwnd, 2)  # GA_ROOT = 2
                     cur_fore = user32.GetForegroundWindow()
                     if root_hwnd and root_hwnd != cur_fore:
-                        user32.SetForegroundWindow(root_hwnd)
-                        time.sleep(0.04)
+                        try:
+                            # Safely attach thread input to grant foreground activation
+                            fg_thread = user32.GetWindowThreadProcessId(cur_fore, None) if cur_fore else 0
+                            cur_thread = kernel32.GetCurrentThreadId()
+                            attached = False
+                            if fg_thread and fg_thread != cur_thread:
+                                attached = bool(user32.AttachThreadInput(cur_thread, fg_thread, True))
+                            try:
+                                user32.ShowWindow(root_hwnd, 9)  # SW_RESTORE
+                                user32.BringWindowToTop(root_hwnd)
+                                user32.SetForegroundWindow(root_hwnd)
+                                user32.SetFocus(root_hwnd)
+                            finally:
+                                if attached:
+                                    user32.AttachThreadInput(cur_thread, fg_thread, False)
+                            time.sleep(0.05)
+                        except Exception:
+                            pass
 
+                # Firmly set physical cursor position at (x, y)
                 user32.SetCursorPos(x, y)
-                time.sleep(0.02)
+                time.sleep(0.03)
 
+                # Win32 mouse_event: when dx=0 and dy=0, Windows dispatches the event
+                # EXACTLY at current cursor position with ZERO relative shift!
                 MOUSEEVENTF_LEFTDOWN = 0x0002
                 MOUSEEVENTF_LEFTUP = 0x0004
                 MOUSEEVENTF_RIGHTDOWN = 0x0008
                 MOUSEEVENTF_RIGHTUP = 0x0010
 
                 if button == "right":
-                    user32.mouse_event(MOUSEEVENTF_RIGHTDOWN, x, y, 0, 0)
+                    user32.mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
                     time.sleep(0.05)
-                    user32.mouse_event(MOUSEEVENTF_RIGHTUP, x, y, 0, 0)
+                    user32.mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
                 elif click_count == 2:
-                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, x, y, 0, 0)
+                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
                     time.sleep(0.04)
-                    user32.mouse_event(MOUSEEVENTF_LEFTUP, x, y, 0, 0)
+                    user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
                     time.sleep(0.08)
-                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, x, y, 0, 0)
+                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
                     time.sleep(0.04)
-                    user32.mouse_event(MOUSEEVENTF_LEFTUP, x, y, 0, 0)
+                    user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
                 else:
-                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, x, y, 0, 0)
+                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
                     time.sleep(0.05)
-                    user32.mouse_event(MOUSEEVENTF_LEFTUP, x, y, 0, 0)
-                return
-            except Exception:
-                pass
+                    user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
 
-        # 3. Fallback for generic OS
-        if button == "right":
-            pyautogui.mouseDown(x, y, button="right")
-            time.sleep(0.04)
-            pyautogui.mouseUp(x, y, button="right")
-        elif click_count == 2:
-            pyautogui.mouseDown(x, y, button="left")
-            time.sleep(0.04)
-            pyautogui.mouseUp(x, y, button="left")
-            time.sleep(0.06)
-            pyautogui.mouseDown(x, y, button="left")
-            time.sleep(0.04)
-            pyautogui.mouseUp(x, y, button="left")
-        else:
-            pyautogui.mouseDown(x, y, button="left")
-            time.sleep(0.04)
-            pyautogui.mouseUp(x, y, button="left")
+                time.sleep(0.04)
+                return
+            except Exception as win_err:
+                print(f"[OSController] Windows native click fallback due to: {win_err}")
+
+        # 3. Universal Fallback
+        try:
+            btn = "right" if button == "right" else "left"
+            pyautogui.click(x=x, y=y, clicks=click_count, button=btn)
+        except Exception as e:
+            print(f"[OSController] Click fallback error: {e}")
 
     def execute_action(self, action_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -138,24 +164,44 @@ class OSController:
                 elif any(k in target_str for k in ("close window", "đóng cửa sổ", "red button", "nút đỏ")):
                     w_res = self.window_control("close")
                     result["details"] = w_res["details"] or "Clicked Close window button"
-                elif "x_percent" in action_data and "y_percent" in action_data:
-                    x, y = self.to_pixel_coords(action_data["x_percent"], action_data["y_percent"])
-                    snapped = accessibility_manager.snap_coordinates(x, y, target=target_str)
-                    if snapped:
-                        x, y = snapped
-                        print(f"[OSController] 🎯 Khóa chính xác tâm phần tử UI: ({x}, {y})")
-                    else:
-                        print(f"[OSController] 🖱️ Nhấp chuột tại tọa độ trực quan: ({x}, {y})")
-                    self._native_click(x, y, button="left", click_count=1)
-                    target_info = f" '{target}'" if target else ""
-                    result["details"] = f"Clicked{target_info} at ({x}, {y})"
-                elif target and accessibility_manager.focus_element_by_name(target):
-                    result["details"] = f"Selected '{target}' via 100% Accessibility Grounding"
                 else:
-                    # Target not found in AX and no visual coordinates provided
-                    result["success"] = False
-                    result["details"] = f"Không tìm thấy phần tử '{target or 'unknown'}' qua Accessibility và thiếu tọa độ (x_percent, y_percent)"
-                    print(f"[OSController] ⚠️ CẢNH BÁO: Không tìm thấy phần tử '{target}' và AI không cung cấp tọa độ x_percent, y_percent để click!")
+                    x_pct = action_data.get("x_percent") if action_data.get("x_percent") is not None else action_data.get("x")
+                    y_pct = action_data.get("y_percent") if action_data.get("y_percent") is not None else action_data.get("y")
+                    if x_pct is None and "point" in action_data and isinstance(action_data["point"], (list, tuple)) and len(action_data["point"]) >= 2:
+                        x_pct, y_pct = action_data["point"][0], action_data["point"][1]
+                    if x_pct is None and "coordinates" in action_data and isinstance(action_data["coordinates"], dict):
+                        x_pct = action_data["coordinates"].get("x")
+                        y_pct = action_data["coordinates"].get("y")
+
+                    if x_pct is not None and y_pct is not None:
+                        try:
+                            fx, fy = float(x_pct), float(y_pct)
+                            # Handle case where AI gave pixel coords directly (> 1.0)
+                            if fx > 1.0 or fy > 1.0:
+                                x, y = int(round(fx)), int(round(fy))
+                            else:
+                                x, y = self.to_pixel_coords(fx, fy)
+
+                            snapped = accessibility_manager.snap_coordinates(x, y, target=target_str)
+                            if snapped:
+                                x, y = snapped
+                                print(f"[OSController] 🎯 Khóa chính xác tâm phần tử UI: ({x}, {y})")
+                            else:
+                                print(f"[OSController] 🖱️ Nhấp chuột tại tọa độ trực quan: ({x}, {y})")
+                            self._native_click(x, y, button="left", click_count=1)
+                            target_info = f" '{target}'" if target else ""
+                            result["details"] = f"Clicked{target_info} at ({x}, {y})"
+                        except Exception as click_err:
+                            result["success"] = False
+                            result["details"] = f"Lỗi khi thực hiện click: {click_err}"
+                            print(f"[OSController] Lỗi click: {click_err}")
+                    elif target and accessibility_manager.focus_element_by_name(target):
+                        result["details"] = f"Selected '{target}' via 100% Accessibility Grounding"
+                    else:
+                        # Target not found in AX and no visual coordinates provided
+                        result["success"] = False
+                        result["details"] = f"Không tìm thấy phần tử '{target or 'unknown'}' qua Accessibility và thiếu tọa độ (x_percent, y_percent)"
+                        print(f"[OSController] ⚠️ CẢNH BÁO: Không tìm thấy phần tử '{target}' và AI không cung cấp tọa độ x_percent, y_percent để click!")
 
             elif action == "double_click":
                 x, y = self.to_pixel_coords(action_data.get("x_percent", 0.5), action_data.get("y_percent", 0.5))

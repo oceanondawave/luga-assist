@@ -1501,10 +1501,11 @@ async def _execute_pipeline(
             )
 
             user_cmd_lower = user_command.lower()
-            is_direct_click_request = (
+            is_single_direct_action = (
                 len(active_actions) == 1
-                and active_actions[0].get("action", "").lower() in ("click", "select_element", "press", "launch_app")
-                and any(k in user_cmd_lower for k in ("click", "nhấn", "bấm", "chọn", "press", "mở"))
+                and active_actions[0].get("action", "").lower() in (
+                    "click", "select_element", "choose_element", "double_click", "right_click", "press", "launch_app", "focus"
+                )
             )
             is_scroll_action = any(
                 isinstance(a, dict) and a.get("action", "").lower() == "scroll"
@@ -1522,9 +1523,9 @@ async def _execute_pipeline(
                 # Intermediate navigation: scrolled down to find off-screen element, keep verifying next view
                 is_goal_verified_completed = False
                 print(f"[Pipeline] 📜 Đang cuộn màn hình tại bước {step} để tìm phần tử ngoài khung nhìn...")
-            elif is_direct_click_request and (claimed_done or step >= 1):
+            elif is_single_direct_action:
                 is_goal_verified_completed = True
-                print(f"[Pipeline] ⚡ Thao tác click trực tiếp hoàn tất tại bước {step}: {speech_to_say}")
+                print(f"[Pipeline] ⚡ Thao tác trực tiếp hoàn tất tại bước {step}: {speech_to_say}")
             elif claimed_done and not is_complex_form and not any(a.get("action") in ("terminal_command", "terminal", "run_terminal") for a in active_actions):
                 is_goal_verified_completed = True
                 print(f"[Pipeline] ⚡ Thao tác hoàn tất theo xác nhận AI tại bước {step}: {speech_to_say}")
