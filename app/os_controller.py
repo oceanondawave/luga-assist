@@ -197,13 +197,29 @@ class OSController:
                             result["success"] = False
                             result["details"] = f"Lỗi khi thực hiện click: {click_err}"
                             print(f"[OSController] Lỗi click: {click_err}")
-                    elif target and accessibility_manager.focus_element_by_name(target):
-                        result["details"] = f"Selected '{target}' via 100% Accessibility Grounding"
-                    else:
-                        # Target not found in AX and no visual coordinates provided
-                        result["success"] = False
-                        result["details"] = f"Không tìm thấy phần tử '{target or 'unknown'}' qua Accessibility và thiếu tọa độ (x_percent, y_percent)"
-                        print(f"[OSController] ⚠️ CẢNH BÁO: Không tìm thấy phần tử '{target}' và AI không cung cấp tọa độ x_percent, y_percent để click!")
+                    elif target:
+                        # Attempt to find by name in cached elements
+                        clicked_via_ax = accessibility_manager.focus_element_by_name(target)
+                        if clicked_via_ax:
+                            result["details"] = f"Selected '{target}' via 100% Accessibility Grounding"
+                        else:
+                            # Fuzzy search in cached elements directly
+                            matched_elem = None
+                            for el in accessibility_manager.cached_elements:
+                                el_name = el.get("name", "").lower()
+                                if target_str in el_name or el_name in target_str:
+                                    matched_elem = el
+                                    break
+                            if matched_elem:
+                                px = matched_elem["pixel_x"]
+                                py = matched_elem["pixel_y"]
+                                print(f"[OSController] 🎯 Khớp tên phần tử '{matched_elem['name']}' tại ({px}, {py})")
+                                self._native_click(px, py, button="left", click_count=1)
+                                result["details"] = f"Clicked '{matched_elem['name']}' at ({px}, {py})"
+                            else:
+                                result["success"] = False
+                                result["details"] = f"Không tìm thấy phần tử '{target}' và AI không cung cấp tọa độ x_percent, y_percent để click"
+                                print(f"[OSController] ⚠️ CẢNH BÁO: Không tìm thấy phần tử '{target}' và thiếu tọa độ click!")
 
             elif action == "double_click":
                 x, y = self.to_pixel_coords(action_data.get("x_percent", 0.5), action_data.get("y_percent", 0.5))

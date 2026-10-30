@@ -106,8 +106,7 @@ def build_gemini_prompt(
     """
     Build prompt for user command.
     If is_initial is True (very first turn or after reset), sends full system grounding.
-    If is_initial is False (follow-up turns in continuous chat), sends only concise prompt
-    to prevent context window bloat and keep model fast and accurate.
+    If is_initial is False (follow-up turns in continuous chat), sends concise prompt with strict JSON format.
     """
     context_block = f"\n{ui_context}\n" if ui_context else ""
     thinking_block = get_thinking_prompt_directive(thinking_level)
@@ -117,9 +116,25 @@ def build_gemini_prompt(
     else:
         return f"""[LỆNH ĐIỀU KHIỂN WINDOWS MỚI]: "{user_command}"
 {thinking_block}{context_block}
-YÊU CẦU: Nhìn ảnh màn hình mới nhất:
-- Nếu phần tử ĐANG HIỂN THỊ: Xuất ngay JSON hành động (click, type, press, select_element) với x_percent, y_percent và target.
-- Nếu phần tử CHƯA HIỂN THỊ (bị khuất ở phía dưới hoặc trang còn dài): Xuất ngay "action": "scroll", "direction": "down", "amount": 6 để cuộn trang tiếp!
+YÊU CẦU QUAN TRỌNG:
+- Nhìn ảnh màn hình mới nhất kèm lưới tọa độ.
+- Nếu phần tử ĐANG HIỂN THỊ: BẮT BUỘC xuất hành động kèm "x_percent", "y_percent" (từ 0.00 đến 1.00) và "target" tên nút!
+- Nếu phần tử CHƯA HIỂN THỊ: Xuất "action": "scroll", "direction": "down", "amount": 6.
+- Định dạng JSON chuẩn (BẮT BUỘC có x_percent, y_percent khi click):
+```json
+{{
+  "speech": "Câu thông báo ngắn gọn dưới 10 từ",
+  "done": true,
+  "actions": [
+    {{
+      "action": "click",
+      "target": "tên phần tử",
+      "x_percent": 0.50,
+      "y_percent": 0.50
+    }}
+  ]
+}}
+```
 """
 
 def build_verification_prompt(
@@ -131,7 +146,7 @@ def build_verification_prompt(
 ) -> str:
     """
     Compact outcome verification prompt for Step > 1.
-    Does NOT repeat massive system instructions; asks model to inspect the new screen state directly.
+    Strictly enforces JSON structure with mandatory x_percent, y_percent for click actions.
     """
     context_block = f"\n{ui_context}\n" if ui_context else ""
     thinking_block = get_thinking_prompt_directive(thinking_level)
@@ -142,11 +157,10 @@ MỤC TIÊU BAN ĐẦU CỦA NGƯỜI DÙNG: "{user_command}"
 HÀNH ĐỘNG VỪA THỰC HIỆN: {previous_actions_desc}
 {thinking_block}{context_block}
 HÃY QUAN SÁT ẢNH MÀN HÌNH VỪA CHỤP LẠI VÀ RA QUYẾT ĐỊNH CHÍNH XÁC:
+
 1. [TRƯỜNG HỢP A - MỤC TIÊU ĐÃ HOÀN TẤT]:
    Nếu nhìn thấy kết quả đã hoàn thành:
-   -> Đặt "done": true
-   -> "actions": [{{"action": "none"}}]
-   -> "speech": Báo cáo kết quả thành công ngắn gọn.
+   -> Đặt "done": true, "actions": [{{"action": "none"}}], "speech": Báo cáo kết quả thành công ngắn gọn.
 
 2. [TRƯỜNG HỢP B - PHẦN TỬ CHƯA XUẤT HIỆN / NẰM NGOÀI MÀN HÌNH]:
    Nếu mục tiêu (video, sản phẩm, liên kết, nút bấm...) chưa xuất hiện trên màn hình hiện tại (bị khuất ở phía dưới):
@@ -154,9 +168,23 @@ HÃY QUAN SÁT ẢNH MÀN HÌNH VỪA CHỤP LẠI VÀ RA QUYẾT ĐỊNH CHÍNH
    -> "actions": [{{"action": "scroll", "direction": "down", "amount": 6}}]
    -> "speech": "Đang cuộn trang xuống để tìm mục tiêu..."
 
-3. [TRƯỜNG HỢP C - CẦN THAO TÁC TIẾP]:
-   Nếu đã nhìn thấy phần tử:
-   -> Đặt "done": false (hoặc true nếu đây là thao tác cuối)
-   -> "actions": Xuất hành động tiếp theo với x_percent, y_percent và target chính xác.
-   -> Lưu ý: Nếu cú click ở bước trước chưa có tác dụng (màn hình không đổi), hãy kiểm tra lại tọa độ hoặc thử "double_click" / "press": "enter" / "scroll": "down", TUYỆT ĐỐI không click lại cùng 1 điểm chết!
+3. [TRƯỜNG HỢP C - CẦN CLICK VÀO PHẦN TỬ TRÊN MÀN HÌNH]:
+   Nếu đã nhìn thấy phần tử (nút bấm, mục cài đặt, liên kết...):
+   -> BẮT BUỘC ĐỌC TỌA ĐỘ TỪ LƯỚI VÀ ĐIỀN x_percent, y_percent (từ 0.00 đến 1.00)!
+   -> TUYỆT ĐỐI KHÔNG ĐƯỢC XUẤT "click" MÀ THIẾU x_percent, y_percent!
+   -> Cấu trúc JSON bắt buộc:
+   ```json
+   {{
+     "speech": "Đang nhấp vào [tên phần tử]...",
+     "done": true,
+     "actions": [
+       {{
+         "action": "click",
+         "target": "tên phần tử",
+         "x_percent": 0.50,
+         "y_percent": 0.50
+       }}
+     ]
+   }}
+   ```
 """

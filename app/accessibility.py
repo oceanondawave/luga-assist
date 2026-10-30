@@ -285,7 +285,7 @@ class AccessibilityManager:
 
         # 1. Search in cached elements first, scoring all candidates to pick the best match
         if not self.cached_elements:
-            self.get_frontmost_app_elements()
+            return False
 
         best_elem = None
         best_score = 0.0
@@ -307,24 +307,18 @@ class AccessibilityManager:
             py = best_elem["pixel_y"]
             role = best_elem.get("role", "Element")
             print(f"[AccessibilityManager] 🎯 Khóa chính xác phần tử '{best_elem['name']}' ({role}) tại ({px}, {py})")
-            pyautogui.moveTo(px, py, duration=0.08)
-            time.sleep(0.02)
-            pyautogui.mouseDown()
-            time.sleep(0.04)
-            pyautogui.mouseUp()
-            time.sleep(0.12)
+            from app.os_controller import os_controller
+            os_controller._native_click(px, py, button="left", click_count=1)
             return True
 
         return False
 
     def snap_coordinates(self, pixel_x: int, pixel_y: int, target: str = "") -> Optional[Tuple[int, int]]:
         """
-        Check if (pixel_x, pixel_y) matches a specific interactive UI control.
+        Check if (pixel_x, pixel_y) matches a specific interactive UI control in memory.
         NEVER snaps to giant container panels or unmatched controls!
+        Zero latency - operates purely in memory on cached elements without spawning slow processes.
         """
-        if not self.cached_elements:
-            self.get_frontmost_app_elements()
-
         if not self.cached_elements:
             return None
 
