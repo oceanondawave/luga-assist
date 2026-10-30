@@ -86,7 +86,8 @@ class OSController:
                             if fg_thread and fg_thread != cur_thread:
                                 attached = bool(user32.AttachThreadInput(cur_thread, fg_thread, True))
                             try:
-                                user32.ShowWindow(root_hwnd, 9)  # SW_RESTORE
+                                if user32.IsIconic(root_hwnd):
+                                    user32.ShowWindow(root_hwnd, 9)  # SW_RESTORE only if minimized
                                 user32.BringWindowToTop(root_hwnd)
                                 user32.SetForegroundWindow(root_hwnd)
                                 user32.SetFocus(root_hwnd)
@@ -125,6 +126,7 @@ class OSController:
                     time.sleep(0.05)
                     user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
 
+                print(f"[OSController] ⚡ Đã phát sự kiện click vật lý Win32 tại ({x}, {y}) [button={button}]")
                 time.sleep(0.04)
                 return
             except Exception as win_err:
