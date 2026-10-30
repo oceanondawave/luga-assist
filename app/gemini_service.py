@@ -296,10 +296,22 @@ class GeminiSessionService:
                         if v and k not in ("__Secure-1PSID", "__Secure-1PSIDTS"):
                             try:
                                 self.client.cookies.set(k, v, domain=".google.com", secure=True)
+                                if k in ("__Secure-1PSIDCC", "SID", "HSID", "SSID", "SAPISID", "APISID"):
+                                    self.client.cookies.set(k, v, domain=".googleapis.com", secure=True)
                             except Exception:
                                 pass
 
                 await self.client.init(timeout=25)
+
+                # Ensure live HTTP session also has cross-domain credentials for content-push.googleapis.com
+                if hasattr(self.client, "client") and self.client.client:
+                    for k in ("__Secure-1PSID", "__Secure-1PSIDTS", "__Secure-1PSIDCC", "SID", "HSID", "SSID", "SAPISID", "APISID"):
+                        val = self._current_all_cookies.get(k) or (cleaned_psid if k == "__Secure-1PSID" else (cleaned_psidts if k == "__Secure-1PSIDTS" else None))
+                        if val:
+                            try:
+                                self.client.client.cookies.set(k, val, domain=".googleapis.com", secure=True)
+                            except Exception:
+                                pass
                 self._current_psid = cleaned_psid
                 self._current_psidts = cleaned_psidts
                 self.is_ready = True

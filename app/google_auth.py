@@ -29,6 +29,28 @@ logger = get_logger("GoogleAuth")
 # Persistent browser profile in USER_DATA_DIR (never in %TEMP%)
 GOOGLE_PROFILE_DIR = USER_DATA_DIR / "google_profile"
 
+
+def get_google_profile_dir(browser_path: Optional[str] = None) -> Path:
+    """
+    Return isolated profile directory based on browser.
+    Ensures Microsoft Edge uses its own dedicated profile (google_profile_edge),
+    preventing DPAPI key conflicts or profile lock issues from other browsers (like Brave).
+    """
+    if not browser_path:
+        browser_path = find_chromium_browser()
+    if browser_path:
+        lower = browser_path.lower()
+        if "msedge" in lower or "edge" in lower:
+            p = USER_DATA_DIR / "google_profile_edge"
+            p.mkdir(parents=True, exist_ok=True)
+            return p
+        if "chrome" in lower:
+            p = USER_DATA_DIR / "google_profile_chrome"
+            p.mkdir(parents=True, exist_ok=True)
+            return p
+    GOOGLE_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    return GOOGLE_PROFILE_DIR
+
 # Auto-migrate legacy profile if present in TEMP_DIR
 legacy_profile = TEMP_DIR / "luga_google_profile"
 if legacy_profile.exists() and not GOOGLE_PROFILE_DIR.exists():
@@ -125,60 +147,91 @@ def is_chromium_browser(path: str) -> bool:
 
 def find_chromium_browser() -> Optional[str]:
     """
-    Find available Chromium-based browser (Google Chrome, Brave, Cốc Cốc, Microsoft Edge)
-    specifically optimized for Windows 10 & 11.
-    Prioritizes the user's actual default browser whenever it is Chromium-based!
+    Find available Chromium-based browser for Google Authentication and Web Spotlight.
+    Prioritizes Microsoft Edge (pre-installed natively on Windows 10 & 11) and Google Chrome,
+    ensuring 100% reliable Google Account authentication, cross-origin API cookie sharing,
+    and uninterrupted image uploads to content-push.googleapis.com.
     """
     if sys.platform.startswith("win"):
-        # 1. First Priority: The user's actual default browser if it is Chromium-based!
-        default_browser = get_windows_default_browser()
-        if default_browser and is_chromium_browser(default_browser):
-            logger.info(f"🌐 Sử dụng trình duyệt mặc định của hệ thống: {default_browser}")
-            return default_browser
-
-        # 2. Check user's preferred browsers in order: Chrome -> Brave -> Cốc Cốc -> Edge
-        candidates = [
-            # Chrome (%LOCALAPPDATA% first for standard per-user installs, then %PROGRAMFILES%)
-            Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "Application" / "chrome.exe",
-            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "Google" / "Chrome" / "Application" / "chrome.exe",
-            Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "Google" / "Chrome" / "Application" / "chrome.exe",
-            # Brave
-            Path(os.environ.get("LOCALAPPDATA", "")) / "BraveSoftware" / "Brave-Browser" / "Application" / "brave.exe",
-            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "BraveSoftware" / "Brave-Browser" / "Application" / "brave.exe",
-            # Cốc Cốc
-            Path(os.environ.get("LOCALAPPDATA", "")) / "CocCoc" / "Browser" / "Application" / "browser.exe",
-            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "CocCoc" / "Browser" / "Application" / "browser.exe",
-            # Microsoft Edge (Guaranteed fallback on Windows 10/11)
+        # 1. First Priority: Microsoft Edge (natively integrated on Windows 10 & 11, zero cookie blocking)
+        edge_candidates = [
             Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
             Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
             Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
         ]
-        for p in candidates:
+        for p in edge_candidates:
             if p.exists():
+                logger.info(f"🌐 Sử dụng Microsoft Edge cho Google Auth / Spotlight: {p}")
                 return str(p)
 
-        # 3. Check Windows Registry App Paths in order: Chrome, Brave, CocCoc, then Edge
         try:
             import winreg
-            for exe_name in ("chrome.exe", "brave.exe", "browser.exe", "msedge.exe"):
-                for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
-                    try:
-                        k = winreg.OpenKey(root, rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe_name}")
+            for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                try:
+                    with winreg.OpenKey(root, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe") as k:
                         val, _ = winreg.QueryValueEx(k, "")
                         if val and os.path.exists(val):
+                            logger.info(f"🌐 Sử dụng Microsoft Edge từ Registry: {val}")
                             return val
-                    except Exception:
-                        pass
+                except Exception:
+                    pass
         except Exception:
             pass
 
-        for name in ("chrome.exe", "brave.exe", "chrome", "msedge.exe", "msedge"):
-            found = shutil.which(name)
-            if found:
-                return found
+        found_edge = shutil.which("msedge.exe") or shutil.which("msedge")
+        if found_edge:
+            logger.info(f"🌐 Sử dụng Microsoft Edge từ PATH: {found_edge}")
+            return found_edge
 
-    # Fallback for generic environments / development
-    for name in ("chrome", "google-chrome", "msedge", "chromium"):
+        # 2. Second Priority: Google Chrome
+        chrome_candidates = [
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "Application" / "chrome.exe",
+            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "Google" / "Chrome" / "Application" / "chrome.exe",
+            Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "Google" / "Chrome" / "Application" / "chrome.exe",
+        ]
+        for p in chrome_candidates:
+            if p.exists():
+                logger.info(f"🌐 Sử dụng Google Chrome: {p}")
+                return str(p)
+
+        try:
+            import winreg
+            for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                try:
+                    with winreg.OpenKey(root, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe") as k:
+                        val, _ = winreg.QueryValueEx(k, "")
+                        if val and os.path.exists(val):
+                            logger.info(f"🌐 Sử dụng Google Chrome từ Registry: {val}")
+                            return val
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        found_chrome = shutil.which("chrome.exe") or shutil.which("chrome")
+        if found_chrome:
+            logger.info(f"🌐 Sử dụng Google Chrome từ PATH: {found_chrome}")
+            return found_chrome
+
+        # 3. Third Priority: User's default browser if it is Chromium-based
+        default_browser = get_windows_default_browser()
+        if default_browser and is_chromium_browser(default_browser):
+            logger.info(f"🌐 Sử dụng trình duyệt mặc định: {default_browser}")
+            return default_browser
+
+        # 4. Fallback to other Chromium candidates (Brave, Cốc Cốc, etc.)
+        other_candidates = [
+            Path(os.environ.get("LOCALAPPDATA", "")) / "BraveSoftware" / "Brave-Browser" / "Application" / "brave.exe",
+            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "BraveSoftware" / "Brave-Browser" / "Application" / "brave.exe",
+            Path(os.environ.get("LOCALAPPDATA", "")) / "CocCoc" / "Browser" / "Application" / "browser.exe",
+            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "CocCoc" / "Browser" / "Application" / "browser.exe",
+        ]
+        for p in other_candidates:
+            if p.exists():
+                return str(p)
+
+    # Generic / non-Windows environments
+    for name in ("msedge", "microsoft-edge", "chrome", "google-chrome", "chromium"):
         found = shutil.which(name)
         if found:
             return found
@@ -222,7 +275,7 @@ class GoogleWebAuthManager:
                 self.is_logging_in = False
 
         browser_path = find_chromium_browser()
-        GOOGLE_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+        profile_dir = get_google_profile_dir(browser_path)
 
         target_url = login_url
         if not target_url:
@@ -241,7 +294,16 @@ class GoogleWebAuthManager:
             }
 
         self._active_cdp_port = get_available_cdp_port(DEFAULT_CDP_PORT)
-        profile_path = str(GOOGLE_PROFILE_DIR.resolve())
+        profile_path = str(profile_dir.resolve())
+
+        # Clean up any stale singleton locks from previous sessions
+        for lock_name in ("SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"):
+            lock_p = profile_dir / lock_name
+            if lock_p.exists():
+                try:
+                    lock_p.unlink(missing_ok=True)
+                except Exception:
+                    pass
         cmd = [
             browser_path,
             f"--remote-debugging-port={self._active_cdp_port}",
@@ -366,13 +428,14 @@ class GoogleWebAuthManager:
         except Exception as e:
             logger.warning(f"Error removing session file: {e}")
 
-        # 3. If full reset requested, clear profile directory
+        # 3. If full reset requested, clear profile directories
         if clear_browser_profile:
-            try:
-                if GOOGLE_PROFILE_DIR.exists():
-                    shutil.rmtree(GOOGLE_PROFILE_DIR, ignore_errors=True)
-            except Exception as e:
-                logger.warning(f"Error removing google profile dir: {e}")
+            for p in (USER_DATA_DIR / "google_profile_edge", USER_DATA_DIR / "google_profile_chrome", GOOGLE_PROFILE_DIR):
+                try:
+                    if p.exists():
+                        shutil.rmtree(p, ignore_errors=True)
+                except Exception as e:
+                    logger.warning(f"Error removing profile dir {p}: {e}")
 
         sound_manager.play_done()
         logger.info("🚪 Đã đăng xuất tài khoản Google Gemini thành công.")
@@ -388,14 +451,24 @@ class GoogleWebAuthManager:
             return False
 
         browser_path = find_chromium_browser()
-        if not browser_path or not GOOGLE_PROFILE_DIR.exists():
+        profile_dir = get_google_profile_dir(browser_path)
+        if not browser_path or not profile_dir.exists():
             return False
 
         # Check if profile has any actual user data
-        profile_path = str(GOOGLE_PROFILE_DIR.resolve())
-        default_dir = GOOGLE_PROFILE_DIR / "Default"
+        profile_path = str(profile_dir.resolve())
+        default_dir = profile_dir / "Default"
         if not default_dir.exists():
             return False
+
+        # Clean up any stale singleton locks before off-screen launch
+        for lock_name in ("SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"):
+            lock_p = profile_dir / lock_name
+            if lock_p.exists():
+                try:
+                    lock_p.unlink(missing_ok=True)
+                except Exception:
+                    pass
 
         logger.info("🔄 Đang tự động làm mới session Google Gemini ngầm qua Chromium profile...")
         cdp_port = get_available_cdp_port(DEFAULT_CDP_PORT)
@@ -479,7 +552,7 @@ class GoogleWebAuthManager:
                             c_domain = c.get("domain", "")
                             c_val = c.get("value", "")
                             c_exp = c.get("expires", 0)
-                            if "google.com" in c_domain and c_name and c_val:
+                            if ("google.com" in c_domain or "googleapis.com" in c_domain) and c_name and c_val:
                                 all_google_cookies[c_name] = c_val
                                 if c_name == "__Secure-1PSID":
                                     psid = c_val
@@ -585,7 +658,7 @@ class GoogleWebAuthManager:
                             c_name = c.get("name")
                             c_domain = c.get("domain", "")
                             c_val = c.get("value", "")
-                            if "google.com" in c_domain and c_name and c_val:
+                            if ("google.com" in c_domain or "googleapis.com" in c_domain) and c_name and c_val:
                                 all_google_cookies[c_name] = c_val
                                 if c_name == "__Secure-1PSID":
                                     psid = c_val
@@ -612,7 +685,16 @@ class GoogleWebAuthManager:
                                 await asyncio.sleep(1.5)
                                 continue
 
-                            # Both PSID and PSIDTS are present! Verify session BEFORE closing browser
+                            # Both PSID and PSIDTS are present!
+                            # Verify if security check token __Secure-1PSIDCC has settled (allow up to 3 cycles)
+                            has_cc = "__Secure-1PSIDCC" in all_google_cookies
+                            if not has_cc and psid_wait_count < 3:
+                                psid_wait_count += 1
+                                logger.info(f"Đang chờ token bảo mật __Secure-1PSIDCC hoàn tất ({psid_wait_count})...")
+                                await asyncio.sleep(1.5)
+                                continue
+
+                            # Verify session BEFORE closing browser
                             logger.info("🎉 Đã bắt được __Secure-1PSID và __Secure-1PSIDTS! Đang kích hoạt kết nối Gemini...")
                             from app.gemini_service import gemini_service
                             from app.sound_effects import sound_manager
