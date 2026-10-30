@@ -42,38 +42,57 @@ def is_spotlight_client_connected() -> bool:
 
 
 def find_spotlight_hwnd_windows() -> Optional[int]:
-    """Find HWND of Spotlight window on Windows using Win32 API."""
+    """
+    Find HWND of the actual visible Spotlight window on Windows using Win32 API.
+    Strictly verifies:
+    1. Window title must contain 'spotlight'
+    2. Exclude IDE / editor / terminal windows
+    3. Must be a top-level window (no parent)
+    4. Automatically hides and destroys any orphaned/untitled minimized helper windows
+       so they never create unwanted white/gray title bars at the bottom of the desktop.
+    """
     if not sys.platform.startswith("win"):
         return None
     try:
         import ctypes
         user32 = ctypes.windll.user32
         found_hwnd = []
+        orphaned_helpers = []
 
         def enum_windows_callback(hwnd, extra):
-            # 1. Match by child process PID if known
-            global _spotlight_proc
-            if _spotlight_proc and _spotlight_proc.pid:
-                proc_pid = ctypes.c_ulong()
-                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(proc_pid))
-                if proc_pid.value == _spotlight_proc.pid:
-                    found_hwnd.append(hwnd)
-                    return False
+            # Only inspect top-level windows
+            if user32.GetParent(hwnd) != 0:
+                return True
 
-            # 2. Match by window title (case-insensitive)
             length = user32.GetWindowTextLengthW(hwnd)
             if length > 0:
                 buff = ctypes.create_unicode_buffer(length + 1)
                 user32.GetWindowTextW(hwnd, buff, length + 1)
                 title = buff.value.lower()
+                # Must contain 'spotlight' in window title
                 if "spotlight" in title:
-                    if "visual studio" not in title and "code" not in title and "terminal" not in title:
+                    if not any(k in title for k in ("visual studio", "code", "terminal", "powershell")):
                         found_hwnd.append(hwnd)
                         return False
+            else:
+                # If an untitled window is iconic (minimized onto the desktop workarea),
+                # mark it for cleanup so it doesn't leave stray white bars on the screen
+                if user32.IsIconic(hwnd):
+                    orphaned_helpers.append(hwnd)
             return True
 
         WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
         user32.EnumWindows(WNDENUMPROC(enum_windows_callback), 0)
+
+        # Cleanup stray minimized helper title bars
+        global _spotlight_proc
+        for h in orphaned_helpers:
+            try:
+                # Hide any untitled iconic windows to clear white bars from the desktop
+                user32.ShowWindow(h, 0)  # SW_HIDE = 0
+            except Exception:
+                pass
+
         return found_hwnd[0] if found_hwnd else None
     except Exception as e:
         logger.debug(f"Error finding Spotlight HWND: {e}")
@@ -84,13 +103,9 @@ def is_spotlight_window_open() -> bool:
     """
     Check if Spotlight App is currently open:
     1. Active WebSocket connection from Spotlight client
-    2. Alive Chromium child process
-    3. Active Win32 window (on Windows)
+    2. Active Win32 window with 'Spotlight' in title
     """
-    global _spotlight_proc
     if is_spotlight_client_connected():
-        return True
-    if _spotlight_proc is not None and _spotlight_proc.poll() is None:
         return True
     if sys.platform.startswith("win"):
         hwnd = find_spotlight_hwnd_windows()
@@ -129,9 +144,10 @@ def force_foreground_window(hwnd: int) -> bool:
             user32.ShowWindow(hwnd, SW_SHOW)
 
         fg_hwnd = user32.GetForegroundWindow()
-        if fg_hwnd == hwnd:
-            user32.SetFocus(hwnd)
-            return True
+        if fg_hwnd:
+            if fg_hwnd == hwnd or user32.GetAncestor(fg_hwnd, 2) == hwnd:
+                user32.SetFocus(hwnd)
+                return True
 
         cur_thread = kernel32.GetCurrentThreadId()
         fg_thread = user32.GetWindowThreadProcessId(fg_hwnd, None) if fg_hwnd else 0
@@ -223,8 +239,13 @@ def toggle_spotlight_window_windows(force_show: bool = False) -> bool:
         is_iconic = bool(user32.IsIconic(hwnd))
         fg_hwnd = user32.GetForegroundWindow()
 
+        is_spotlight_focused = False
+        if fg_hwnd:
+            if fg_hwnd == hwnd or user32.GetAncestor(fg_hwnd, 2) == hwnd:
+                is_spotlight_focused = True
+
         # If Spotlight is the active foreground window and NOT minimized -> minimize it
-        if fg_hwnd == hwnd and not is_iconic:
+        if is_spotlight_focused and not is_iconic:
             user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE = 6
             logger.info("Spotlight window minimized.")
             return True
@@ -282,8 +303,8 @@ def launch_or_toggle_web_spotlight(force_show: bool = False):
     global _spotlight_proc, _last_launch_time
     with _spotlight_lock:
         now = time.time()
-        if not force_show and now - _last_launch_time < 0.35:
-            return  # Debounce quick double-presses
+        if not force_show and now - _last_launch_time < 0.25:
+            return  # Snappy 0.25s debounce
         _last_launch_time = now
 
         # Case 1: Spotlight is already open -> Toggle or focus, DO NOT launch another process!
@@ -305,10 +326,11 @@ def launch_or_toggle_web_spotlight(force_show: bool = False):
 
         def _poll_and_focus():
             """Poll for Spotlight window and immediately force it to the foreground with zero Alt-Tab."""
-            for _ in range(35):
+            for _ in range(40):
                 time.sleep(0.1)
                 hwnd = find_spotlight_hwnd_windows()
                 if hwnd:
+                    time.sleep(0.05)
                     force_foreground_window(hwnd)
                     broadcast_spotlight_message({"type": "SPOTLIGHT_FOCUS"})
                     break
@@ -321,11 +343,19 @@ def launch_or_toggle_web_spotlight(force_show: bool = False):
                 "--window-size=720,440",
                 "--window-position=center",
                 "--no-first-run",
-                "--no-default-browser-check"
+                "--no-default-browser-check",
+                "--disable-features=Translate,OptimizationHints,MediaRouter",
+                "--disable-sync",
+                "--disable-background-networking",
+                "--disable-component-update",
+                "--disable-default-apps",
+                "--disable-extensions",
+                "--app-auto-launched"
             ]
             logger.info(f"🚀 Khởi chạy Web Spotlight App Window (F7): {browser_path}")
             try:
-                _spotlight_proc = subprocess.Popen(cmd)
+                flags = 0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+                _spotlight_proc = subprocess.Popen(cmd, creationflags=flags)
                 if sys.platform.startswith("win"):
                     threading.Thread(target=_poll_and_focus, daemon=True).start()
                 return
