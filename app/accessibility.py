@@ -319,8 +319,8 @@ class AccessibilityManager:
 
     def snap_coordinates(self, pixel_x: int, pixel_y: int, target: str = "") -> Optional[Tuple[int, int]]:
         """
-        Check if (pixel_x, pixel_y) falls within or near any UI element in the active window.
-        If matched, snaps to the exact center (cx, cy) of that element for 100% precision.
+        Check if (pixel_x, pixel_y) matches a specific interactive UI control.
+        NEVER snaps to giant container panels or unmatched controls!
         """
         if not self.cached_elements:
             self.get_frontmost_app_elements()
@@ -330,41 +330,51 @@ class AccessibilityManager:
 
         target_clean = str(target or "").strip().lower()
 
-        # 1. First priority: Element whose bounding box directly contains (pixel_x, pixel_y)
-        for elem in self.cached_elements:
-            cx, cy = elem.get("pixel_x", 0), elem.get("pixel_y", 0)
-            w, h = elem.get("width", 0), elem.get("height", 0)
-            if w > 0 and h > 0:
-                left = cx - w / 2.0
-                right = cx + w / 2.0
-                top = cy - h / 2.0
-                bottom = cy + h / 2.0
-                if left <= pixel_x <= right and top <= pixel_y <= bottom:
-                    return cx, cy
+        # Disallow snapping to giant container controls (like whole web pages, main panes, document roots)
+        INTERACTIVE_ROLES = (
+            "button", "hyperlink", "link", "menuitem", "tabitem", "checkbox",
+            "radiobutton", "combobox", "splitbutton", "headeritem", "treeitem", "listitem"
+        )
 
-        # 2. Second priority: If target name matches an element within 50px
+        candidates = []
+        for elem in self.cached_elements:
+            w, h = elem.get("width", 0), elem.get("height", 0)
+            # Must be a reasonable button/control size, NOT a huge container
+            if w > 650 or h > 350:
+                continue
+            if w <= 0 or h <= 0:
+                continue
+            candidates.append(elem)
+
+        # 1. Highest priority: Target name matches AND (pixel_x, pixel_y) is near it or inside it
         if target_clean:
-            for elem in self.cached_elements:
-                elem_name = elem.get("name", "").lower()
-                if target_clean in elem_name or elem_name in target_clean:
+            for elem in candidates:
+                name = elem.get("name", "").lower()
+                if target_clean in name or name in target_clean:
                     cx, cy = elem.get("pixel_x", 0), elem.get("pixel_y", 0)
+                    w, h = elem.get("width", 0), elem.get("height", 0)
+                    left, right = cx - w / 2.0, cx + w / 2.0
+                    top, bottom = cy - h / 2.0, cy + h / 2.0
+                    # If click is inside or within 60px of the named target
                     dist = ((pixel_x - cx) ** 2 + (pixel_y - cy) ** 2) ** 0.5
-                    if dist <= 50:
+                    if (left - 15 <= pixel_x <= right + 15 and top - 15 <= pixel_y <= bottom + 15) or dist <= 60:
                         return cx, cy
 
-        # 3. Third priority: Closest element within 30px
-        closest_elem = None
-        min_dist = 30.0
-        for elem in self.cached_elements:
-            cx, cy = elem.get("pixel_x", 0), elem.get("pixel_y", 0)
-            dist = ((pixel_x - cx) ** 2 + (pixel_y - cy) ** 2) ** 0.5
-            if dist < min_dist:
-                min_dist = dist
-                closest_elem = elem
+        # 2. Second priority: Small interactive button/link directly containing or near (within 30px) (pixel_x, pixel_y)
+        for elem in candidates:
+            role = elem.get("role", "").lower()
+            if any(r in role for r in INTERACTIVE_ROLES):
+                cx, cy = elem.get("pixel_x", 0), elem.get("pixel_y", 0)
+                w, h = elem.get("width", 0), elem.get("height", 0)
+                # Small control only (e.g. <= 350px wide, <= 120px high)
+                if w <= 350 and h <= 120:
+                    left, right = cx - w / 2.0, cx + w / 2.0
+                    top, bottom = cy - h / 2.0, cy + h / 2.0
+                    dist = ((pixel_x - cx) ** 2 + (pixel_y - cy) ** 2) ** 0.5
+                    if (left - 10 <= pixel_x <= right + 10 and top - 10 <= pixel_y <= bottom + 10) or dist <= 30:
+                        return cx, cy
 
-        if closest_elem:
-            return closest_elem["pixel_x"], closest_elem["pixel_y"]
-
+        # Otherwise: DO NOT SNAP! Trust Gemini Vision's visual coordinates directly.
         return None
 
     def select_element_by_name(self, target_name: str) -> bool:

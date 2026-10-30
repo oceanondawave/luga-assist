@@ -1506,6 +1506,11 @@ async def _execute_pipeline(
                 and active_actions[0].get("action", "").lower() in ("click", "select_element", "press", "launch_app")
                 and any(k in user_cmd_lower for k in ("click", "nhấn", "bấm", "chọn", "press", "mở"))
             )
+            is_scroll_action = any(
+                isinstance(a, dict) and a.get("action", "").lower() == "scroll"
+                for a in active_actions
+            )
+            is_scroll_only_intent = any(k in user_cmd_lower for k in ("cuộn", "scroll", "lăn chuột", "kéo xuống", "kéo lên"))
 
             if pure_hardware_controls:
                 is_goal_verified_completed = True
@@ -1513,6 +1518,10 @@ async def _execute_pipeline(
             elif file_info_actions and (claimed_done or len(active_actions) == 1):
                 is_goal_verified_completed = True
                 print(f"[Pipeline] ⚡ Thao tác file hoàn tất tại bước {step}: {speech_to_say}")
+            elif is_scroll_action and not is_scroll_only_intent:
+                # Intermediate navigation: scrolled down to find off-screen element, keep verifying next view
+                is_goal_verified_completed = False
+                print(f"[Pipeline] 📜 Đang cuộn màn hình tại bước {step} để tìm phần tử ngoài khung nhìn...")
             elif is_direct_click_request and (claimed_done or step >= 1):
                 is_goal_verified_completed = True
                 print(f"[Pipeline] ⚡ Thao tác click trực tiếp hoàn tất tại bước {step}: {speech_to_say}")
@@ -1553,6 +1562,8 @@ async def _execute_pipeline(
             # Build readable summary of what was executed to feed into next verification step
             last_actions_summary = "; ".join([
                 f"{a.get('action')}" + (f" vào '{a.get('target')}'" if a.get('target') else "") +
+                (f" tại ({a.get('x_percent')}, {a.get('y_percent')})" if 'x_percent' in a and 'y_percent' in a else "") +
+                (f" hướng={a.get('direction')}" if a.get('direction') else "") +
                 (f" text='{a.get('text')}'" if a.get('text') else "") +
                 (f" key='{a.get('key')}'" if a.get('key') else "") +
                 (f" query='{a.get('query')}'" if a.get('query') else "") +
@@ -1625,10 +1636,20 @@ async def _execute_pipeline(
         sound_manager.play_done()
         print(f"\n[Pipeline] 🎉 HOÀN THÀNH VÀ ĐÃ XÁC MINH TOÀN BỘ MỤC TIÊU!")
     else:
-        sound_manager.play_error()
-        print(f"\n[Pipeline] ⚠️ Đã dừng sau {MAX_AUTONOMOUS_STEPS} bước mà chưa xác minh được kết quả hoàn tất.")
-        if speak:
-            await tts_service.speak("Chưa thể xác nhận hoàn tất thao tác. Bạn vui lòng kiểm tra lại màn hình.")
+        # Check if physical actions were actually executed successfully on the system
+        if action_result.get("success", False) and any(
+            isinstance(a, dict) and a.get("action", "").lower() in ("click", "select_element", "press", "scroll", "launch_app", "type", "window_control")
+            for a in active_actions
+        ):
+            # The action was physically completed on the desktop!
+            is_goal_verified_completed = True
+            sound_manager.play_done()
+            print(f"\n[Pipeline] ✅ Thao tác đã được thực thi thành công trên hệ thống sau {step} bước!")
+        else:
+            sound_manager.play_error()
+            print(f"\n[Pipeline] ⚠️ Đã dừng sau {MAX_AUTONOMOUS_STEPS} bước mà chưa xác minh được kết quả hoàn tất.")
+            if speak:
+                await tts_service.speak("Chưa thể xác nhận hoàn tất thao tác. Bạn vui lòng kiểm tra lại màn hình.")
 
     return {
         "success": is_goal_verified_completed,

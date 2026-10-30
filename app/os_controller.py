@@ -42,15 +42,58 @@ class OSController:
     def _native_click(self, x: int, y: int, button: str = "left", click_count: int = 1):
         """
         Rock-solid physical click across macOS and Windows.
-        Ensures clickState is properly set (1 for single, 2 for double click)
-        and down-up has a realistic hardware dwell time (0.04s) so that native
-        Cocoa/Windows tables, tree views, sidebars, and menus 100% register the click.
+        Ensures target window is activated, cursor is physically moved,
+        and click events are dispatched via native Win32 mouse_event with realistic hardware dwell time (0.05s).
         """
-        # 1. Smoothly move cursor so user and OS see physical movement
+        # 1. Smoothly move cursor so user visually sees movement to target
         pyautogui.moveTo(x, y, duration=MOUSE_MOVE_DURATION)
         time.sleep(0.02)
 
-        # Physical click with realistic hardware dwell time
+        # 2. Windows native click pipeline
+        if sys.platform.startswith("win"):
+            try:
+                import ctypes
+                import ctypes.wintypes
+                user32 = ctypes.windll.user32
+
+                # Activate window under cursor if not already active so click isn't swallowed
+                hwnd = user32.WindowFromPoint(ctypes.wintypes.POINT(x, y))
+                if hwnd:
+                    root_hwnd = user32.GetAncestor(hwnd, 2)  # GA_ROOT
+                    cur_fore = user32.GetForegroundWindow()
+                    if root_hwnd and root_hwnd != cur_fore:
+                        user32.SetForegroundWindow(root_hwnd)
+                        time.sleep(0.04)
+
+                user32.SetCursorPos(x, y)
+                time.sleep(0.02)
+
+                MOUSEEVENTF_LEFTDOWN = 0x0002
+                MOUSEEVENTF_LEFTUP = 0x0004
+                MOUSEEVENTF_RIGHTDOWN = 0x0008
+                MOUSEEVENTF_RIGHTUP = 0x0010
+
+                if button == "right":
+                    user32.mouse_event(MOUSEEVENTF_RIGHTDOWN, x, y, 0, 0)
+                    time.sleep(0.05)
+                    user32.mouse_event(MOUSEEVENTF_RIGHTUP, x, y, 0, 0)
+                elif click_count == 2:
+                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, x, y, 0, 0)
+                    time.sleep(0.04)
+                    user32.mouse_event(MOUSEEVENTF_LEFTUP, x, y, 0, 0)
+                    time.sleep(0.08)
+                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, x, y, 0, 0)
+                    time.sleep(0.04)
+                    user32.mouse_event(MOUSEEVENTF_LEFTUP, x, y, 0, 0)
+                else:
+                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, x, y, 0, 0)
+                    time.sleep(0.05)
+                    user32.mouse_event(MOUSEEVENTF_LEFTUP, x, y, 0, 0)
+                return
+            except Exception:
+                pass
+
+        # 3. Fallback for generic OS
         if button == "right":
             pyautogui.mouseDown(x, y, button="right")
             time.sleep(0.04)
@@ -101,6 +144,8 @@ class OSController:
                     if snapped:
                         x, y = snapped
                         print(f"[OSController] 🎯 Khóa chính xác tâm phần tử UI: ({x}, {y})")
+                    else:
+                        print(f"[OSController] 🖱️ Nhấp chuột tại tọa độ trực quan: ({x}, {y})")
                     self._native_click(x, y, button="left", click_count=1)
                     target_info = f" '{target}'" if target else ""
                     result["details"] = f"Clicked{target_info} at ({x}, {y})"
@@ -216,9 +261,10 @@ class OSController:
             elif action == "type":
                 text = action_data.get("text", "")
                 if text:
-                    # Guard: If typing 'Settings' directly (e.g. into Run Win+R dialog),
+                    # Guard: If typing 'Settings' directly (e.g. into Run Win+R dialog or search),
                     # convert to 'ms-settings:' so Windows doesn't fail with "Windows cannot find 'Settings'"
-                    if text.strip().lower() in ("settings", "cài đặt", "windows settings"):
+                    clean_text = text.strip().lower().replace(".exe", "").rstrip(":")
+                    if clean_text in ("settings", "cài đặt", "setting", "windows settings", "cài đặt windows", "ms-settings") or clean_text.startswith("start settings"):
                         text = "ms-settings:"
 
                     target = action_data.get("target") or action_data.get("field")
@@ -257,14 +303,12 @@ class OSController:
                 result["details"] = f"Pressed: {key_combo}"
 
             elif action == "scroll":
-                direction = action_data.get("direction", "down").lower()
+                direction = action_data.get("direction", "down")
                 amount = int(action_data.get("amount", 5))
-                clicks = -amount if direction == "down" else amount
-                if "x_percent" in action_data and "y_percent" in action_data:
-                    x, y = self.to_pixel_coords(action_data["x_percent"], action_data["y_percent"])
-                    pyautogui.moveTo(x, y)
-                pyautogui.scroll(clicks * 100)
-                result["details"] = f"Scrolled {direction} by {amount}"
+                x_p = action_data.get("x_percent")
+                y_p = action_data.get("y_percent")
+                s_res = self.scroll(direction=direction, amount=amount, x_percent=x_p, y_percent=y_p)
+                result["details"] = s_res["details"]
 
             elif action in ("system_control", "system", "sleep", "mute", "unmute", "volume_up", "volume_down", "lock"):
                 cmd_type = action_data.get("command") or action_data.get("type") or action
@@ -494,40 +538,50 @@ class OSController:
         for m in reversed(modifiers):
             pyautogui.keyUp(m)
 
+    def _open_windows_protocol(self, uri: str):
+        """Open a Windows URI protocol like ms-settings: cleanly without CMD error dialogs."""
+        if sys.platform.startswith("win"):
+            try:
+                import ctypes
+                ctypes.windll.shell32.ShellExecuteW(None, "open", uri, None, None, 1)
+                return
+            except Exception:
+                pass
+        try:
+            subprocess.Popen(f'start "" "{uri}"', shell=True)
+        except Exception as e:
+            print(f"[OSController] Không thể mở URI {uri}: {e}")
+
     def _launch_app(self, app_name: str):
         """Open application natively on Windows."""
         clean = (app_name or "").strip().lower()
         if not clean:
             return
 
-        # 1. Native Windows Settings & Sub-settings (100% reliable via hotkey or protocol)
-        if clean in ("settings", "cài đặt", "setting", "windows settings", "cài đặt hệ thống", "cài đặt máy tính"):
+        # 1. Native Windows Settings & Sub-settings (100% reliable via hotkey or ms-settings: protocol)
+        if any(k in clean for k in ("setting", "cài đặt", "ms-settings")):
+            if "bluetooth" in clean:
+                self._open_windows_protocol("ms-settings:bluetooth")
+                return
+            if any(k in clean for k in ("wifi", "wi-fi", "mạng", "network")):
+                self._open_windows_protocol("ms-settings:network-wifi")
+                return
+            if any(k in clean for k in ("sound", "âm thanh", "volume", "loa")):
+                self._open_windows_protocol("ms-settings:sound")
+                return
+            if any(k in clean for k in ("display", "màn hình")):
+                self._open_windows_protocol("ms-settings:display")
+                return
+            if any(k in clean for k in ("update", "cập nhật")):
+                self._open_windows_protocol("ms-settings:windowsupdate")
+                return
+
             try:
                 pyautogui.hotkey("win", "i")
                 return
             except Exception:
-                subprocess.Popen(["cmd", "/c", "start", "ms-settings:"], shell=True)
+                self._open_windows_protocol("ms-settings:")
                 return
-
-        if "bluetooth" in clean:
-            subprocess.Popen(["cmd", "/c", "start", "ms-settings:bluetooth"], shell=True)
-            return
-
-        if "wifi" in clean or "wi-fi" in clean or "mạng" in clean:
-            subprocess.Popen(["cmd", "/c", "start", "ms-settings:network-wifi"], shell=True)
-            return
-
-        if "sound" in clean or "âm thanh" in clean:
-            subprocess.Popen(["cmd", "/c", "start", "ms-settings:sound"], shell=True)
-            return
-
-        if "display" in clean or "màn hình" in clean:
-            subprocess.Popen(["cmd", "/c", "start", "ms-settings:display"], shell=True)
-            return
-
-        if "update" in clean or "cập nhật" in clean:
-            subprocess.Popen(["cmd", "/c", "start", "ms-settings:windowsupdate"], shell=True)
-            return
 
         # 2. Native System Apps
         if clean in ("explorer", "file explorer", "thư mục", "quản lý file", "my computer", "this pc"):
@@ -617,5 +671,63 @@ class OSController:
             details = f"Default window action executed for '{cmd}' (Win+Up)"
 
         return {"success": success, "details": details}
+
+    def scroll(
+        self,
+        direction: str = "down",
+        amount: int = 5,
+        x_percent: Optional[float] = None,
+        y_percent: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Scroll page or active window with 100% reliability on Windows.
+        Ensures cursor is positioned over the scrollable content and window is focused before sending wheel events.
+        """
+        direction = str(direction or "down").lower().strip()
+        amount = int(amount or 5)
+        if amount <= 0:
+            amount = 5
+
+        # Determine target position for scroll
+        if x_percent is not None and y_percent is not None:
+            x, y = self.to_pixel_coords(x_percent, y_percent)
+        else:
+            # Default to center of screen (0.5, 0.5) so wheel events hit main content area
+            w, h = self.get_screen_size()
+            x, y = int(w * 0.5), int(h * 0.5)
+
+        # 1. Position cursor over scrollable area
+        pyautogui.moveTo(x, y, duration=0.08)
+        time.sleep(0.03)
+
+        # 2. Focus window under cursor on Windows so scroll events are accepted
+        if sys.platform.startswith("win"):
+            try:
+                import ctypes
+                import ctypes.wintypes
+                user32 = ctypes.windll.user32
+                hwnd = user32.WindowFromPoint(ctypes.wintypes.POINT(x, y))
+                if hwnd:
+                    root_hwnd = user32.GetAncestor(hwnd, 2)
+                    cur_fore = user32.GetForegroundWindow()
+                    if root_hwnd and root_hwnd != cur_fore:
+                        user32.SetForegroundWindow(root_hwnd)
+                        time.sleep(0.04)
+
+                # Send Windows native wheel events (WHEEL_DELTA = 120 per notch)
+                # Negative delta scrolls DOWN, positive delta scrolls UP
+                MOUSEEVENTF_WHEEL = 0x0800
+                delta = -120 * amount if direction in ("down", "dưới", "xuống") else 120 * amount
+                user32.mouse_event(MOUSEEVENTF_WHEEL, x, y, delta, 0)
+                time.sleep(0.2)
+                return {"success": True, "details": f"Scrolled {direction} by {amount} at ({x}, {y})"}
+            except Exception:
+                pass
+
+        # Fallback to pyautogui scroll
+        clicks = -amount if direction in ("down", "dưới", "xuống") else amount
+        pyautogui.scroll(clicks * 120)
+        time.sleep(0.2)
+        return {"success": True, "details": f"Scrolled {direction} by {amount} at ({x}, {y})"}
 
 os_controller = OSController()

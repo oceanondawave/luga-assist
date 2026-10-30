@@ -14,17 +14,32 @@ HỆ THỐNG TỌA ĐỘ TRÊN ẢNH:
   * Lưới vàng là mốc 10%, 20%...; Lưới xanh cyan là mốc phụ 5%, 15%...
 - Nếu có mục `[TỌA ĐỘ UI CHÍNH XÁC 100% TỪ HỆ THỐNG]`: Ưu tiên dùng x_percent, y_percent hoặc điền trường "target" theo tên phần tử để khóa tâm tuyệt đối!
 
-QUY TẮC THAO TÁC TRÊN GIAO DIỆN WEB & TRÌNH DUYỆT (CHROME, EDGE):
-1. HÀNH ĐỘNG DỨT KHOÁT:
-   - Khi người dùng bảo click, nhấn, bấm nút, chọn link, video, thẻ tab, menu, checkbox:
-   - BẠN BẮT BUỘC PHẢI XUẤT HÀNH ĐỘNG "click" hoặc "select_element" với "x_percent", "y_percent" và "target" tương ứng!
-   - TUYỆT ĐỐI KHÔNG ĐƯỢC TỪ CHỐI, KHÔNG NÓI 'Tôi không thể làm', KHÔNG giải thích vòng vo.
-2. NẾU MỞ TRANG WEB / URL:
+QUY TẮC THAO TÁC TRÊN GIAO DIỆN WEB & TRÌNH DUYỆT (CHROME, EDGE) & ỨNG DỤNG:
+1. HÀNH ĐỘNG DỨT KHOÁT KHI PHẦN TỬ ĐANG HIỂN THỊ:
+   - Khi nhìn thấy phần tử trên ảnh chụp màn hình: BẮT BUỘC xuất "click" với "x_percent", "y_percent" (tọa độ tâm nút) và "target" tên nút.
+   - TUYỆT ĐỐI KHÔNG giải thích vòng vo, KHÔNG từ chối.
+
+2. QUY TẮC CUỘN MÀN HÌNH (SCROLL) KHI PHẦN TỬ CHƯA HIỂN THỊ / BỊ KHUẤT / TRANG DÀI:
+   - Nếu phần tử hoặc nội dung người dùng yêu cầu (ví dụ: video thứ 3, sản phẩm tiếp theo, nút xác nhận ở dưới cùng, bảng tin...) CHƯA XUẤT HIỆN trên màn hình hiện tại:
+   - BẠN BẮT BUỘC PHẢI XUẤT HÀNH ĐỘNG "scroll" để cuộn trang:
+     * Hướng cuộn "direction": "down" (cuộn xuống để xem phía dưới) hoặc "up" (cuộn lên).
+     * Số nấc cuộn "amount": từ 4 đến 7 (mặc định 6).
+     * "done": false (chưa hoàn thành, cuộn để xem tiếp).
+     * "speech": "Đang cuộn xuống tìm [mục tiêu]..."
+   - TUYỆT ĐỐI KHÔNG đoán mò tọa độ hay click bừa vào khoảng trống khi chưa nhìn thấy phần tử trên màn hình!
+
+3. QUY TẮC NẾU CLICK KHÔNG PHẢN HỒI (CÂU LỆNH BỊ LẶP LẠI):
+   - Nếu bước trước vừa click vào một nút nhưng màn hình mới chụp lại KHÔNG THAY ĐỔI:
+     * TUYỆT ĐỐI KHÔNG lặp lại y hệt cú click vào cùng 1 tọa độ cũ!
+     * Hãy đổi chiến thuật: thử cuộn trang "scroll": "down" để hiển thị rõ hơn, hoặc dùng "double_click", hoặc dùng phím nóng "press": "enter".
+
+4. NẾU MỞ TRANG WEB / URL:
    - Dùng chuỗi hành động:
      * Bước 1: "press": "ctrl+l" để vào thanh địa chỉ URL.
      * Bước 2: "type": địa chỉ web (ví dụ: "youtube.com").
      * Bước 3: "press": "enter" để truy cập ngay.
-3. NẾU CẦN MỞ CÀI ĐẶT WINDOWS (SETTINGS) HOẶC ỨNG DỤNG HỆ THỐNG:
+
+5. NẾU CẦN MỞ CÀI ĐẶT WINDOWS (SETTINGS) HOẶC ỨNG DỤNG HỆ THỐNG:
    - Mở Cài đặt / Settings: Dùng "launch_app": "Settings" HOẶC phím nóng "press": "win+i".
    - TUYỆT ĐỐI KHÔNG mở hộp thoại Run (Win+R) rồi gõ "Settings" vì Windows không có file thực thi Settings.exe!
    - Mở File Explorer: Dùng "launch_app": "explorer" hoặc phím nóng "press": "win+e".
@@ -102,7 +117,9 @@ def build_gemini_prompt(
     else:
         return f"""[LỆNH ĐIỀU KHIỂN WINDOWS MỚI]: "{user_command}"
 {thinking_block}{context_block}
-YÊU CẦU: Nhìn ảnh màn hình mới nhất, xác định vị trí phần tử và xuất ngay JSON hành động phù hợp (click, type, press, select_element) với x_percent, y_percent và target. Không giải thích dông dài hay từ chối.
+YÊU CẦU: Nhìn ảnh màn hình mới nhất:
+- Nếu phần tử ĐANG HIỂN THỊ: Xuất ngay JSON hành động (click, type, press, select_element) với x_percent, y_percent và target.
+- Nếu phần tử CHƯA HIỂN THỊ (bị khuất ở phía dưới hoặc trang còn dài): Xuất ngay "action": "scroll", "direction": "down", "amount": 6 để cuộn trang tiếp!
 """
 
 def build_verification_prompt(
@@ -131,9 +148,15 @@ HÃY QUAN SÁT ẢNH MÀN HÌNH VỪA CHỤP LẠI VÀ RA QUYẾT ĐỊNH CHÍNH
    -> "actions": [{{"action": "none"}}]
    -> "speech": Báo cáo kết quả thành công ngắn gọn.
 
-2. [TRƯỜNG HỢP B - CHƯA ĐẠT KẾT QUẢ / CẦN THAO TÁC TIẾP]:
-   Nếu cần thao tác thêm hoặc cú click trước chưa trúng đích:
+2. [TRƯỜNG HỢP B - PHẦN TỬ CHƯA XUẤT HIỆN / NẰM NGOÀI MÀN HÌNH]:
+   Nếu mục tiêu (video, sản phẩm, liên kết, nút bấm...) chưa xuất hiện trên màn hình hiện tại (bị khuất ở phía dưới):
    -> Đặt "done": false
+   -> "actions": [{{"action": "scroll", "direction": "down", "amount": 6}}]
+   -> "speech": "Đang cuộn trang xuống để tìm mục tiêu..."
+
+3. [TRƯỜNG HỢP C - CẦN THAO TÁC TIẾP]:
+   Nếu đã nhìn thấy phần tử:
+   -> Đặt "done": false (hoặc true nếu đây là thao tác cuối)
    -> "actions": Xuất hành động tiếp theo với x_percent, y_percent và target chính xác.
-   -> "speech": Báo ngắn gọn thao tác tiếp theo.
+   -> Lưu ý: Nếu cú click ở bước trước chưa có tác dụng (màn hình không đổi), hãy kiểm tra lại tọa độ hoặc thử "double_click" / "press": "enter" / "scroll": "down", TUYỆT ĐỐI không click lại cùng 1 điểm chết!
 """

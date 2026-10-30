@@ -979,6 +979,37 @@ def test_browser_default_and_coordinate_snapping():
 
     print("test_browser_default_and_coordinate_snapping: PASSED")
 
+def test_click_scroll_and_settings_launch():
+    from app.accessibility import accessibility_manager
+    # 1. Giant container pane should NEVER be snapped to
+    accessibility_manager.cached_elements = [{
+        "role": "Pane",
+        "name": "Main Container",
+        "pixel_x": 960,
+        "pixel_y": 540,
+        "width": 1920,
+        "height": 1080,
+        "x_percent": 0.5,
+        "y_percent": 0.5
+    }]
+    # Point at (400, 300) is inside the container, but snap should refuse giant container
+    res = accessibility_manager.snap_coordinates(400, 300)
+    assert res is None, f"Giant container should not be snapped to, got {res}"
+
+    # 2. Test scroll action
+    scroll_res = os_controller.scroll("down", amount=5)
+    assert scroll_res.get("success") is True
+    assert "Scrolled" in scroll_res.get("details", "")
+
+    # 3. Test type action guard converting Settings -> ms-settings:
+    type_action = {"action": "type", "text": "Settings"}
+    # Execute action shouldn't raise and should handle the conversion
+    res = os_controller.execute_action(type_action)
+    assert res.get("success") is True
+    assert "ms-settings:" in res.get("details", "")
+
+    print("test_click_scroll_and_settings_launch: PASSED")
+
 if __name__ == "__main__":
     test_prompt_generation()
     test_screen_capture_and_annotation()
@@ -1011,6 +1042,7 @@ if __name__ == "__main__":
     test_thinking_level_configuration_and_prompts()
     test_google_auth_and_web_spotlight_endpoints()
     test_browser_default_and_coordinate_snapping()
+    test_click_scroll_and_settings_launch()
     print("\n🎉 ALL TESTS (INCLUDING EMERGENCY STOP & CANCELLATION) PASSED SUCCESSFULLY!")
 
 
