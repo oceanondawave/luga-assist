@@ -1314,11 +1314,20 @@ async def _execute_chat_mode(
     speech_for_tts = clean_text_for_speech(response_text)
     sound_manager.play_done()
 
+    audio_uri = ""
+    if speak and speech_for_tts:
+        print(f"[ChatMode] 🗣️ Bắt đầu đọc kết quả bằng giọng nói ({len(speech_for_tts)} ký tự)...")
+        try:
+            audio_uri = await tts_service.speak(speech_for_tts)
+        except Exception as tts_err:
+            print(f"[ChatMode] ⚠️ Lỗi khi phát TTS: {tts_err}")
+
     # Broadcast to WebUI and Spotlight chat
     await hub.broadcast_webui({
         "type": "ACTION_COMPLETED",
         "user_command": user_command,
         "speech": response_text,
+        "audio": audio_uri,
         "action_result": {
             "success": True,
             "action": "chat",
@@ -1329,12 +1338,10 @@ async def _execute_chat_mode(
         "done": True,
     })
 
-    if speak and speech_for_tts:
-        await tts_service.speak(speech_for_tts)
-
     return {
         "success": True,
         "speech": response_text,
+        "audio": audio_uri,
         "action_result": {
             "success": True,
             "action": "chat",

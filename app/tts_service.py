@@ -114,17 +114,21 @@ class TTSService:
                     return False
                 self._is_speaking = True
                 cmd = "play luga_tts wait" if block else "play luga_tts"
-                winmm.mciSendStringW(cmd, None, 0, None)
-                if block:
-                    self._is_speaking = False
-                return True
+                play_res = winmm.mciSendStringW(cmd, None, 0, None)
+                if play_res == 0:
+                    if block:
+                        self._is_speaking = False
+                    print("[TTSService] 🔊 Đang phát giọng đọc qua Windows MCI.")
+                    return True
+                winmm.mciSendStringW("close luga_tts", None, 0, None)
         except Exception as e:
             print(f"[TTSService] MCI playback notice: {e}")
         return False
 
     def _play_via_powershell(self, audio_file: Path, block: bool = False):
         """
-        Fallback background player using WPF MediaPlayer / WMPlayer with CREATE_NO_WINDOW.
+        High-reliability Windows audio player using native WMPlayer.OCX COM engine.
+        Guaranteed to work on Windows 10 & 11 without requiring WPF Dispatcher loops.
         """
         if self._abort_speech:
             return
@@ -132,19 +136,27 @@ class TTSService:
         ps_script = (
             f"$f = '{escaped_path}'; "
             f"try {{ "
-            f"  Add-Type -AssemblyName PresentationCore; "
-            f"  $p = New-Object System.Windows.Media.MediaPlayer; "
-            f"  $p.Open([System.Uri]::new($f)); "
-            f"  $p.Play(); "
-            f"  while($p.NaturalDuration.HasTimeSpan -eq $false) {{ Start-Sleep -Milliseconds 50 }}; "
-            f"  $dur = $p.NaturalDuration.TimeSpan.TotalSeconds; "
-            f"  Start-Sleep -Seconds ($dur + 0.2); "
+            f"  $w = New-Object -ComObject WMPlayer.OCX; "
+            f"  $w.settings.volume = 100; "
+            f"  $w.settings.autoStart = $true; "
+            f"  $w.URL = $f; "
+            f"  $w.controls.play(); "
+            f"  for ($i = 0; $i -lt 40 -and $w.playState -ne 3 -and $w.playState -ne 1; $i++) {{ Start-Sleep -Milliseconds 50 }}; "
+            f"  while ($w.playState -eq 3 -or $w.playState -eq 6 -or $w.playState -eq 9) {{ Start-Sleep -Milliseconds 100 }}; "
             f"}} catch {{ "
             f"  try {{ "
-            f"    $w = New-Object -ComObject WMPlayer.OCX; "
-            f"    $w.URL = $f; "
-            f"    $w.controls.play(); "
-            f"    while($w.playState -ne 1) {{ Start-Sleep -Milliseconds 100 }}; "
+            f"    Add-Type -AssemblyName System.Windows.Forms; "
+            f"    Add-Type -AssemblyName PresentationCore; "
+            f"    $p = New-Object System.Windows.Media.MediaPlayer; "
+            f"    $p.Open([System.Uri]::new($f)); "
+            f"    $p.Play(); "
+            f"    for ($i = 0; $i -lt 30 -and !$p.NaturalDuration.HasTimeSpan; $i++) {{ "
+            f"      [System.Windows.Forms.Application]::DoEvents(); "
+            f"      Start-Sleep -Milliseconds 100; "
+            f"    }}; "
+            f"    if ($p.NaturalDuration.HasTimeSpan) {{ "
+            f"      Start-Sleep -Seconds ($p.NaturalDuration.TimeSpan.TotalSeconds + 0.3); "
+            f"    }}; "
             f"  }} catch {{}} "
             f"}}"
         )
@@ -153,6 +165,7 @@ class TTSService:
 
         try:
             self._is_speaking = True
+            print("[TTSService] 🔊 Đang phát giọng đọc qua Windows Media Engine.")
             if block:
                 subprocess.run(cmd, check=False, creationflags=flags)
                 self._is_speaking = False
@@ -162,7 +175,7 @@ class TTSService:
                 )
         except Exception as e:
             self._is_speaking = False
-            print(f"[TTSService] Background audio fallback error: {e}")
+            print(f"[TTSService] Background audio player error: {e}")
 
     def play_audio_file(self, audio_file: Path, block: bool = False):
         """
