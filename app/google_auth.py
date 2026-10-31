@@ -658,6 +658,31 @@ class GoogleWebAuthManager:
                                 await asyncio.sleep(1.5)
                                 continue
 
+                            # Check if browser has finished redirecting to gemini.google.com
+                            is_on_gemini = False
+                            try:
+                                msg_id += 1
+                                await ws.send(json.dumps({"id": msg_id, "method": "Target.getTargets"}))
+                                for _ in range(5):
+                                    t_resp = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                                    t_obj = json.loads(t_resp)
+                                    if t_obj.get("id") == msg_id:
+                                        targets = t_obj.get("result", {}).get("targetInfos", [])
+                                        is_on_gemini = any(
+                                            t.get("type") == "page" and "gemini.google.com" in t.get("url", "")
+                                            for t in targets
+                                        )
+                                        break
+                            except Exception:
+                                is_on_gemini = True  # Fallback if getTargets query times out
+
+                            if not is_on_gemini:
+                                psid_wait_count += 1
+                                if psid_wait_count % 3 == 0:
+                                    logger.info(f"Đang chờ trình duyệt chuyển hướng vào Gemini ({psid_wait_count * 1.5:.0f}s)...")
+                                await asyncio.sleep(1.5)
+                                continue
+
                             # Verify session and ensure account is genuinely AVAILABLE before closing browser
                             from app.gemini_service import gemini_service
                             from app.sound_effects import sound_manager

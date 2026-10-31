@@ -293,18 +293,20 @@ class GeminiSessionService:
 
                 await self.client.init(timeout=25)
 
-                # STRICT VERIFICATION: Verify account is genuinely AVAILABLE and ready
+                # STRICT VERIFICATION: Verify account is genuinely AVAILABLE and NOT a Guest fallback
                 from gemini_webapi.constants import AccountStatus
-                if hasattr(self.client, "account_status"):
-                    if self.client.account_status != AccountStatus.AVAILABLE:
-                        print(
-                            f"[GeminiSessionService] ⚠️ Tài khoản Google chưa sẵn sàng "
-                            f"({self.client.account_status.name}: {self.client.account_status.description}). "
-                            "Tiếp tục chờ hoàn tất đăng nhập trên trình duyệt..."
-                        )
-                        self.is_ready = False
-                        self.client = None
-                        return False
+                is_guest = getattr(self.client, "_cookie_source", "") == "Guest"
+                status = getattr(self.client, "account_status", None)
+
+                if is_guest or (status is not None and status != AccountStatus.AVAILABLE):
+                    status_desc = f"{status.name}: {status.description}" if status else "Guest fallback"
+                    print(
+                        f"[GeminiSessionService] ⚠️ Tài khoản Google chưa sẵn sàng "
+                        f"({status_desc}). Tiếp tục chờ hoàn tất đăng nhập trên trình duyệt..."
+                    )
+                    self.is_ready = False
+                    self.client = None
+                    return False
 
                 # Ensure live HTTP session also has cross-domain credentials for content-push.googleapis.com
                 if hasattr(self.client, "client") and self.client.client:
