@@ -240,16 +240,6 @@ class GeminiSessionService:
                         print("[GeminiSessionService] ✅ Làm mới token thành công qua RotateCookies!")
                         return True
 
-            # Tier 3: Silent off-screen Chromium recovery (100% reliable, runs off-screen, zero user disruption)
-            try:
-                from app.google_auth import google_auth_manager
-                print("[GeminiSessionService] 🔄 [Tier 3] Đang tự động làm mới session ngầm qua Google Chromium profile...")
-                ok = await google_auth_manager.silent_refresh_cookies(old_psidts=psidts)
-                if ok:
-                    return True
-            except Exception as e:
-                print(f"[GeminiSessionService] Tier 3 notice: {e}")
-
             return False
         finally:
             self.is_restoring = False
@@ -302,6 +292,19 @@ class GeminiSessionService:
                                 pass
 
                 await self.client.init(timeout=25)
+
+                # STRICT VERIFICATION: Verify account is genuinely AVAILABLE and ready
+                from gemini_webapi.constants import AccountStatus
+                if hasattr(self.client, "account_status"):
+                    if self.client.account_status != AccountStatus.AVAILABLE:
+                        print(
+                            f"[GeminiSessionService] ⚠️ Tài khoản Google chưa sẵn sàng "
+                            f"({self.client.account_status.name}: {self.client.account_status.description}). "
+                            "Tiếp tục chờ hoàn tất đăng nhập trên trình duyệt..."
+                        )
+                        self.is_ready = False
+                        self.client = None
+                        return False
 
                 # Ensure live HTTP session also has cross-domain credentials for content-push.googleapis.com
                 if hasattr(self.client, "client") and self.client.client:
@@ -390,14 +393,9 @@ class GeminiSessionService:
             if "tos_pending" in err_str or "terms of service" in err_str:
                 msg = (
                     "Tài khoản Google cần chấp nhận Điều khoản sử dụng mới của Gemini (Terms of Service). "
-                    "Vui lòng truy cập https://gemini.google.com và bấm 'Đồng ý' (Accept / I agree) để kích hoạt tài khoản."
+                    "Vui lòng nhấn nút 'Đăng nhập Google' trên Spotlight (F7) để mở trình duyệt và bấm 'Đồng ý' (Accept) kích hoạt tài khoản."
                 )
                 print(f"[GeminiSessionService] ⚠️ {msg}")
-                try:
-                    import webbrowser
-                    webbrowser.open("https://gemini.google.com")
-                except Exception:
-                    pass
                 raise RuntimeError(msg) from e
             elif isinstance(e, AuthError) or "unauthenticated" in err_str or "401" in err_str:
                 print(f"[GeminiSessionService] ⚠️ Session Google hết hạn hoặc chưa xác thực: {e}. Đang tự động khôi phục ngầm...")
@@ -500,14 +498,9 @@ class GeminiSessionService:
             if "tos_pending" in err_str or "terms of service" in err_str:
                 msg = (
                     "Tài khoản Google cần chấp nhận Điều khoản sử dụng mới của Gemini (Terms of Service). "
-                    "Vui lòng truy cập https://gemini.google.com và bấm 'Đồng ý' (Accept / I agree) để kích hoạt tài khoản."
+                    "Vui lòng nhấn nút 'Đăng nhập Google' trên Spotlight (F7) để mở trình duyệt và bấm 'Đồng ý' (Accept) kích hoạt tài khoản."
                 )
                 print(f"[GeminiSessionService] ⚠️ {msg}")
-                try:
-                    import webbrowser
-                    webbrowser.open("https://gemini.google.com")
-                except Exception:
-                    pass
                 raise RuntimeError(msg) from e
             elif isinstance(e, AuthError) or "unauthenticated" in err_str or "401" in err_str:
                 print(f"[GeminiSessionService] ⚠️ Session Google hết hạn trong Chat Mode: {e}. Đang tự động khôi phục ngầm...")

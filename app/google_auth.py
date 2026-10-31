@@ -280,9 +280,9 @@ class GoogleWebAuthManager:
         target_url = login_url
         if not target_url:
             if force_account_picker:
-                target_url = "https://accounts.google.com/AccountChooser?continue=https://gemini.google.com"
+                target_url = "https://accounts.google.com/AccountChooser?continue=https://gemini.google.com/app"
             else:
-                target_url = "https://gemini.google.com"
+                target_url = "https://accounts.google.com/ServiceLogin?continue=https://gemini.google.com/app"
 
         if not browser_path:
             import webbrowser
@@ -379,33 +379,6 @@ class GoogleWebAuthManager:
                     self._login_process.kill()
             except Exception:
                 pass
-
-        # 3. Windows-specific fallback: close any lingering Google Login / Gemini windows
-        if sys.platform.startswith("win"):
-            try:
-                import ctypes
-                user32 = ctypes.windll.user32
-                WM_CLOSE = 0x0010
-
-                def enum_cb(hwnd, extra):
-                    if not user32.IsWindowVisible(hwnd):
-                        return True
-                    length = user32.GetWindowTextLengthW(hwnd)
-                    if length > 0:
-                        buff = ctypes.create_unicode_buffer(length + 1)
-                        user32.GetWindowTextW(hwnd, buff, length + 1)
-                        title = buff.value.lower()
-                        # Avoid touching Spotlight window
-                        if "spotlight" in title:
-                            return True
-                        if ("gemini" in title or "google" in title) and ("edge" in title or "chrome" in title or "đăng nhập" in title or "sign in" in title):
-                            user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
-                    return True
-
-                WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
-                user32.EnumWindows(WNDENUMPROC(enum_cb), 0)
-            except Exception as e:
-                logger.debug(f"Win32 window close fallback notice: {e}")
 
     async def logout(self, clear_browser_profile: bool = False) -> Dict[str, Any]:
         """Log out from current Google session, clear saved cookies and in-memory client."""
@@ -591,7 +564,7 @@ class GoogleWebAuthManager:
         await self.logout(clear_browser_profile=False)
         return await self.start_web_login(
             hub_broadcast_func=hub_broadcast_func,
-            login_url="https://accounts.google.com/AccountChooser?continue=https://gemini.google.com"
+            login_url="https://accounts.google.com/AccountChooser?continue=https://gemini.google.com/app"
         )
 
     async def _monitor_cdp_cookies(self, hub_broadcast_func: Optional[Callable] = None):
@@ -668,34 +641,24 @@ class GoogleWebAuthManager:
                         # If __Secure-1PSID is detected:
                         if psid:
                             # Google Gemini requires both __Secure-1PSID and __Secure-1PSIDTS for modern auth.
-                            # Keep waiting while browser completes Google Gemini load
+                            # Keep waiting calmly while user signs in and browser completes redirect to Gemini.
                             if not psidts:
                                 psid_wait_count += 1
                                 if psid_wait_count % 3 == 0:
-                                    logger.info(f"Đã bắt được __Secure-1PSID, đang chờ __Secure-1PSIDTS ({psid_wait_count}s)...")
-                                    try:
-                                        msg_id += 1
-                                        await ws.send(json.dumps({
-                                            "id": msg_id,
-                                            "method": "Target.createTarget",
-                                            "params": {"url": "https://gemini.google.com"}
-                                        }))
-                                    except Exception:
-                                        pass
+                                    logger.info(f"Đã bắt được __Secure-1PSID, đang chờ Google hoàn tất xác thực ({psid_wait_count * 1.5:.0f}s)...")
                                 await asyncio.sleep(1.5)
                                 continue
 
                             # Both PSID and PSIDTS are present!
-                            # Verify if security check token __Secure-1PSIDCC has settled (allow up to 3 cycles)
+                            # Verify if security check token __Secure-1PSIDCC has settled (allow up to 2 cycles)
                             has_cc = "__Secure-1PSIDCC" in all_google_cookies
-                            if not has_cc and psid_wait_count < 3:
+                            if not has_cc and psid_wait_count < 2:
                                 psid_wait_count += 1
                                 logger.info(f"Đang chờ token bảo mật __Secure-1PSIDCC hoàn tất ({psid_wait_count})...")
                                 await asyncio.sleep(1.5)
                                 continue
 
-                            # Verify session BEFORE closing browser
-                            logger.info("🎉 Đã bắt được __Secure-1PSID và __Secure-1PSIDTS! Đang kích hoạt kết nối Gemini...")
+                            # Verify session and ensure account is genuinely AVAILABLE before closing browser
                             from app.gemini_service import gemini_service
                             from app.sound_effects import sound_manager
 
