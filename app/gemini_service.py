@@ -274,22 +274,36 @@ class GeminiSessionService:
                 return True
 
             try:
+                # Clear stale gemini_webapi cache in temp directory to ensure fresh credential validation
+                try:
+                    import tempfile
+                    cache_dir = Path(tempfile.gettempdir()) / "gemini_webapi"
+                    if cache_dir.exists():
+                        for cf in cache_dir.glob(".cached_cookies_*.json"):
+                            try:
+                                cf.unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
                 print("[GeminiSessionService] Đang kết nối session Google Gemini ngầm...")
                 self.client = GeminiClient(
                     secure_1psid=cleaned_psid,
                     secure_1psidts=cleaned_psidts or None,
                 )
 
-                # Populate client cookies with full set if available
-                if self._current_all_cookies:
-                    for k, v in self._current_all_cookies.items():
-                        if v and k not in ("__Secure-1PSID", "__Secure-1PSIDTS"):
-                            try:
-                                self.client.cookies.set(k, v, domain=".google.com", secure=True)
-                                if k in ("__Secure-1PSIDCC", "SID", "HSID", "SSID", "SAPISID", "APISID"):
-                                    self.client.cookies.set(k, v, domain=".googleapis.com", secure=True)
-                            except Exception:
-                                pass
+                # Set __Secure-1PSIDCC if present to ensure complete session verification
+                if self._current_all_cookies and "__Secure-1PSIDCC" in self._current_all_cookies:
+                    try:
+                        self.client.cookies.set(
+                            "__Secure-1PSIDCC",
+                            self._current_all_cookies["__Secure-1PSIDCC"],
+                            domain=".google.com",
+                            secure=True
+                        )
+                    except Exception:
+                        pass
 
                 await self.client.init(timeout=25)
 
@@ -310,7 +324,7 @@ class GeminiSessionService:
 
                 # Ensure live HTTP session also has cross-domain credentials for content-push.googleapis.com
                 if hasattr(self.client, "client") and self.client.client:
-                    for k in ("__Secure-1PSID", "__Secure-1PSIDTS", "__Secure-1PSIDCC", "SID", "HSID", "SSID", "SAPISID", "APISID"):
+                    for k in ("__Secure-1PSID", "__Secure-1PSIDTS", "__Secure-1PSIDCC"):
                         val = self._current_all_cookies.get(k) or (cleaned_psid if k == "__Secure-1PSID" else (cleaned_psidts if k == "__Secure-1PSIDTS" else None))
                         if val:
                             try:

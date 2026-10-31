@@ -282,7 +282,7 @@ class GoogleWebAuthManager:
             if force_account_picker:
                 target_url = "https://accounts.google.com/AccountChooser?continue=https://gemini.google.com/app"
             else:
-                target_url = "https://accounts.google.com/ServiceLogin?continue=https://gemini.google.com/app"
+                target_url = "https://gemini.google.com/app"
 
         if not browser_path:
             import webbrowser
@@ -311,6 +311,8 @@ class GoogleWebAuthManager:
             "--new-window",
             "--no-first-run",
             "--no-default-browser-check",
+            "--disable-background-mode",
+            "--disable-features=msEdgeStartupBoost",
             "--window-size=880,740",
             target_url
         ]
@@ -521,11 +523,19 @@ class GoogleWebAuthManager:
                         now = time.time()
 
                         for c in cookies:
-                            c_name = c.get("name")
+                            c_name = c.get("name", "")
                             c_domain = c.get("domain", "")
                             c_val = c.get("value", "")
                             c_exp = c.get("expires", 0)
-                            if ("google.com" in c_domain or "googleapis.com" in c_domain) and c_name and c_val:
+                            if not c_name or not c_val:
+                                continue
+
+                            is_google_main = (
+                                c_domain in (".google.com", "google.com")
+                                or c_domain.endswith(".gemini.google.com")
+                                or c_domain == "gemini.google.com"
+                            )
+                            if is_google_main:
                                 all_google_cookies[c_name] = c_val
                                 if c_name == "__Secure-1PSID":
                                     psid = c_val
@@ -628,10 +638,20 @@ class GoogleWebAuthManager:
                         all_google_cookies = {}
 
                         for c in cookies:
-                            c_name = c.get("name")
+                            c_name = c.get("name", "")
                             c_domain = c.get("domain", "")
                             c_val = c.get("value", "")
-                            if ("google.com" in c_domain or "googleapis.com" in c_domain) and c_name and c_val:
+                            if not c_name or not c_val:
+                                continue
+
+                            # Strictly filter for authentic Google account domain (.google.com / gemini.google.com).
+                            # Do NOT accept localized search domains like .google.com.vn which overwrite credentials.
+                            is_google_main = (
+                                c_domain in (".google.com", "google.com")
+                                or c_domain.endswith(".gemini.google.com")
+                                or c_domain == "gemini.google.com"
+                            )
+                            if is_google_main:
                                 all_google_cookies[c_name] = c_val
                                 if c_name == "__Secure-1PSID":
                                     psid = c_val
